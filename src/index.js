@@ -462,24 +462,74 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   const starsAccrued = Math.floor(eligibleCents / 100);
   const purchasedAt = body.purchased_at || nowIso();
 
-  const tx = db.transaction(() => {
-    db.prepare(`INSERT INTO receipts(id, fiscal_number, client_id, store_id, cash_register, cashier, total_cents, eligible_cents, excluded_cents, stars_accrued, stars_spent, club_conditions_json, is_return, purchased_at, created_at)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
-      .run(body.id, body.fiscal_number || null, client.id, body.store_id || null, body.cash_register || null, body.cashier || null, totalCents, eligibleCents, excludedCents, starsAccrued, Number(body.stars_spent || 0), JSON.stringify(body.club_conditions || []), purchasedAt, nowIso());
+   db.prepare(`INSERT INTO receipts(id, fiscal_number, client_id, store_id, cash_register, cashier, total_cents, eligible_cents, excluded_cents, stars_accrued, stars_spent, club_conditions_json, is_return, purchased_at, created_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
+    .run(
+      body.id,
+      body.fiscal_number || null,
+      client.id,
+      body.store_id || null,
+      body.cash_register || null,
+      body.cashier || null,
+      totalCents,
+      eligibleCents,
+      excludedCents,
+      starsAccrued,
+      Number(body.stars_spent || 0),
+      JSON.stringify(body.club_conditions || []),
+      purchasedAt,
+      nowIso()
+    );
 
-    const insertItem = db.prepare(`INSERT INTO receipt_items(receipt_id, product_id, external_product_id, name, category, qty, price_cents, line_total_cents, is_alcohol, is_tobacco, is_min_margin, no_star_accrual, no_redeem)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    for (const item of items) {
-      const flags = item.flags || item;
-      insertItem.run(body.id, item.product_id || null, item.external_product_id || null, item.name || 'Товар', item.category || null, Number(item.qty || 1), Math.round(Number(item.price_cents || 0)), Math.round(Number(item.line_total_cents || item.total_cents || 0)), flags.is_alcohol ? 1 : 0, flags.is_tobacco ? 1 : 0, flags.is_min_margin ? 1 : 0, flags.no_star_accrual ? 1 : 0, flags.no_redeem ? 1 : 0);
-    }
-    if (starsAccrued > 0) awardStars(client.id, 'purchase_accrual', starsAccrued, 'receipt', `+${starsAccrued} ⭐ за покупку`, body.id, null);
-    db.prepare('UPDATE clients SET last_purchase_at = ?, updated_at = ? WHERE id = ?').run(purchasedAt, nowIso(), client.id);
-    addChallengeVisit(client.id, body.id, purchasedAt, totalCents, items);
-    updateStampProgress(client.id, body.id, items);
-    logAudit({ actorType: '1c', actorId: body.store_id || '1c', action: 'receipt_imported', entityType: 'receipt', entityId: body.id, payload: { starsAccrued, eligibleCents } });
+  const insertItem = db.prepare(`INSERT INTO receipt_items(receipt_id, product_id, external_product_id, name, category, qty, price_cents, line_total_cents, is_alcohol, is_tobacco, is_min_margin, no_star_accrual, no_redeem)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
+  for (const item of items) {
+    const flags = item.flags || item;
+
+    insertItem.run(
+      body.id,
+      item.product_id || null,
+      item.external_product_id || null,
+      item.name || 'Товар',
+      item.category || null,
+      Number(item.qty || 1),
+      Math.round(Number(item.price_cents || 0)),
+      Math.round(Number(item.line_total_cents || item.total_cents || 0)),
+      flags.is_alcohol ? 1 : 0,
+      flags.is_tobacco ? 1 : 0,
+      flags.is_min_margin ? 1 : 0,
+      flags.no_star_accrual ? 1 : 0,
+      flags.no_redeem ? 1 : 0
+    );
+  }
+
+  if (starsAccrued > 0) {
+    awardStars(
+      client.id,
+      'purchase_accrual',
+      starsAccrued,
+      'receipt',
+      `+${starsAccrued} ⭐ за покупку`,
+      body.id,
+      null
+    );
+  }
+
+  db.prepare('UPDATE clients SET last_purchase_at = ?, updated_at = ? WHERE id = ?')
+    .run(purchasedAt, nowIso(), client.id);
+
+  addChallengeVisit(client.id, body.id, purchasedAt, totalCents, items);
+  updateStampProgress(client.id, body.id, items);
+
+  logAudit({
+    actorType: '1c',
+    actorId: body.store_id || '1c',
+    action: 'receipt_imported',
+    entityType: 'receipt',
+    entityId: body.id,
+    payload: { starsAccrued, eligibleCents }
   });
-  tx();
 
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
   res.json({ ok: true, duplicate: false, receipt_id: body.id, stars_accrued: starsAccrued, balance: fresh.stars_balance });
