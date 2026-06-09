@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Star Club Admin</title>
+  <link rel="stylesheet" href="/admin.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span>★</span><b>Star Club</b><small>Admin panel</small></div>
+    <button data-tab="dashboard" class="active">Аналітика</button>
+    <button data-tab="clients">Клієнти</button>
+    <button data-tab="rewards">Товари за зірки</button>
+    <button data-tab="offers">Пропозиції</button>
+    <button data-tab="challenges">Челенджі</button>
+    <button data-tab="stamps">Накопичувальні</button>
+    <button data-tab="news">Новини</button>
+    <button data-tab="qrs">QR за зірки</button>
+    <button data-tab="audit">Журнал</button>
+    <a href="/" target="_blank">Mini App</a>
+  </aside>
+  <main>
+    <header>
+      <h1 id="title">Аналітика</h1>
+      <input id="apiKey" placeholder="ADMIN_API_KEY" />
+      <button id="saveKey">Зберегти ключ</button>
+    </header>
+    <section id="content"></section>
+  </main>
+  <script type="module" src="/admin.js"></script>
+</body>
+</html>
