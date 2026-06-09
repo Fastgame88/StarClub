@@ -138,3 +138,7 @@ label.check input { width: 18px; height: 18px; accent-color: var(--gold); flex: 
   border-color: var(--line);
   background: rgba(228,183,95,.08);
 }
+.topbar-spacer{width:48px;height:48px;display:block}
+.manual-code{margin:14px 0;padding:14px;border:1px dashed rgba(228,183,95,.45);border-radius:18px;background:rgba(228,183,95,.08);display:grid;gap:8px;text-align:center}
+.manual-code span{color:var(--muted);font-size:13px}.manual-code b{font-size:26px;letter-spacing:2px;color:var(--gold)}
+.modal .mini-btn{margin:0 auto;text-align:center}

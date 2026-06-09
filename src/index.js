@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
 import bwipjs from 'bwip-js';
@@ -213,6 +214,57 @@ function findClientForOneC({ card_number, card_token, phone }) {
   return null;
 }
 
+function rewardQrManualCode(token) {
+  return String(token || '').replace(/^SCR[_-]?/i, '').toUpperCase();
+}
+
+function expireRewardQrs() {
+  const now = nowIso();
+  const expired = db.prepare("SELECT * FROM reward_qrs WHERE status = 'reserved' AND expires_at <= ?").all(now);
+  for (const qr of expired) {
+    db.prepare("UPDATE reward_qrs SET status = 'expired', canceled_at = ? WHERE id = ? AND status = 'reserved'").run(now, qr.id);
+    logAudit({ actorType: 'system', actorId: 'system', action: 'reward_qr_expired', entityType: 'reward_qr', entityId: String(qr.id), payload: { stars_reserved: qr.stars_reserved } });
+  }
+  return expired.length;
+}
+
+function getActiveRewardQr(clientId, rewardProductId) {
+  expireRewardQrs();
+  return db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.conditions
+    FROM reward_qrs q JOIN reward_products r ON r.id = q.reward_product_id
+    WHERE q.client_id = ? AND q.reward_product_id = ? AND q.status = 'reserved' AND q.expires_at > ?
+    ORDER BY q.created_at DESC LIMIT 1`).get(clientId, rewardProductId, nowIso());
+}
+
+function normalizeAdminOfferBody(body = {}) {
+  const type = body.type || 'club';
+  const uahToCents = (value) => {
+    if (value === undefined || value === null || value === '') return null;
+    return Math.round(Number(value) * 100);
+  };
+  const tiers = [];
+  for (const n of [1, 2, 3]) {
+    const value = body[`tier_${n}_price`];
+    if (value !== undefined && value !== null && value !== '') tiers.push({ qty: n, price: Number(value) });
+  }
+  return {
+    type,
+    name: String(body.name || '').trim(),
+    description: body.description || null,
+    image_url: body.image_url || '/assets/star.svg',
+    product_external_id: body.product_external_id || null,
+    category: body.category || null,
+    club_price_cents: type === 'club' ? uahToCents(body.club_price_uah ?? body.club_price_cents) : null,
+    old_price_cents: type === 'club' ? uahToCents(body.old_price_uah ?? body.old_price_cents) : null,
+    stars_multiplier: type === 'stars_multiplier' ? Number(body.stars_multiplier || 2) : null,
+    tiers_json: type === 'wholesale' ? JSON.stringify(tiers.length ? tiers : (Array.isArray(body.tiers) ? body.tiers : [])) : null,
+    store_id: body.store_id || 'all',
+    audience: body.audience || 'all',
+    active_from: body.active_from || nowIso(),
+    active_to: body.active_to || null
+  };
+}
+
 app.get('/health', (req, res) => res.json({ ok: true, service: 'star-club', time: nowIso() }));
 
 app.get('/api/public/stores', (req, res) => {
@@ -283,6 +335,7 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 app.get('/api/client/me', clientAuth, (req, res) => {
+  expireRewardQrs();
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
   res.json({ ok: true, client: formatClient(fresh) });
 });
@@ -356,6 +409,7 @@ app.get('/api/client/stores', clientAuth, (req, res) => {
 });
 
 app.get('/api/client/card', clientAuth, (req, res) => {
+  expireRewardQrs();
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
   res.json({ ok: true, card: {
     name: client.name || 'Клієнт Star Club',
@@ -378,22 +432,37 @@ app.get('/api/client/receipts', clientAuth, (req, res) => {
 });
 
 app.get('/api/client/rewards', clientAuth, (req, res) => {
+  expireRewardQrs();
   const items = db.prepare('SELECT * FROM reward_products WHERE is_active = 1 ORDER BY stars_price ASC').all();
   const available = getClientAvailableStars(req.client.id);
   res.json({ ok: true, available_stars: available, items: items.map((item) => ({ ...item, can_get: available >= item.stars_price })) });
 });
 
 app.post('/api/client/rewards/:id/create-qr', clientAuth, (req, res) => {
+  expireRewardQrs();
   const reward = db.prepare('SELECT * FROM reward_products WHERE id = ? AND is_active = 1').get(req.params.id);
   if (!reward) return res.status(404).json({ ok: false, error: 'REWARD_NOT_FOUND' });
+
+  const existing = getActiveRewardQr(req.client.id, reward.id);
+  if (existing) {
+    return res.json({ ok: true, reused: true, qr: {
+      id: existing.id,
+      token: existing.token,
+      manual_code: rewardQrManualCode(existing.token),
+      status: existing.status,
+      expires_at: existing.expires_at,
+      reward
+    } });
+  }
+
   const available = getClientAvailableStars(req.client.id);
   if (available < reward.stars_price) return res.status(400).json({ ok: false, error: 'NOT_ENOUGH_STARS', available_stars: available });
-  const token = randomToken('SCR_');
+  const token = `SCR-${crypto.randomUUID ? crypto.randomUUID().slice(0, 8).toUpperCase() : Math.random().toString(36).slice(2, 10).toUpperCase()}`;
   const expires = new Date(Date.now() + 1000 * 60 * 15).toISOString();
   const result = db.prepare(`INSERT INTO reward_qrs(client_id, reward_product_id, token, status, stars_reserved, created_at, expires_at)
     VALUES(?, ?, ?, 'reserved', ?, ?, ?)`).run(req.client.id, reward.id, token, reward.stars_price, nowIso(), expires);
-  logAudit({ actorType: 'client', actorId: String(req.client.id), action: 'reward_qr_created', entityType: 'reward_qr', entityId: String(result.lastInsertRowid), payload: { reward: reward.name, stars: reward.stars_price } });
-  res.json({ ok: true, qr: { id: result.lastInsertRowid, token, status: 'reserved', expires_at: expires, reward } });
+  logAudit({ actorType: 'client', actorId: String(req.client.id), action: 'reward_qr_created', entityType: 'reward_qr', entityId: String(result.lastInsertRowid), payload: { reward: reward.name, stars: reward.stars_price, token } });
+  res.json({ ok: true, qr: { id: result.lastInsertRowid, token, manual_code: rewardQrManualCode(token), status: 'reserved', expires_at: expires, reward } });
 });
 
 app.get('/api/client/offers', clientAuth, (req, res) => {
@@ -536,7 +605,9 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
 });
 
 app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
-  const token = String(req.body?.token || '').trim();
+  const rawToken = String(req.body?.token || req.body?.manual_code || '').trim();
+  const token = rawToken.toUpperCase().startsWith('SCR-') || rawToken.toUpperCase().startsWith('SCR_') ? rawToken : `SCR-${rawToken}`;
+  expireRewardQrs();
   const row = db.prepare(`SELECT q.*, r.name, r.stars_price, r.product_external_id, c.card_number, c.phone, c.name AS client_name
     FROM reward_qrs q JOIN reward_products r ON r.id = q.reward_product_id JOIN clients c ON c.id = q.client_id WHERE q.token = ?`).get(token);
   if (!row) return res.status(404).json({ ok: false, valid: false, error: 'QR_NOT_FOUND' });
@@ -551,37 +622,36 @@ app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
     product_external_id: row.product_external_id,
     qty: 1,
     stars_to_spend: row.stars_reserved,
+    manual_code: rewardQrManualCode(row.token),
     expires_at: row.expires_at,
     client: { card_number: row.card_number, phone: row.phone, name: row.client_name }
   } });
 });
 
 app.post('/api/1c/reward-qr/finalize', oneCAuth, (req, res) => {
-  const token = String(req.body?.token || '').trim();
+  const rawToken = String(req.body?.token || req.body?.manual_code || '').trim();
+  const token = rawToken.toUpperCase().startsWith('SCR-') || rawToken.toUpperCase().startsWith('SCR_') ? rawToken : `SCR-${rawToken}`;
   const receiptId = String(req.body?.receipt_id || '').trim();
   if (!receiptId) return res.status(400).json({ ok: false, error: 'RECEIPT_ID_REQUIRED' });
   const row = db.prepare(`SELECT q.*, r.name FROM reward_qrs q JOIN reward_products r ON r.id = q.reward_product_id WHERE q.token = ?`).get(token);
   if (!row) return res.status(404).json({ ok: false, error: 'QR_NOT_FOUND' });
   if (row.status !== 'reserved') return res.status(400).json({ ok: false, error: 'QR_STATUS_' + row.status.toUpperCase() });
   if (new Date(row.expires_at).getTime() < Date.now()) return res.status(400).json({ ok: false, error: 'QR_EXPIRED' });
-  const tx = db.transaction(() => {
-    const balance = awardStars(row.client_id, 'reward_spend', -Math.abs(row.stars_reserved), 'reward_qr', `-${row.stars_reserved} ⭐ ${row.name} за зірки`, receiptId, row.id);
-    db.prepare('UPDATE reward_qrs SET status = ?, receipt_id = ?, used_at = ? WHERE id = ?').run('used', receiptId, nowIso(), row.id);
-    db.prepare('UPDATE reward_products SET issued_count = issued_count + 1, updated_at = ? WHERE id = ?').run(nowIso(), row.reward_product_id);
-    logAudit({ actorType: '1c', actorId: req.body?.store_id || '1c', action: 'reward_qr_finalized', entityType: 'reward_qr', entityId: String(row.id), payload: { receiptId, balance } });
-    return balance;
-  });
-  const balance = tx();
+  const balance = awardStars(row.client_id, 'reward_spend', -Math.abs(row.stars_reserved), 'reward_qr', `-${row.stars_reserved} ⭐ ${row.name} за зірки`, receiptId, row.id);
+  db.prepare('UPDATE reward_qrs SET status = ?, receipt_id = ?, used_at = ? WHERE id = ?').run('used', receiptId, nowIso(), row.id);
+  db.prepare('UPDATE reward_products SET issued_count = issued_count + 1, updated_at = ? WHERE id = ?').run(nowIso(), row.reward_product_id);
+  logAudit({ actorType: '1c', actorId: req.body?.store_id || '1c', action: 'reward_qr_finalized', entityType: 'reward_qr', entityId: String(row.id), payload: { receiptId, balance } });
   res.json({ ok: true, status: 'used', balance });
 });
 
 app.post('/api/1c/reward-qr/cancel', oneCAuth, (req, res) => {
-  const token = String(req.body?.token || '').trim();
+  const rawToken = String(req.body?.token || req.body?.manual_code || '').trim();
+  const token = rawToken.toUpperCase().startsWith('SCR-') || rawToken.toUpperCase().startsWith('SCR_') ? rawToken : `SCR-${rawToken}`;
   const row = db.prepare('SELECT * FROM reward_qrs WHERE token = ?').get(token);
   if (!row) return res.status(404).json({ ok: false, error: 'QR_NOT_FOUND' });
-  if (row.status !== 'reserved') return res.status(400).json({ ok: false, error: 'QR_STATUS_' + row.status.toUpperCase() });
+  if (row.status !== 'reserved') return res.json({ ok: true, status: row.status });
   db.prepare('UPDATE reward_qrs SET status = ?, canceled_at = ? WHERE id = ?').run('canceled', nowIso(), row.id);
-  logAudit({ actorType: '1c', actorId: req.body?.store_id || '1c', action: 'reward_qr_canceled', entityType: 'reward_qr', entityId: String(row.id), payload: req.body });
+  logAudit({ actorType: '1c', actorId: req.body?.store_id || '1c', action: 'reward_qr_canceled', entityType: 'reward_qr', entityId: String(row.id), payload: { reason: req.body?.reason || 'cancel' } });
   res.json({ ok: true, status: 'canceled' });
 });
 
@@ -596,14 +666,11 @@ app.post('/api/1c/returns', oneCAuth, (req, res) => {
   if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
   const eligibleCents = calculateEligibleCents(body.items || [], body.eligible_cents);
   const starsToCancel = Math.floor(eligibleCents / 100);
-  const tx = db.transaction(() => {
-    db.prepare(`INSERT INTO receipts(id, fiscal_number, client_id, store_id, cash_register, cashier, total_cents, eligible_cents, excluded_cents, stars_accrued, stars_spent, is_return, original_receipt_id, purchased_at, created_at)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)`)
-      .run(body.id, body.fiscal_number || null, client.id, body.store_id || original.store_id, body.cash_register || null, body.cashier || null, Math.round(Number(body.total_cents || 0)), eligibleCents, 0, -starsToCancel, body.original_receipt_id, body.returned_at || nowIso(), nowIso());
-    if (starsToCancel > 0) awardStars(client.id, 'return_cancel', -starsToCancel, 'return', `-${starsToCancel} ⭐ скасування через повернення`, body.id, null);
-    logAudit({ actorType: '1c', actorId: body.store_id || '1c', action: 'return_imported', entityType: 'receipt', entityId: body.id, payload: { original: body.original_receipt_id, starsToCancel } });
-  });
-  tx();
+  db.prepare(`INSERT INTO receipts(id, fiscal_number, client_id, store_id, cash_register, cashier, total_cents, eligible_cents, excluded_cents, stars_accrued, stars_spent, is_return, original_receipt_id, purchased_at, created_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)`)
+    .run(body.id, body.fiscal_number || null, client.id, body.store_id || original.store_id, body.cash_register || null, body.cashier || null, Math.round(Number(body.total_cents || 0)), eligibleCents, 0, -starsToCancel, body.original_receipt_id, body.returned_at || nowIso(), nowIso());
+  if (starsToCancel > 0) awardStars(client.id, 'return_cancel', -starsToCancel, 'return', `-${starsToCancel} ⭐ скасування через повернення`, body.id, null);
+  logAudit({ actorType: '1c', actorId: body.store_id || '1c', action: 'return_imported', entityType: 'receipt', entityId: body.id, payload: { original: body.original_receipt_id, starsToCancel } });
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
   res.json({ ok: true, return_id: body.id, stars_canceled: starsToCancel, balance: fresh.stars_balance });
 });
@@ -613,26 +680,23 @@ app.post('/api/1c/products/sync', oneCAuth, (req, res) => {
   const upsert = db.prepare(`INSERT INTO products(external_id, id, name, category, image_url, price_cents, is_alcohol, is_tobacco, is_min_margin, no_star_accrual, no_redeem, updated_at)
     VALUES(@external_id, @id, @name, @category, @image_url, @price_cents, @is_alcohol, @is_tobacco, @is_min_margin, @no_star_accrual, @no_redeem, @updated_at)
     ON CONFLICT(external_id) DO UPDATE SET name = excluded.name, category = excluded.category, image_url = excluded.image_url, price_cents = excluded.price_cents, is_alcohol = excluded.is_alcohol, is_tobacco = excluded.is_tobacco, is_min_margin = excluded.is_min_margin, no_star_accrual = excluded.no_star_accrual, no_redeem = excluded.no_redeem, updated_at = excluded.updated_at`);
-  const tx = db.transaction(() => {
-    for (const p of products) {
-      const flags = p.flags || p;
-      upsert.run({
-        external_id: String(p.external_id),
-        id: String(p.external_id),
-        name: p.name || 'Товар',
-        category: p.category || null,
-        image_url: p.image_url || null,
-        price_cents: Math.round(Number(p.price_cents || 0)),
-        is_alcohol: flags.is_alcohol ? 1 : 0,
-        is_tobacco: flags.is_tobacco ? 1 : 0,
-        is_min_margin: flags.is_min_margin ? 1 : 0,
-        no_star_accrual: flags.no_star_accrual ? 1 : 0,
-        no_redeem: flags.no_redeem ? 1 : 0,
-        updated_at: nowIso()
-      });
-    }
-  });
-  tx();
+  for (const p of products) {
+    const flags = p.flags || p;
+    upsert.run({
+      external_id: String(p.external_id),
+      id: String(p.external_id),
+      name: p.name || 'Товар',
+      category: p.category || null,
+      image_url: p.image_url || null,
+      price_cents: Math.round(Number(p.price_cents || 0)),
+      is_alcohol: flags.is_alcohol ? 1 : 0,
+      is_tobacco: flags.is_tobacco ? 1 : 0,
+      is_min_margin: flags.is_min_margin ? 1 : 0,
+      no_star_accrual: flags.no_star_accrual ? 1 : 0,
+      no_redeem: flags.no_redeem ? 1 : 0,
+      updated_at: nowIso()
+    });
+  }
   res.json({ ok: true, synced: products.length });
 });
 
@@ -682,27 +746,11 @@ app.get('/api/admin/catalog/offers', adminAuth, (req, res) => {
 });
 
 app.post('/api/admin/catalog/offers', adminAuth, (req, res) => {
-  const b = req.body || {};
-  if (!b.name || !b.type) return res.status(400).json({ ok: false, error: 'TYPE_AND_NAME_REQUIRED' });
+  const row = normalizeAdminOfferBody(req.body || {});
+  if (!row.name || !row.type) return res.status(400).json({ ok: false, error: 'TYPE_AND_NAME_REQUIRED' });
   const t = nowIso();
-  const row = {
-    type: b.type,
-    name: String(b.name).trim(),
-    description: b.description || null,
-    image_url: b.image_url || '/assets/star.svg',
-    product_external_id: b.product_external_id || null,
-    category: b.category || null,
-    club_price_cents: b.club_price_cents ? Math.round(Number(b.club_price_cents)) : null,
-    old_price_cents: b.old_price_cents ? Math.round(Number(b.old_price_cents)) : null,
-    stars_multiplier: b.stars_multiplier ? Number(b.stars_multiplier) : null,
-    tiers_json: Array.isArray(b.tiers) ? JSON.stringify(b.tiers) : (b.tiers_json || null),
-    store_id: b.store_id || 'all',
-    audience: b.audience || 'all',
-    active_from: b.active_from || t,
-    active_to: b.active_to || null,
-    created_at: t,
-    updated_at: t
-  };
+  row.created_at = t;
+  row.updated_at = t;
   const result = db.prepare(`INSERT INTO offers(type, name, description, image_url, product_external_id, category, club_price_cents, old_price_cents, stars_multiplier, tiers_json, store_id, audience, active_from, active_to, created_at, updated_at)
     VALUES(@type, @name, @description, @image_url, @product_external_id, @category, @club_price_cents, @old_price_cents, @stars_multiplier, @tiers_json, @store_id, @audience, @active_from, @active_to, @created_at, @updated_at)`).run(row);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'offer_created', entityType: 'offer', entityId: String(result.lastInsertRowid), payload: row });
@@ -750,6 +798,80 @@ app.post('/api/admin/catalog/news', adminAuth, (req, res) => {
     .run(b.title, b.text, b.image_url || '/assets/star.svg', b.tag || 'STAR CLUB', b.is_active === false ? 0 : 1, nowIso());
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'news_created', entityType: 'news', entityId: String(result.lastInsertRowid), payload: b });
   res.json({ ok: true, id: result.lastInsertRowid });
+});
+
+
+app.delete('/api/admin/catalog/rewards/:id', adminAuth, (req, res) => {
+  const existing = db.prepare('SELECT * FROM reward_products WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'REWARD_NOT_FOUND' });
+  db.prepare('UPDATE reward_products SET is_active = 0, updated_at = ? WHERE id = ?').run(nowIso(), req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'reward_product_deleted', entityType: 'reward_product', entityId: req.params.id, payload: {} });
+  res.json({ ok: true });
+});
+
+app.patch('/api/admin/catalog/offers/:id', adminAuth, (req, res) => {
+  const existing = db.prepare('SELECT * FROM offers WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'OFFER_NOT_FOUND' });
+  const row = { ...existing, ...normalizeAdminOfferBody(req.body || {}) };
+  if (!row.name) return res.status(400).json({ ok: false, error: 'NAME_REQUIRED' });
+  db.prepare(`UPDATE offers SET type=?, name=?, description=?, image_url=?, product_external_id=?, category=?, club_price_cents=?, old_price_cents=?, stars_multiplier=?, tiers_json=?, store_id=?, audience=?, active_from=?, active_to=?, is_active=?, updated_at=? WHERE id=?`)
+    .run(row.type, row.name, row.description, row.image_url, row.product_external_id, row.category, row.club_price_cents, row.old_price_cents, row.stars_multiplier, row.tiers_json, row.store_id, row.audience, row.active_from, row.active_to, req.body?.is_active === undefined ? existing.is_active : (req.body.is_active ? 1 : 0), nowIso(), req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'offer_updated', entityType: 'offer', entityId: req.params.id, payload: req.body });
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/catalog/offers/:id', adminAuth, (req, res) => {
+  db.prepare('UPDATE offers SET is_active = 0, updated_at = ? WHERE id = ?').run(nowIso(), req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'offer_deleted', entityType: 'offer', entityId: req.params.id, payload: {} });
+  res.json({ ok: true });
+});
+
+app.patch('/api/admin/catalog/challenges/:id', adminAuth, (req, res) => {
+  const existing = db.prepare('SELECT * FROM challenges WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'CHALLENGE_NOT_FOUND' });
+  const b = req.body || {};
+  db.prepare(`UPDATE challenges SET name=?, description=?, required_visits=?, min_total_cents=?, reward_stars=?, period_type=?, store_id=?, category=?, is_repeatable=?, is_active=?, active_from=?, active_to=? WHERE id=?`)
+    .run(b.name ?? existing.name, b.description ?? existing.description, Number(b.required_visits ?? existing.required_visits), Math.round(Number(b.min_total_cents ?? existing.min_total_cents)), Number(b.reward_stars ?? existing.reward_stars), b.period_type ?? existing.period_type, b.store_id ?? existing.store_id, b.category ?? existing.category, b.is_repeatable === undefined ? existing.is_repeatable : (b.is_repeatable ? 1 : 0), b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), b.active_from ?? existing.active_from, b.active_to ?? existing.active_to, req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'challenge_updated', entityType: 'challenge', entityId: req.params.id, payload: b });
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/catalog/challenges/:id', adminAuth, (req, res) => {
+  db.prepare('UPDATE challenges SET is_active = 0 WHERE id = ?').run(req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'challenge_deleted', entityType: 'challenge', entityId: req.params.id, payload: {} });
+  res.json({ ok: true });
+});
+
+app.patch('/api/admin/catalog/stamps/:id', adminAuth, (req, res) => {
+  const existing = db.prepare('SELECT * FROM stamp_programs WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'STAMP_NOT_FOUND' });
+  const b = req.body || {};
+  db.prepare('UPDATE stamp_programs SET code=?, name=?, category=?, required_qty=?, reward_stars=?, is_repeatable=?, is_active=? WHERE id=?')
+    .run(b.code ?? existing.code, b.name ?? existing.name, b.category ?? existing.category, Number(b.required_qty ?? existing.required_qty), Number(b.reward_stars ?? existing.reward_stars), b.is_repeatable === undefined ? existing.is_repeatable : (b.is_repeatable ? 1 : 0), b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'stamp_program_updated', entityType: 'stamp_program', entityId: req.params.id, payload: b });
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/catalog/stamps/:id', adminAuth, (req, res) => {
+  db.prepare('UPDATE stamp_programs SET is_active = 0 WHERE id = ?').run(req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'stamp_program_deleted', entityType: 'stamp_program', entityId: req.params.id, payload: {} });
+  res.json({ ok: true });
+});
+
+app.patch('/api/admin/catalog/news/:id', adminAuth, (req, res) => {
+  const existing = db.prepare('SELECT * FROM news WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'NEWS_NOT_FOUND' });
+  const b = req.body || {};
+  db.prepare('UPDATE news SET title=?, text=?, image_url=?, tag=?, is_active=? WHERE id=?')
+    .run(b.title ?? existing.title, b.text ?? existing.text, b.image_url ?? existing.image_url, b.tag ?? existing.tag, b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'news_updated', entityType: 'news', entityId: req.params.id, payload: b });
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/catalog/news/:id', adminAuth, (req, res) => {
+  db.prepare('UPDATE news SET is_active = 0 WHERE id = ?').run(req.params.id);
+  logAudit({ actorType: 'admin', actorId: 'admin', action: 'news_deleted', entityType: 'news', entityId: req.params.id, payload: {} });
+  res.json({ ok: true });
 });
 
 app.get('/api/admin/settings', adminAuth, (req, res) => {
@@ -804,6 +926,7 @@ app.post('/api/admin/clients/:id/adjust-stars', adminAuth, (req, res) => {
 });
 
 app.get('/api/admin/reward-qrs', adminAuth, (req, res) => {
+  expireRewardQrs();
   const rows = db.prepare(`SELECT q.*, c.name AS client_name, c.phone, r.name AS reward_name FROM reward_qrs q JOIN clients c ON c.id = q.client_id JOIN reward_products r ON r.id = q.reward_product_id ORDER BY q.created_at DESC LIMIT 200`).all();
   res.json({ ok: true, qrs: rows });
 });

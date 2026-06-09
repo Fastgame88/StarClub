@@ -110,7 +110,7 @@ function header(title, back = false) {
     <div class="topbar">
       <button class="icon-btn" data-back="${back ? 1 : 0}">${back ? '‹' : '<span class="gold">★</span>'}</button>
       <h2>${title}</h2>
-      <button class="icon-btn">♧</button>
+      <span class="topbar-spacer"></span>
     </div>
   `;
 }
@@ -217,7 +217,7 @@ function homeScreen() {
   return `
     <div class="topbar">
       <h1>Вітаємо, ${c.name || 'друже'}! 👋</h1>
-      <button class="icon-btn">♧</button>
+      <span class="topbar-spacer"></span>
     </div>
     <div class="stack">
       <section class="card balance-card spark">
@@ -322,7 +322,7 @@ function rewardsScreen() {
     <div class="stack">
       <section class="card gold-border spark">
         <b>Оберіть улюблені нагороди за зірки</b>
-        <p class="small">Доступно: ${fmtStars(data?.available_stars || 0)} ★. Гривневий еквівалент не показується.</p>
+        <p class="small">Доступно: ${fmtStars(data?.available_stars || 0)} ★</p>
       </section>
       ${items.map((r) => `
         <article class="product">
@@ -499,24 +499,39 @@ function profileScreen() {
       </section>
       <button class="btn" data-route="register">Редагувати профіль</button>
       <button class="btn secondary" data-logout>Вийти з демо-сесії</button>
-      <section class="card"><b>Правила програми</b><p class="small">Зірки — внутрішня валюта Star Club. У клієнтському інтерфейсі не показується гривневий еквівалент зірок. Алкоголь і тютюн не беруть участі в нарахуванні/списанні без окремої юридичної перевірки.</p></section>
     </div>
   `;
 }
 
 function showRewardModal(qr) {
+  const manualCode = qr.manual_code || String(qr.token || '').replace(/^SCR[-_]?/i, '').toUpperCase();
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop';
   wrap.innerHTML = `
     <div class="modal">
-      <h2>QR для касира</h2>
+      <h2>Код для касира</h2>
       <p class="small">${qr.reward.name} · ${fmtStars(qr.reward.stars_price)} ★</p>
       <div class="qrbox"><img src="/api/svg/qr?text=${encodeURIComponent(qr.token)}" alt="QR"></div>
-      <p class="small">Діє до ${fmtTime(qr.expires_at)}. QR одноразовий, після використання стає недійсним.</p>
-      <button class="btn" data-close-modal>Готово</button>
+      <div class="manual-code">
+        <span>Код для ручного введення</span>
+        <b>${manualCode}</b>
+        <button class="mini-btn" data-copy-code type="button">Скопіювати</button>
+      </div>
+      <p class="small">Діє до ${fmtTime(qr.expires_at)}. Якщо касир не використає код до цього часу, резерв зірок скасується автоматично.</p>
+      <button class="btn" data-close-modal type="button">Готово</button>
     </div>
   `;
   document.body.appendChild(wrap);
+  wrap.querySelector('[data-close-modal]').onclick = () => wrap.remove();
+  wrap.onclick = (e) => { if (e.target === wrap) wrap.remove(); };
+  wrap.querySelector('[data-copy-code]').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(manualCode);
+      toast('Код скопійовано');
+    } catch {
+      toast(manualCode);
+    }
+  };
 }
 
 async function render() {
@@ -589,6 +604,7 @@ function bindEvents() {
     try {
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });
       showRewardModal(data.qr);
+      await loadRewards();
       const me = await api('/api/client/me');
       state.client = me.client;
       renderNav();
