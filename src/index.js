@@ -495,6 +495,47 @@ app.get('/api/svg/barcode', async (req, res) => {
 });
 
 // ---------------- 1C REST API ----------------
+
+app.get('/api/1c/clients', oneCAuth, (req, res) => {
+  expireReservedRewardQrs();
+  const limit = Math.min(1000, Math.max(1, Number(req.query.limit || 500)));
+  const since = String(req.query.since || '').trim();
+  const q = String(req.query.q || '').trim();
+  let rows;
+  if (q) {
+    rows = db.prepare(`SELECT * FROM clients
+      WHERE is_blocked = 0 AND (name LIKE ? OR phone LIKE ? OR card_number LIKE ?)
+      ORDER BY updated_at DESC LIMIT ?`).all(`%${q}%`, `%${q}%`, `%${q}%`, limit);
+  } else if (since) {
+    rows = db.prepare(`SELECT * FROM clients
+      WHERE is_blocked = 0 AND COALESCE(updated_at, created_at, registered_at) >= ?
+      ORDER BY updated_at DESC LIMIT ?`).all(since, limit);
+  } else {
+    rows = db.prepare(`SELECT * FROM clients
+      WHERE is_blocked = 0
+      ORDER BY updated_at DESC LIMIT ?`).all(limit);
+  }
+
+  const clients = rows.map((client) => ({
+    id: client.id,
+    name: client.name || '',
+    phone: client.phone || '',
+    email: client.email || '',
+    birth_date: client.birth_date || '',
+    favorite_store: client.favorite_store || '',
+    card_number: client.card_number,
+    card_token: client.card_token,
+    barcode: normalizeCard(client.card_number),
+    stars_balance: client.stars_balance || 0,
+    available_stars: getClientAvailableStars(client.id),
+    status: client.is_blocked ? 'blocked' : 'active',
+    registered_at: client.registered_at,
+    updated_at: client.updated_at || client.created_at || client.registered_at
+  }));
+
+  res.json({ ok: true, count: clients.length, clients });
+});
+
 app.get('/api/1c/client/search', oneCAuth, (req, res) => {
   expireReservedRewardQrs();
   const client = findClientForOneC(req.query);
