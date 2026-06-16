@@ -518,7 +518,10 @@ function showRewardModal(qr) {
         <button type="button" class="mini-copy" data-copy-code="${manualCode}">Скопіювати</button>
       </div>
       <p class="small">Код діє до ${fmtTime(qr.expires_at)}. Його можна використати тільки один раз.</p>
-      <button class="btn" type="button" data-close-modal>Готово</button>
+      <div class="modal-actions">
+        <button class="btn secondary" type="button" data-cancel-reward-code="${manualCode}">Скасувати код</button>
+        <button class="btn" type="button" data-close-modal>Готово</button>
+      </div>
     </div>
   `;
   document.body.appendChild(wrap);
@@ -591,6 +594,18 @@ function bindEvents() {
   document.querySelectorAll('[data-show-cashier]').forEach((el) => el.onclick = () => toast('Покажіть QR-код або штрихкод касиру'));
   document.querySelectorAll('[data-close-modal]').forEach((el) => el.onclick = () => el.closest('.modal-backdrop')?.remove());
   document.querySelectorAll('[data-copy-code]').forEach((el) => el.onclick = async () => { try { await navigator.clipboard.writeText(el.dataset.copyCode); toast('Код скопійовано'); } catch { toast(el.dataset.copyCode); } });
+  document.querySelectorAll('[data-cancel-reward-code]').forEach((el) => el.onclick = async () => {
+    try {
+      await api('/api/client/reward-qr/cancel', { method: 'POST', body: JSON.stringify({ token: el.dataset.cancelRewardCode }) });
+      toast('Код скасовано, зірки знову доступні');
+      el.closest('.modal-backdrop')?.remove();
+      await loadRewards();
+      const me = await api('/api/client/me');
+      state.client = me.client;
+      renderNav();
+      if (state.route === 'rewards') render();
+    } catch (e) { toast(e.message); }
+  });
   document.querySelectorAll('[data-create-reward]').forEach((el) => el.onclick = async () => {
     try {
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });

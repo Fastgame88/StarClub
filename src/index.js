@@ -463,6 +463,22 @@ app.post('/api/client/rewards/:id/create-qr', clientAuth, (req, res) => {
   res.json({ ok: true, reused: false, qr: formatRewardQr(row) });
 });
 
+app.post('/api/client/reward-qr/cancel', clientAuth, (req, res) => {
+  const token = String(req.body?.token || req.body?.manual_code || req.body?.code || '').trim();
+  if (!token) return res.status(400).json({ ok: false, error: 'TOKEN_REQUIRED' });
+
+  expireReservedRewardQrs(req.client.id);
+
+  const row = db.prepare('SELECT * FROM reward_qrs WHERE token = ? AND client_id = ?').get(token, req.client.id);
+  if (!row) return res.status(404).json({ ok: false, error: 'QR_NOT_FOUND' });
+  if (row.status !== 'reserved') return res.status(400).json({ ok: false, error: 'QR_STATUS_' + row.status.toUpperCase(), status: row.status });
+
+  db.prepare('UPDATE reward_qrs SET status = ?, canceled_at = ? WHERE id = ?').run('canceled', nowIso(), row.id);
+  logAudit({ actorType: 'client', actorId: String(req.client.id), action: 'reward_qr_canceled_by_client', entityType: 'reward_qr', entityId: String(row.id), payload: { token } });
+  const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
+  res.json({ ok: true, status: 'canceled', balance: fresh.stars_balance, available_stars: getClientAvailableStars(req.client.id) });
+});
+
 app.get('/api/client/offers', clientAuth, (req, res) => {
   const rows = db.prepare('SELECT * FROM offers WHERE is_active = 1 ORDER BY id DESC').all();
   res.json({ ok: true, offers: rows.map((o) => ({ ...o, tiers: o.tiers_json ? JSON.parse(o.tiers_json) : null })) });
@@ -663,10 +679,14 @@ app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
 
   expireReservedRewardQrs();
 
-  const row = db.prepare(`SELECT q.*, r.name, r.stars_price, r.product_external_id, r.store_id, r.conditions, c.card_number, c.phone, c.name AS client_name, c.stars_balance
+  const row = db.prepare(`SELECT q.*, r.name, r.stars_price, r.product_external_id, r.store_id, r.conditions,
+      COALESCE(p.price_cents, 0) AS product_price_cents,
+      p.name AS product_1c_name,
+      c.card_number, c.phone, c.name AS client_name, c.stars_balance
     FROM reward_qrs q
     JOIN reward_products r ON r.id = q.reward_product_id
     JOIN clients c ON c.id = q.client_id
+    LEFT JOIN products p ON p.external_id = r.product_external_id OR p.id = r.product_external_id
     WHERE q.token = ?`).get(token);
 
   if (!row) return res.status(404).json({ ok: false, valid: false, error: 'QR_NOT_FOUND' });
@@ -682,7 +702,11 @@ app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
     manual_code: row.token,
     product_name: row.name,
     product_external_id: row.product_external_id,
+    product_1c_name: row.product_1c_name || row.name,
     qty: 1,
+    price_cents: Number(row.product_price_cents || 0),
+    price_uah: money(row.product_price_cents || 0),
+    line_total_cents: Number(row.product_price_cents || 0),
     stars_to_spend: row.stars_reserved,
     expires_at: row.expires_at,
     conditions: row.conditions,

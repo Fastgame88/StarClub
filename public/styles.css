@@ -143,3 +143,4 @@ label.check input { width: 18px; height: 18px; accent-color: var(--gold); flex: 
 .manual-code span { color: var(--muted); font-size: 13px; }
 .manual-code b { color: var(--gold2); font-size: 22px; letter-spacing: .08em; }
 .mini-copy { text-align: center; border-radius: 12px; background: rgba(255,255,255,.06); color: var(--text); border: 1px solid var(--line-soft); padding: 10px 12px; font-weight: 800; }
+.modal-actions { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: 12px; }
