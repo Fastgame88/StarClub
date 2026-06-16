@@ -226,6 +226,74 @@ function formatRewardQr(row) {
   };
 }
 
+function finalizeRewardQrOnce({ token, receiptId, actorId = '1c', storeId = '1c' }) {
+  const cleanToken = String(token || '').trim();
+  const cleanReceiptId = String(receiptId || '').trim();
+  if (!cleanToken) return { ok: false, error: 'TOKEN_REQUIRED' };
+  if (!cleanReceiptId) return { ok: false, error: 'RECEIPT_ID_REQUIRED' };
+
+  expireReservedRewardQrs();
+
+  const row = db.prepare(`SELECT q.*, r.name
+    FROM reward_qrs q
+    JOIN reward_products r ON r.id = q.reward_product_id
+    WHERE q.token = ?`).get(cleanToken);
+
+  if (!row) return { ok: false, error: 'QR_NOT_FOUND' };
+
+  if (row.status === 'used') {
+    if (String(row.receipt_id || '') === cleanReceiptId) {
+      const client = db.prepare('SELECT stars_balance FROM clients WHERE id = ?').get(row.client_id);
+      return { ok: true, status: 'used', duplicate: true, already_finalized: true, balance: client?.stars_balance ?? null };
+    }
+    return { ok: false, error: 'QR_ALREADY_USED', status: 'used', receipt_id: row.receipt_id };
+  }
+
+  if (row.status !== 'reserved') {
+    return { ok: false, error: 'QR_STATUS_' + String(row.status || '').toUpperCase(), status: row.status };
+  }
+
+  if (new Date(row.expires_at).getTime() < Date.now()) {
+    db.prepare('UPDATE reward_qrs SET status = ?, canceled_at = ? WHERE id = ?').run('expired', nowIso(), row.id);
+    return { ok: false, error: 'QR_EXPIRED', status: 'expired' };
+  }
+
+  const alreadyLedger = db.prepare(`SELECT id FROM star_ledger
+    WHERE reward_qr_id = ? AND type = 'reward_spend' LIMIT 1`).get(row.id);
+
+  let balance;
+  if (alreadyLedger) {
+    const client = db.prepare('SELECT stars_balance FROM clients WHERE id = ?').get(row.client_id);
+    balance = client?.stars_balance ?? null;
+  } else {
+    balance = awardStars(
+      row.client_id,
+      'reward_spend',
+      -Math.abs(row.stars_reserved),
+      'reward_qr',
+      `-${row.stars_reserved} ⭐ ${row.name} за зірки`,
+      cleanReceiptId,
+      row.id
+    );
+  }
+
+  db.prepare('UPDATE reward_qrs SET status = ?, receipt_id = ?, used_at = ? WHERE id = ?')
+    .run('used', cleanReceiptId, nowIso(), row.id);
+  db.prepare('UPDATE reward_products SET issued_count = issued_count + 1, updated_at = ? WHERE id = ?')
+    .run(nowIso(), row.reward_product_id);
+
+  logAudit({
+    actorType: '1c',
+    actorId,
+    action: 'reward_qr_finalized',
+    entityType: 'reward_qr',
+    entityId: String(row.id),
+    payload: { receiptId: cleanReceiptId, balance, token: cleanToken, storeId }
+  });
+
+  return { ok: true, status: 'used', token: cleanToken, receipt_id: cleanReceiptId, balance, stars_spent: Math.abs(row.stars_reserved), reward_name: row.name, reward_qr_id: row.id };
+}
+
 function findClientForOneC({ card_number, card_token, phone }) {
   const candidates = [
     card_number,
@@ -419,7 +487,19 @@ app.get('/api/client/star-history', clientAuth, (req, res) => {
 app.get('/api/client/receipts', clientAuth, (req, res) => {
   const receipts = db.prepare('SELECT * FROM receipts WHERE client_id = ? ORDER BY purchased_at DESC LIMIT 50').all(req.client.id);
   const itemsStmt = db.prepare('SELECT * FROM receipt_items WHERE receipt_id = ?');
-  res.json({ ok: true, receipts: receipts.map((r) => ({ ...r, total_uah: money(r.total_cents), eligible_uah: money(r.eligible_cents), items: itemsStmt.all(r.id) })) });
+  res.json({ ok: true, receipts: receipts.map((r) => {
+    const items = itemsStmt.all(r.id);
+    const isRewardPurchase = Number(r.stars_spent || 0) > 0;
+    return {
+      ...r,
+      total_uah: money(r.total_cents),
+      eligible_uah: money(r.eligible_cents),
+      is_reward_purchase: isRewardPurchase,
+      display_title: isRewardPurchase ? 'Покупка за зірки' : (r.store_id || 'Магазин Star'),
+      display_amount: isRewardPurchase ? `-${r.stars_spent} ⭐` : `${money(r.total_cents)} грн`,
+      items
+    };
+  }) });
 });
 
 app.get('/api/client/rewards', clientAuth, (req, res) => {
@@ -574,22 +654,62 @@ app.get('/api/1c/client/search', oneCAuth, (req, res) => {
 app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   const body = req.body || {};
   if (!body.id) return res.status(400).json({ ok: false, error: 'RECEIPT_ID_REQUIRED' });
-  const existing = db.prepare('SELECT * FROM receipts WHERE id = ?').get(body.id);
-  if (existing) return res.json({ ok: true, duplicate: true, receipt_id: existing.id, stars_accrued: existing.stars_accrued });
 
-  const client = findClientForOneC({ card_number: body.card_number, card_token: body.card_token, phone: body.phone });
+  const rewardTokens = [];
+  if (body.reward_qr_token) rewardTokens.push(String(body.reward_qr_token));
+  if (Array.isArray(body.reward_qr_tokens)) rewardTokens.push(...body.reward_qr_tokens.map(String));
+  const cleanRewardTokens = rewardTokens.map((t) => String(t || '').trim()).filter(Boolean);
+  const isRewardReceipt = cleanRewardTokens.length > 0;
+
+  const existing = db.prepare('SELECT * FROM receipts WHERE id = ?').get(body.id);
+  if (existing) {
+    const finalized = [];
+    for (const rewardToken of cleanRewardTokens) {
+      finalized.push(finalizeRewardQrOnce({
+        token: rewardToken,
+        receiptId: body.id,
+        actorId: body.store_id || '1c',
+        storeId: body.store_id || '1c'
+      }));
+    }
+    return res.json({
+      ok: true,
+      duplicate: true,
+      receipt_id: existing.id,
+      stars_accrued: existing.stars_accrued,
+      stars_spent: existing.stars_spent,
+      reward_finalize: finalized
+    });
+  }
+
+  let client = findClientForOneC({ card_number: body.card_number, card_token: body.card_token, phone: body.phone });
+
+  // Для чека за зірки клієнта можна визначити напряму через QR, навіть якщо карта не передалась у чеку.
+  if (!client && cleanRewardTokens.length) {
+    const row = db.prepare('SELECT c.* FROM reward_qrs q JOIN clients c ON c.id = q.client_id WHERE q.token = ? LIMIT 1').get(cleanRewardTokens[0]);
+    if (row) client = row;
+  }
+
   if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
 
   const items = Array.isArray(body.items) ? body.items : [];
   const totalCents = Math.round(Number(body.total_cents || 0));
-  const eligibleCents = calculateEligibleCents(items, body.eligible_cents);
+  const eligibleCentsRaw = calculateEligibleCents(items, body.eligible_cents);
+  const eligibleCents = isRewardReceipt ? 0 : eligibleCentsRaw;
   const excludedCents = Math.max(0, totalCents - eligibleCents);
-  const starsAccrued = Math.floor(eligibleCents / 100);
+  const starsAccrued = isRewardReceipt ? 0 : Math.floor(eligibleCents / 100);
   const purchasedAt = body.purchased_at || nowIso();
 
-   db.prepare(`INSERT INTO receipts(id, fiscal_number, client_id, store_id, cash_register, cashier, total_cents, eligible_cents, excluded_cents, stars_accrued, stars_spent, club_conditions_json, is_return, purchased_at, created_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
-    .run(
+  let starsSpent = Math.abs(Number(body.stars_spent || 0));
+  if (isRewardReceipt && starsSpent === 0) {
+    for (const rewardToken of cleanRewardTokens) {
+      const row = db.prepare('SELECT stars_reserved FROM reward_qrs WHERE token = ?').get(rewardToken);
+      if (row) starsSpent += Math.abs(Number(row.stars_reserved || 0));
+    }
+  }
+
+  db.prepare(`INSERT INTO receipts(id, fiscal_number, client_id, store_id, cash_register, cashier, total_cents, eligible_cents, excluded_cents, stars_accrued, stars_spent, club_conditions_json, is_return, purchased_at, created_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`).run(
       body.id,
       body.fiscal_number || null,
       client.id,
@@ -600,7 +720,7 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
       eligibleCents,
       excludedCents,
       starsAccrued,
-      Number(body.stars_spent || 0),
+      starsSpent,
       JSON.stringify(body.club_conditions || []),
       purchasedAt,
       nowIso()
@@ -611,7 +731,6 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
 
   for (const item of items) {
     const flags = item.flags || item;
-
     insertItem.run(
       body.id,
       item.product_id || null,
@@ -624,53 +743,44 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
       flags.is_alcohol ? 1 : 0,
       flags.is_tobacco ? 1 : 0,
       flags.is_min_margin ? 1 : 0,
-      flags.no_star_accrual ? 1 : 0,
-      flags.no_redeem ? 1 : 0
+      isRewardReceipt ? 1 : (flags.no_star_accrual ? 1 : 0),
+      isRewardReceipt ? 1 : (flags.no_redeem ? 1 : 0)
     );
   }
 
   if (starsAccrued > 0) {
-    awardStars(
-      client.id,
-      'purchase_accrual',
-      starsAccrued,
-      'receipt',
-      `+${starsAccrued} ⭐ за покупку`,
-      body.id,
-      null
-    );
+    awardStars(client.id, 'purchase_accrual', starsAccrued, 'receipt', `+${starsAccrued} ⭐ за покупку`, body.id, null);
+  }
+
+  const finalized = [];
+  for (const rewardToken of cleanRewardTokens) {
+    finalized.push(finalizeRewardQrOnce({
+      token: rewardToken,
+      receiptId: body.id,
+      actorId: body.store_id || '1c',
+      storeId: body.store_id || '1c'
+    }));
   }
 
   db.prepare('UPDATE clients SET last_purchase_at = ?, updated_at = ? WHERE id = ?')
     .run(purchasedAt, nowIso(), client.id);
 
-  addChallengeVisit(client.id, body.id, purchasedAt, totalCents, items);
-  updateStampProgress(client.id, body.id, items);
+  if (!isRewardReceipt) {
+    addChallengeVisit(client.id, body.id, purchasedAt, totalCents, items);
+    updateStampProgress(client.id, body.id, items);
+  }
 
   logAudit({
     actorType: '1c',
     actorId: body.store_id || '1c',
-    action: 'receipt_imported',
+    action: isRewardReceipt ? 'reward_receipt_imported' : 'receipt_imported',
     entityType: 'receipt',
     entityId: body.id,
-    payload: { starsAccrued, eligibleCents }
+    payload: { starsAccrued, starsSpent, eligibleCents, rewardTokens: cleanRewardTokens }
   });
 
-  const rewardTokens = [];
-  if (body.reward_qr_token) rewardTokens.push(String(body.reward_qr_token));
-  if (Array.isArray(body.reward_qr_tokens)) rewardTokens.push(...body.reward_qr_tokens.map(String));
-  for (const rewardToken of rewardTokens.filter(Boolean)) {
-    const row = db.prepare(`SELECT q.*, r.name FROM reward_qrs q JOIN reward_products r ON r.id = q.reward_product_id WHERE q.token = ?`).get(rewardToken);
-    if (row && row.status === 'reserved' && new Date(row.expires_at).getTime() >= Date.now()) {
-      awardStars(row.client_id, 'reward_spend', -Math.abs(row.stars_reserved), 'reward_qr', `-${row.stars_reserved} ⭐ ${row.name} за зірки`, body.id, row.id);
-      db.prepare('UPDATE reward_qrs SET status = ?, receipt_id = ?, used_at = ? WHERE id = ?').run('used', body.id, nowIso(), row.id);
-      db.prepare('UPDATE reward_products SET issued_count = issued_count + 1, updated_at = ? WHERE id = ?').run(nowIso(), row.reward_product_id);
-      logAudit({ actorType: '1c', actorId: body.store_id || '1c', action: 'reward_qr_finalized_by_receipt', entityType: 'reward_qr', entityId: String(row.id), payload: { receiptId: body.id, rewardToken } });
-    }
-  }
-
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
-  res.json({ ok: true, duplicate: false, receipt_id: body.id, stars_accrued: starsAccrued, balance: fresh.stars_balance });
+  res.json({ ok: true, duplicate: false, receipt_id: body.id, stars_accrued: starsAccrued, stars_spent: starsSpent, balance: fresh.stars_balance, reward_finalize: finalized });
 });
 
 app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
@@ -718,24 +828,17 @@ app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
 app.post('/api/1c/reward-qr/finalize', oneCAuth, (req, res) => {
   const token = String(req.body?.token || req.body?.manual_code || req.body?.code || '').trim();
   const receiptId = String(req.body?.receipt_id || req.body?.receiptId || '').trim();
-  if (!token) return res.status(400).json({ ok: false, error: 'TOKEN_REQUIRED' });
-  if (!receiptId) return res.status(400).json({ ok: false, error: 'RECEIPT_ID_REQUIRED' });
-
-  expireReservedRewardQrs();
-
-  const row = db.prepare(`SELECT q.*, r.name FROM reward_qrs q JOIN reward_products r ON r.id = q.reward_product_id WHERE q.token = ?`).get(token);
-  if (!row) return res.status(404).json({ ok: false, error: 'QR_NOT_FOUND' });
-  if (row.status !== 'reserved') return res.status(400).json({ ok: false, error: 'QR_STATUS_' + row.status.toUpperCase(), status: row.status });
-  if (new Date(row.expires_at).getTime() < Date.now()) {
-    db.prepare('UPDATE reward_qrs SET status = ?, canceled_at = ? WHERE id = ?').run('expired', nowIso(), row.id);
-    return res.status(400).json({ ok: false, error: 'QR_EXPIRED', status: 'expired' });
+  const result = finalizeRewardQrOnce({
+    token,
+    receiptId,
+    actorId: req.body?.store_id || '1c',
+    storeId: req.body?.store_id || '1c'
+  });
+  if (!result.ok) {
+    const status = result.error === 'QR_NOT_FOUND' ? 404 : 400;
+    return res.status(status).json(result);
   }
-
-  const balance = awardStars(row.client_id, 'reward_spend', -Math.abs(row.stars_reserved), 'reward_qr', `-${row.stars_reserved} ⭐ ${row.name} за зірки`, receiptId, row.id);
-  db.prepare('UPDATE reward_qrs SET status = ?, receipt_id = ?, used_at = ? WHERE id = ?').run('used', receiptId, nowIso(), row.id);
-  db.prepare('UPDATE reward_products SET issued_count = issued_count + 1, updated_at = ? WHERE id = ?').run(nowIso(), row.reward_product_id);
-  logAudit({ actorType: '1c', actorId: req.body?.store_id || '1c', action: 'reward_qr_finalized', entityType: 'reward_qr', entityId: String(row.id), payload: { receiptId, balance, token } });
-  res.json({ ok: true, status: 'used', token, receipt_id: receiptId, balance });
+  res.json(result);
 });
 
 app.post('/api/1c/reward-qr/cancel', oneCAuth, (req, res) => {

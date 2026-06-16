@@ -429,7 +429,7 @@ function historyScreen() {
       <section class="card">
         <b>Чеки</b>
         <div class="timeline">
-          ${receipts.length ? receipts.map((r) => `<div class="tx"><span>🧾</span><div><b>${r.store_id || 'Магазин Star'}</b><p class="small">${fmtDate(r.purchased_at)} · ${r.items.length} товарів</p></div><b>${r.total_uah} грн</b></div>`).join('') : '<div class="empty">Чеки зʼявляться після покупок із картою</div>'}
+          ${receipts.length ? receipts.map((r) => `<div class="tx"><span>${r.is_reward_purchase ? '★' : '🧾'}</span><div><b>${r.is_reward_purchase ? 'Покупка за зірки' : (r.store_id || 'Магазин Star')}</b><p class="small">${fmtDate(r.purchased_at)} · ${r.items.length} товарів${r.is_reward_purchase ? ' · товар отримано за зірки' : ''}</p></div><b class="${r.is_reward_purchase ? 'minus' : ''}">${r.is_reward_purchase ? `-${r.stars_spent} ★` : `${r.total_uah} грн`}</b></div>`).join('') : '<div class="empty">Чеки зʼявляться після покупок із картою</div>'}
         </div>
       </section>
     </div>
