@@ -138,7 +138,8 @@ label.check input { width: 18px; height: 18px; accent-color: var(--gold); flex: 
   border-color: var(--line);
   background: rgba(228,183,95,.08);
 }
-.topbar-spacer{width:48px;height:48px;display:block}
-.manual-code{margin:14px 0;padding:14px;border:1px dashed rgba(228,183,95,.45);border-radius:18px;background:rgba(228,183,95,.08);display:grid;gap:8px;text-align:center}
-.manual-code span{color:var(--muted);font-size:13px}.manual-code b{font-size:26px;letter-spacing:2px;color:var(--gold)}
-.modal .mini-btn{margin:0 auto;text-align:center}
+.topbar-spacer { width: 50px; height: 50px; display: inline-block; }
+.manual-code { margin: 12px 0; border: 1px dashed rgba(228,183,95,.45); border-radius: 16px; padding: 12px; background: rgba(228,183,95,.08); display: grid; gap: 8px; text-align: center; }
+.manual-code span { color: var(--muted); font-size: 13px; }
+.manual-code b { color: var(--gold2); font-size: 22px; letter-spacing: .08em; }
+.mini-copy { text-align: center; border-radius: 12px; background: rgba(255,255,255,.06); color: var(--text); border: 1px solid var(--line-soft); padding: 10px 12px; font-weight: 800; }

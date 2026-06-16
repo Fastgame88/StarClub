@@ -504,34 +504,24 @@ function profileScreen() {
 }
 
 function showRewardModal(qr) {
-  const manualCode = qr.manual_code || String(qr.token || '').replace(/^SCR[-_]?/i, '').toUpperCase();
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop';
+  const manualCode = qr.manual_code || qr.token;
   wrap.innerHTML = `
     <div class="modal">
-      <h2>Код для касира</h2>
+      <h2>Код товару за зірки</h2>
       <p class="small">${qr.reward.name} · ${fmtStars(qr.reward.stars_price)} ★</p>
       <div class="qrbox"><img src="/api/svg/qr?text=${encodeURIComponent(qr.token)}" alt="QR"></div>
       <div class="manual-code">
-        <span>Код для ручного введення</span>
+        <span>Ручний код для касира</span>
         <b>${manualCode}</b>
-        <button class="mini-btn" data-copy-code type="button">Скопіювати</button>
+        <button type="button" class="mini-copy" data-copy-code="${manualCode}">Скопіювати</button>
       </div>
-      <p class="small">Діє до ${fmtTime(qr.expires_at)}. Якщо касир не використає код до цього часу, резерв зірок скасується автоматично.</p>
-      <button class="btn" data-close-modal type="button">Готово</button>
+      <p class="small">Код діє до ${fmtTime(qr.expires_at)}. Його можна використати тільки один раз.</p>
+      <button class="btn" type="button" data-close-modal>Готово</button>
     </div>
   `;
   document.body.appendChild(wrap);
-  wrap.querySelector('[data-close-modal]').onclick = () => wrap.remove();
-  wrap.onclick = (e) => { if (e.target === wrap) wrap.remove(); };
-  wrap.querySelector('[data-copy-code]').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(manualCode);
-      toast('Код скопійовано');
-    } catch {
-      toast(manualCode);
-    }
-  };
 }
 
 async function render() {
@@ -600,11 +590,11 @@ function bindEvents() {
   document.querySelectorAll('[data-logout]').forEach((el) => el.onclick = () => { localStorage.removeItem('starclub_session'); localStorage.removeItem('starclub_route'); location.reload(); });
   document.querySelectorAll('[data-show-cashier]').forEach((el) => el.onclick = () => toast('Покажіть QR-код або штрихкод касиру'));
   document.querySelectorAll('[data-close-modal]').forEach((el) => el.onclick = () => el.closest('.modal-backdrop')?.remove());
+  document.querySelectorAll('[data-copy-code]').forEach((el) => el.onclick = async () => { try { await navigator.clipboard.writeText(el.dataset.copyCode); toast('Код скопійовано'); } catch { toast(el.dataset.copyCode); } });
   document.querySelectorAll('[data-create-reward]').forEach((el) => el.onclick = async () => {
     try {
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });
       showRewardModal(data.qr);
-      await loadRewards();
       const me = await api('/api/client/me');
       state.client = me.client;
       renderNav();

@@ -14,6 +14,7 @@ fs.mkdirSync(path.dirname(resolvedDbFile), { recursive: true });
 
 let innerDb = null;
 let initialized = false;
+let transactionDepth = 0;
 
 function ensureDb() {
   if (!innerDb) throw new Error('Database is not initialized. Call await initDb() first.');
@@ -77,7 +78,7 @@ class StatementWrapper {
       const rows = innerDb.exec('SELECT last_insert_rowid() AS id');
       const lastInsertRowid = rows?.[0]?.values?.[0]?.[0] ?? 0;
       const changes = innerDb.getRowsModified();
-      saveDb();
+      if (transactionDepth === 0) saveDb();
       return { changes, lastInsertRowid };
     } finally {
       stmt.free();
@@ -110,7 +111,7 @@ export const db = {
   exec(sql) {
     ensureDb();
     const result = innerDb.exec(sql);
-    saveDb();
+    if (transactionDepth === 0) saveDb();
     return result;
   },
   prepare(sql) {
@@ -119,45 +120,28 @@ export const db = {
    transaction(fn) {
     return (...args) => {
       ensureDb();
-
-      if (!globalThis.__starClubSqlTxDepth) {
-        globalThis.__starClubSqlTxDepth = 0;
-      }
-
-      const isOuterTransaction = globalThis.__starClubSqlTxDepth === 0;
-
-      if (isOuterTransaction) {
-        innerDb.exec('BEGIN TRANSACTION');
-      }
-
-      globalThis.__starClubSqlTxDepth += 1;
-
+      const isOuterTransaction = transactionDepth === 0;
+      if (isOuterTransaction) innerDb.exec('BEGIN TRANSACTION');
+      transactionDepth += 1;
       try {
         const result = fn(...args);
-
-        globalThis.__starClubSqlTxDepth -= 1;
-
+        transactionDepth -= 1;
         if (isOuterTransaction) {
           innerDb.exec('COMMIT');
           saveDb();
         }
-
         return result;
       } catch (error) {
-        globalThis.__starClubSqlTxDepth -= 1;
-
+        transactionDepth -= 1;
         if (isOuterTransaction) {
-          try {
-            innerDb.exec('ROLLBACK');
-          } catch {}
-
+          try { innerDb.exec('ROLLBACK'); } catch {}
           saveDb();
         }
-
         throw error;
       }
     };
   }
+
 };
 
 export function nowIso() {
