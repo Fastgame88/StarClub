@@ -593,10 +593,11 @@ export function getOrCreateClientFromTelegram(telegramUser = {}) {
   const existing = db.prepare('SELECT * FROM clients WHERE telegram_id = ?').get(telegramId);
   if (existing) return existing;
   const displayName = [telegramUser.first_name, telegramUser.last_name].filter(Boolean).join(' ') || telegramUser.username || null;
+  const phone = normalizePhone(telegramUser.phone_number || telegramUser.phone || '');
   const cardNumber = generateCardNumber();
   const cardToken = randomToken('card_');
-  const res = db.prepare(`INSERT INTO clients(telegram_id, name, card_number, card_token, registered_at, created_at, updated_at)
-    VALUES(?, ?, ?, ?, ?, ?, ?)`).run(telegramId, displayName, cardNumber, cardToken, t, t, t);
+  const res = db.prepare(`INSERT INTO clients(telegram_id, phone, name, card_number, card_token, registered_at, created_at, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?)`).run(telegramId, phone, displayName, cardNumber, cardToken, t, t, t);
   return db.prepare('SELECT * FROM clients WHERE id = ?').get(res.lastInsertRowid);
 }
 

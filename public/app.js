@@ -144,7 +144,6 @@ function startScreen() {
         <button class="btn" data-route="register">Зареєструватися</button>
         <div class="social-auth">
           <button class="social-btn" data-auth-telegram type="button">✈ Увійти через Telegram</button>
-          <button class="social-btn" data-auth-google type="button">G Увійти через Google</button>
         </div>
         <p class="link-row">Вже є акаунт? <button data-route="login">Увійти</button></p>
       </div>
@@ -165,9 +164,25 @@ function loginScreen() {
       <button class="btn" type="submit">Увійти</button>
       <div class="social-auth">
         <button class="social-btn" data-auth-telegram type="button">✈ Увійти через Telegram</button>
-        <button class="social-btn" data-auth-google type="button">G Увійти через Google</button>
       </div>
       <p class="link-row">Ще немає акаунта? <button type="button" data-route="register">Зареєструватися</button></p>
+    </form>
+  `;
+}
+
+function telegramPasswordScreen() {
+  const c = state.client || {};
+  return `
+    ${header('Створіть пароль', true)}
+    <form id="telegramPasswordForm" class="stack">
+      <div class="banner">
+        <span class="circle-icon">✈</span>
+        <div>Telegram підтверджено<br><strong>${c.name || 'Клієнт Star Club'}</strong>${c.phone ? `<br><span class="small">${c.phone}</span>` : ''}</div>
+      </div>
+      <p class="small">Перед входом створіть пароль. Далі ви зможете входити за номером телефону і паролем.</p>
+      <input class="input" name="password" type="password" autocomplete="new-password" placeholder="Пароль мінімум 6 символів" minlength="6" required>
+      <input class="input" name="password_confirm" type="password" autocomplete="new-password" placeholder="Повторіть пароль" minlength="6" required>
+      <button class="btn" type="submit">Зберегти пароль</button>
     </form>
   `;
 }
@@ -176,13 +191,11 @@ function registerScreen() {
   const c = state.client || {};
   const stores = state.stores?.length ? state.stores : fallbackStores;
   const storeOptions = stores.map((s) => `<option value="${s.id}" ${c.favorite_store === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
+  const needPassword = !c.password_set;
   return `
-    ${header('Реєстрація', true)}
+    ${header(c.registered ? 'Профіль' : 'Реєстрація', true)}
     <form id="registerForm" class="stack">
-      <div class="banner">
-        <span class="circle-icon">★</span>
-        <div>Заповніть повний профіль<br>та отримайте <strong>500 ★</strong></div>
-      </div>
+      ${!c.profile_bonus_awarded ? `<div class="banner"><span class="circle-icon">★</span><div>Заповніть повний профіль<br>та отримайте <strong>500 ★</strong></div></div>` : ''}
       <input class="input" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+380XXXXXXXXX" value="${c.phone || '+380'}" pattern="^(\\+?380\\d{9}|0\\d{9})$" maxlength="13" required>
       <input class="input" name="name" placeholder="Імʼя" value="${c.name || ''}" required>
       <input class="input" name="birth_date" type="date" value="${c.birth_date || ''}" required>
@@ -190,12 +203,14 @@ function registerScreen() {
         <option value="">Улюблений магазин</option>
         ${storeOptions}
       </select>
-      <input class="input" name="password" type="password" autocomplete="new-password" placeholder="Пароль мінімум 6 символів" minlength="6" required>
-      <input class="input" name="password_confirm" type="password" autocomplete="new-password" placeholder="Повторіть пароль" minlength="6" required>
-      <label class="check"><input type="checkbox" name="agree_rules" required>Я ознайомлений(а) та погоджуюсь з правилами програми лояльності</label>
+      ${needPassword ? `
+        <input class="input" name="password" type="password" autocomplete="new-password" placeholder="Пароль мінімум 6 символів" minlength="6" required>
+        <input class="input" name="password_confirm" type="password" autocomplete="new-password" placeholder="Повторіть пароль" minlength="6" required>
+      ` : ''}
+      <label class="check"><input type="checkbox" name="agree_rules" required>Я погоджуюсь з правилами програми лояльності</label>
       <label class="check"><input type="checkbox" name="agree_personal_data" required>Я надаю згоду на обробку персональних даних</label>
-      <label class="check"><input type="checkbox" name="marketing_allowed" checked>Дозволяю повідомлення про клубні пропозиції</label>
-      <button class="btn" type="submit">Зареєструватися</button>
+      <label class="check"><input type="checkbox" name="marketing_allowed" ${c.marketing_allowed !== false ? 'checked' : ''}>Дозволяю повідомлення про клубні пропозиції</label>
+      <button class="btn" type="submit">${c.registered ? 'Зберегти профіль' : 'Завершити реєстрацію'}</button>
     </form>
   `;
 }
@@ -268,9 +283,20 @@ function homeScreen() {
   `;
 }
 
+async function refreshClient() {
+  const me = await api('/api/client/me');
+  state.client = me.client;
+  renderNav();
+}
+
 async function loadRewards() {
   const data = await api('/api/client/rewards');
-  state.data.rewards = data;
+  const qrs = await api('/api/client/reward-qrs');
+  state.data.rewards = { ...data, qrs: qrs.qrs || [] };
+}
+
+async function loadRewardQrs() {
+  state.data.rewardQrs = (await api('/api/client/reward-qrs')).qrs || [];
 }
 
 async function loadOffers() {
@@ -302,13 +328,13 @@ async function cardScreen() {
         <div class="club-logo">STAR CLUB</div>
         <h3>${card.name}</h3>
         <p class="small">№ картки<br><span class="gold">${card.card_number}</span></p>
-        <div class="qrbox"><img src="/api/svg/qr?text=${encodeURIComponent(card.card_token)}" alt="QR"></div>
-        <div class="barcode"><img src="/api/svg/barcode?text=${encodeURIComponent(card.card_number.replaceAll(' ', ''))}" alt="barcode"></div>
       </section>
-      <section class="card gold-border">
-        <div class="small">Ваш баланс</div>
-        <div class="balance" style="font-size:34px">${fmtStars(card.stars_balance)} <span class="star">★</span></div>
-        <button class="btn" data-show-cashier>Показати касиру</button>
+      <section class="card gold-border card-balance-actions">
+        <div>
+          <div class="small">Актуальний баланс</div>
+          <div class="balance" style="font-size:34px">${fmtStars(card.stars_balance)} <span class="star">★</span></div>
+        </div>
+        <button class="btn" data-show-cashier data-card-number="${card.card_number}">Показати касиру</button>
       </section>
     </div>
   `;
@@ -317,6 +343,7 @@ async function cardScreen() {
 function rewardsScreen() {
   const data = state.data.rewards;
   const items = data?.items || [];
+  const active = (data?.qrs || []).filter((q) => q.status === 'reserved');
   return `
     ${header('За зірки', true)}
     <div class="stack">
@@ -324,6 +351,8 @@ function rewardsScreen() {
         <b>Оберіть улюблені нагороди за зірки</b>
         <p class="small">Доступно: ${fmtStars(data?.available_stars || 0)} ★</p>
       </section>
+      ${active.length ? `<section class="card gold-border"><b>Активні коди</b><p class="small">У вас є активний QR-код. Його можна повторно відкрити.</p>${active.map((q)=>`<button class="reward-code-row" data-open-reward-code="${q.token}"><span>${q.reward.name}</span><b>${q.manual_code}</b></button>`).join('')}</section>` : ''}
+      <button class="card gold-border" data-route="rewardCodes"><b>Мої QR-коди</b><p class="small">Активні коди та історія використання</p></button>
       ${items.map((r) => `
         <article class="product">
           <img src="${r.image_url}" alt="${r.name}">
@@ -335,6 +364,26 @@ function rewardsScreen() {
           </div>
         </article>
       `).join('')}
+    </div>
+  `;
+}
+
+function rewardCodesScreen() {
+  const qrs = state.data.rewardQrs || [];
+  const active = qrs.filter((q) => q.status === 'reserved');
+  const history = qrs.filter((q) => q.status !== 'reserved');
+  const statusText = { reserved: 'активний', used: 'використаний', canceled: 'скасований', expired: 'прострочений' };
+  const renderQr = (q) => `
+    <section class="card reward-code-card">
+      <div class="progress-row"><div><b>${q.reward.name}</b><p class="small">${q.manual_code} · ${fmtStars(q.stars_reserved)} ★</p></div><span class="pill">${statusText[q.status] || q.status}</span></div>
+      <p class="small">Створено: ${fmtDate(q.created_at)} ${fmtTime(q.created_at)}${q.status === 'reserved' ? ` · діє до ${fmtTime(q.expires_at)}` : ''}</p>
+      ${q.status === 'reserved' ? `<div class="modal-actions"><button class="btn secondary" data-cancel-reward-code="${q.manual_code}" type="button">Скасувати</button><button class="btn" data-open-reward-code="${q.manual_code}" type="button">Відкрити QR</button></div>` : ''}
+    </section>`;
+  return `
+    ${header('Мої QR-коди', true)}
+    <div class="stack">
+      <section class="card gold-border"><b>Активні</b>${active.length ? active.map(renderQr).join('') : '<div class="empty">Активних кодів немає</div>'}</section>
+      <section class="card"><b>Історія</b>${history.length ? history.map(renderQr).join('') : '<div class="empty">Історія кодів порожня</div>'}</section>
     </div>
   `;
 }
@@ -383,6 +432,7 @@ function starsScreen() {
     <div class="stack">
       <button class="card gold-border" data-route="card"><b>Моя карта</b><p class="small">QR-код, штрихкод, номер картки</p></button>
       <button class="card gold-border" data-route="rewards"><b>За зірки</b><p class="small">Каталог товарів за накопичені зірки</p></button>
+      <button class="card gold-border" data-route="rewardCodes"><b>Мої QR-коди</b><p class="small">Активні коди та історія</p></button>
       <button class="card gold-border" data-route="progress"><b>Прогрес</b><p class="small">10-та кава, 10-й багет, челенджі</p></button>
       <button class="card gold-border" data-route="history"><b>Історія</b><p class="small">Нарахування, витрати, чеки</p></button>
     </div>
@@ -459,6 +509,7 @@ function moreScreen() {
     <div class="more-grid">
       <button data-route="card"><b>▣</b>Моя карта</button>
       <button data-route="rewards"><b>🎁</b>За зірки</button>
+      <button data-route="rewardCodes"><b>▣</b>Мої QR-коди</button>
       <button data-route="progress"><b>🏆</b>Челенджі</button>
       <button data-route="history"><b>↺</b>Історія</button>
       <button data-route="news"><b>✦</b>Новини</button>
@@ -498,9 +549,25 @@ function profileScreen() {
         <p class="small">Заповнено ${c.profile_progress.completed} з ${c.profile_progress.total} полів</p>
       </section>
       <button class="btn" data-route="register">Редагувати профіль</button>
-      <button class="btn secondary" data-logout>Вийти з демо-сесії</button>
+      <button class="btn secondary" data-logout>Вийти з акаунта</button>
     </div>
   `;
+}
+
+function showCashierModal(cardNumber) {
+  const clean = String(cardNumber || '').replaceAll(' ', '');
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop';
+  wrap.innerHTML = `
+    <div class="modal">
+      <h2>Штрихкод картки</h2>
+      <p class="small">Покажіть цей штрихкод касиру</p>
+      <div class="barcode barcode-large"><img src="/api/svg/barcode?text=${encodeURIComponent(clean)}" alt="barcode"></div>
+      <div class="manual-code"><span>Номер картки</span><b>${clean}</b></div>
+      <div class="modal-actions"><button class="btn" type="button" data-close-modal>Готово</button></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector('[data-close-modal]').onclick = () => wrap.remove();
 }
 
 function showRewardModal(qr) {
@@ -525,11 +592,23 @@ function showRewardModal(qr) {
     </div>
   `;
   document.body.appendChild(wrap);
+  wrap.querySelector('[data-close-modal]').onclick = () => wrap.remove();
+  wrap.querySelector('[data-copy-code]').onclick = async () => { try { await navigator.clipboard.writeText(manualCode); toast('Код скопійовано'); } catch { toast(manualCode); } };
+  wrap.querySelector('[data-cancel-reward-code]').onclick = async () => {
+    try {
+      await api('/api/client/reward-qr/cancel', { method: 'POST', body: JSON.stringify({ token: manualCode }) });
+      toast('Код скасовано, зірки знову доступні');
+      wrap.remove();
+      await refreshClient();
+      await loadRewards();
+      if (state.route === 'rewards' || state.route === 'rewardCodes') render();
+    } catch (e) { toast(e.message); }
+  };
 }
 
 async function render() {
   renderNav();
-  if (!state.client?.registered && !['register', 'login'].includes(state.route)) {
+  if (!state.client?.registered && !['register', 'login', 'telegramPassword'].includes(state.route)) {
     $app.innerHTML = startScreen();
     bindEvents();
     return;
@@ -545,6 +624,8 @@ async function render() {
     else if (state.route === 'more') $app.innerHTML = moreScreen();
     else if (state.route === 'news') { await loadNews(); $app.innerHTML = newsScreen(); }
     else if (state.route === 'profile') $app.innerHTML = profileScreen();
+    else if (state.route === 'rewardCodes') { await loadRewardQrs(); $app.innerHTML = rewardCodesScreen(); }
+    else if (state.route === 'telegramPassword') $app.innerHTML = telegramPasswordScreen();
     else if (state.route === 'register') $app.innerHTML = registerScreen();
     else if (state.route === 'login') $app.innerHTML = loginScreen();
     else { await loadProgress(); $app.innerHTML = homeScreen(); }
@@ -579,8 +660,10 @@ function validateRegisterForm(form) {
   if (!fd.get('favorite_store')) return 'Оберіть улюблений магазин';
   const password = String(fd.get('password') || '');
   const confirm = String(fd.get('password_confirm') || '');
-  if (password.length < 6) return 'Пароль має містити мінімум 6 символів';
-  if (password !== confirm) return 'Паролі не співпадають';
+  if (!state.client?.password_set || password.length || confirm.length) {
+    if (password.length < 6) return 'Пароль має містити мінімум 6 символів';
+    if (password !== confirm) return 'Паролі не співпадають';
+  }
   if (!fd.has('agree_rules') || !fd.has('agree_personal_data')) return 'Потрібно погодитись з правилами та обробкою персональних даних';
   return null;
 }
@@ -588,10 +671,9 @@ function validateRegisterForm(form) {
 function bindEvents() {
   document.querySelectorAll('[data-route]').forEach((el) => el.onclick = () => setRoute(el.dataset.route));
   document.querySelectorAll('[data-back="1"]').forEach((el) => el.onclick = () => setRoute(state.client?.registered ? 'home' : 'start'));
-  document.querySelectorAll('[data-login-demo]').forEach((el) => el.onclick = async () => { localStorage.removeItem('starclub_session'); await bootstrap(); });
   document.querySelectorAll('[data-offer-tab]').forEach((el) => el.onclick = () => { state.data.offerTab = el.dataset.offerTab; render(); });
   document.querySelectorAll('[data-logout]').forEach((el) => el.onclick = () => { localStorage.removeItem('starclub_session'); localStorage.removeItem('starclub_route'); location.reload(); });
-  document.querySelectorAll('[data-show-cashier]').forEach((el) => el.onclick = () => toast('Покажіть QR-код або штрихкод касиру'));
+  document.querySelectorAll('[data-show-cashier]').forEach((el) => el.onclick = () => showCashierModal(el.dataset.cardNumber));
   document.querySelectorAll('[data-close-modal]').forEach((el) => el.onclick = () => el.closest('.modal-backdrop')?.remove());
   document.querySelectorAll('[data-copy-code]').forEach((el) => el.onclick = async () => { try { await navigator.clipboard.writeText(el.dataset.copyCode); toast('Код скопійовано'); } catch { toast(el.dataset.copyCode); } });
   document.querySelectorAll('[data-cancel-reward-code]').forEach((el) => el.onclick = async () => {
@@ -603,9 +685,16 @@ function bindEvents() {
       const me = await api('/api/client/me');
       state.client = me.client;
       renderNav();
-      if (state.route === 'rewards') render();
+      if (state.route === 'rewards' || state.route === 'rewardCodes') render();
     } catch (e) { toast(e.message); }
   });
+  document.querySelectorAll('[data-open-reward-code]').forEach((el) => el.onclick = async () => {
+    const qrs = state.data.rewards?.qrs || state.data.rewardQrs || (await api('/api/client/reward-qrs')).qrs || [];
+    const qr = qrs.find((item) => item.token === el.dataset.openRewardCode || item.manual_code === el.dataset.openRewardCode);
+    if (qr) showRewardModal(qr);
+    else toast('Код не знайдено або вже неактивний');
+  });
+
   document.querySelectorAll('[data-create-reward]').forEach((el) => el.onclick = async () => {
     try {
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });
@@ -622,34 +711,40 @@ function bindEvents() {
         method: 'POST',
         body: JSON.stringify({
           initData: tg?.initData || '',
-          devUser: { id: '111111111', first_name: 'Андрій', username: 'demo' }
+          devUser: { id: '111111111', first_name: 'Андрій', last_name: '', phone_number: '+380635594256' }
         })
       });
       state.token = data.session.token;
       localStorage.setItem('starclub_session', state.token);
       state.client = data.client;
-      toast('Вхід через Telegram виконано');
-      setRoute(state.client?.registered ? 'home' : 'register');
+      if (!state.client.password_set || data.needs_password) {
+        toast('Telegram підтверджено. Створіть пароль.');
+        setRoute('telegramPassword');
+      } else {
+        toast('Вхід через Telegram виконано');
+        setRoute(state.client?.registered ? 'home' : 'register');
+      }
     } catch (e) {
       toast(e.message);
     }
   });
-
-  document.querySelectorAll('[data-auth-google]').forEach((el) => el.onclick = async () => {
-    try {
-      const data = await api('/api/auth/google-demo', {
-        method: 'POST',
-        body: JSON.stringify({ name: 'Google User', email: 'google.demo@starclub.local' })
-      });
-      state.token = data.session.token;
-      localStorage.setItem('starclub_session', state.token);
-      state.client = data.client;
-      toast('Вхід через Google виконано');
-      setRoute(state.client?.registered ? 'home' : 'register');
-    } catch (e) {
-      toast(e.message);
-    }
-  });
+  const telegramPasswordForm = document.querySelector('#telegramPasswordForm');
+  if (telegramPasswordForm) {
+    telegramPasswordForm.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(telegramPasswordForm);
+      const password = String(fd.get('password') || '');
+      const password_confirm = String(fd.get('password_confirm') || '');
+      if (password.length < 6) return toast('Пароль має містити мінімум 6 символів');
+      if (password !== password_confirm) return toast('Паролі не співпадають');
+      try {
+        const data = await api('/api/client/set-password', { method: 'POST', body: JSON.stringify({ password, password_confirm }) });
+        state.client = data.client;
+        toast('Пароль збережено. Завершіть профіль.');
+        setRoute(state.client?.registered ? 'home' : 'register');
+      } catch (e) { toast(e.message); }
+    };
+  }
 
   const loginForm = document.querySelector('#loginForm');
   if (loginForm) {
@@ -696,7 +791,7 @@ function bindEvents() {
           localStorage.setItem('starclub_session', state.token);
         }
         state.client = data.client;
-        toast('Реєстрацію збережено');
+        toast(data.client?.profile_bonus_awarded ? 'Профіль збережено. Бонус 500 ★ активний.' : 'Профіль збережено');
         setRoute('home');
       } catch (e) {
         if (e.message === 'CLIENT_UNAUTHORIZED') {

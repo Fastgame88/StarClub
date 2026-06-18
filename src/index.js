@@ -59,10 +59,6 @@ function optionalClientAuth(req, res, next) {
   next();
 }
 
-function makeGoogleDemoPhone(email) {
-  const digits = String(email || 'google').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0).toString().padStart(7, '0').slice(-7);
-  return `+38099${digits}`;
-}
 
 function money(cents) {
   return Math.round(Number(cents || 0)) / 100;
@@ -89,7 +85,8 @@ function formatClient(client) {
     reserved_stars: reserved,
     available_stars: Math.max(0, Number(client.stars_balance || 0) - reserved),
     profile_bonus_awarded: Boolean(client.profile_bonus_awarded),
-    registered: Boolean(client.phone),
+    password_set: Boolean(client.password_hash),
+    registered: Boolean(client.phone && client.name && client.birth_date && client.favorite_store && client.password_hash),
     profile_progress: {
       completed,
       total: required.length,
@@ -213,7 +210,10 @@ function formatRewardQr(row) {
     token: row.token,
     manual_code: row.token,
     status: row.status,
+    created_at: row.created_at,
     expires_at: row.expires_at,
+    used_at: row.used_at,
+    canceled_at: row.canceled_at,
     stars_reserved: row.stars_reserved,
     reward: {
       id: row.reward_product_id,
@@ -365,20 +365,6 @@ app.post('/api/auth/telegram', (req, res) => {
   res.json({ ok: true, session, client: formatClient(client) });
 });
 
-app.post('/api/auth/google-demo', (req, res) => {
-  // Локальний режим входу через Google для прототипу.
-  // Він НЕ додає фейкові покупки, відвідування, прогрес або баланс.
-  // У production цей endpoint замінюється на перевірку справжнього Google ID token.
-  const email = String(req.body?.email || 'google.demo@starclub.local').trim().toLowerCase();
-  const name = String(req.body?.name || 'Google User').trim() || 'Google User';
-  const googleId = `google:${email}`;
-  let client = getOrCreateClientFromTelegram({ id: googleId, first_name: name, username: 'google' });
-  db.prepare(`UPDATE clients SET name = COALESCE(NULLIF(name, ''), ?), email = COALESCE(email, ?), updated_at = ? WHERE id = ?`)
-    .run(name, email, nowIso(), client.id);
-  client = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
-  const session = createSession(client.id);
-  res.json({ ok: true, session, client: formatClient(client) });
-});
 
 app.post('/api/auth/login', (req, res) => {
   const phone = normalizePhone(req.body?.phone);
@@ -398,6 +384,18 @@ app.post('/api/auth/login', (req, res) => {
 app.get('/api/client/me', clientAuth, (req, res) => {
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
   res.json({ ok: true, client: formatClient(fresh) });
+});
+
+app.post('/api/client/set-password', clientAuth, (req, res) => {
+  const password = String(req.body?.password || '');
+  const passwordConfirm = String(req.body?.password_confirm || '');
+  if (password.length < 6) return res.status(400).json({ ok: false, error: 'PASSWORD_TOO_SHORT', message: 'Пароль має містити мінімум 6 символів' });
+  if (password !== passwordConfirm) return res.status(400).json({ ok: false, error: 'PASSWORDS_DO_NOT_MATCH', message: 'Паролі не співпадають' });
+  const t = nowIso();
+  db.prepare('UPDATE clients SET password_hash = ?, password_set_at = ?, updated_at = ? WHERE id = ?')
+    .run(hashPassword(password), t, t, req.client.id);
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
+  res.json({ ok: true, client: formatClient(client) });
 });
 
 app.post('/api/client/register', optionalClientAuth, (req, res) => {
@@ -430,15 +428,21 @@ app.post('/api/client/register', optionalClientAuth, (req, res) => {
 
   const password = String(body.password || '');
   const passwordConfirm = String(body.password_confirm || '');
-  if (password.length < 6) return res.status(400).json({ ok: false, error: 'PASSWORD_TOO_SHORT', message: 'Пароль має містити мінімум 6 символів' });
-  if (password !== passwordConfirm) return res.status(400).json({ ok: false, error: 'PASSWORDS_DO_NOT_MATCH', message: 'Паролі не співпадають' });
+  const currentBeforeUpdate = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
+  const shouldSetPassword = password.length > 0 || !currentBeforeUpdate?.password_hash;
+  if (shouldSetPassword) {
+    if (password.length < 6) return res.status(400).json({ ok: false, error: 'PASSWORD_TOO_SHORT', message: 'Пароль має містити мінімум 6 символів' });
+    if (password !== passwordConfirm) return res.status(400).json({ ok: false, error: 'PASSWORDS_DO_NOT_MATCH', message: 'Паролі не співпадають' });
+  }
 
   const existingByPhone = db.prepare('SELECT id FROM clients WHERE phone = ? AND id != ?').get(phone, req.client.id);
   if (existingByPhone) return res.status(409).json({ ok: false, error: 'PHONE_ALREADY_REGISTERED', message: 'Клієнт з таким номером вже зареєстрований. Скористайтесь входом.' });
 
   const t = nowIso();
+  const nextPasswordHash = shouldSetPassword ? hashPassword(password) : currentBeforeUpdate.password_hash;
+  const nextPasswordSetAt = shouldSetPassword ? t : currentBeforeUpdate.password_set_at;
   db.prepare(`UPDATE clients SET phone = ?, name = ?, birth_date = ?, favorite_store = ?, email = ?, marketing_allowed = ?, preferences = ?, password_hash = ?, password_set_at = ?, updated_at = ? WHERE id = ?`)
-    .run(phone, name, birthDate, favoriteStore, body.email || null, body.marketing_allowed ? 1 : 0, JSON.stringify(body.preferences || []), hashPassword(password), t, t, req.client.id);
+    .run(phone, name, birthDate, favoriteStore, body.email || null, body.marketing_allowed ? 1 : 0, JSON.stringify(body.preferences || []), nextPasswordHash, nextPasswordSetAt, t, req.client.id);
 
   let client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
   const bonus = getSetting('profile_bonus', { enabled: true, stars: 500, grantWhen: 'immediately', requiredFields: ['phone', 'name', 'birth_date', 'favorite_store'] });
@@ -557,6 +561,17 @@ app.post('/api/client/reward-qr/cancel', clientAuth, (req, res) => {
   logAudit({ actorType: 'client', actorId: String(req.client.id), action: 'reward_qr_canceled_by_client', entityType: 'reward_qr', entityId: String(row.id), payload: { token } });
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
   res.json({ ok: true, status: 'canceled', balance: fresh.stars_balance, available_stars: getClientAvailableStars(req.client.id) });
+});
+
+app.get('/api/client/reward-qrs', clientAuth, (req, res) => {
+  expireReservedRewardQrs(req.client.id);
+  const rows = db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions
+    FROM reward_qrs q
+    JOIN reward_products r ON r.id = q.reward_product_id
+    WHERE q.client_id = ?
+    ORDER BY q.created_at DESC
+    LIMIT 100`).all(req.client.id);
+  res.json({ ok: true, qrs: rows.map(formatRewardQr) });
 });
 
 app.get('/api/client/offers', clientAuth, (req, res) => {
@@ -1022,7 +1037,8 @@ app.post('/api/admin/catalog/news', adminAuth, (req, res) => {
 app.delete('/api/admin/catalog/rewards/:id', adminAuth, (req, res) => {
   const existing = db.prepare('SELECT * FROM reward_products WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ ok: false, error: 'REWARD_NOT_FOUND' });
-  db.prepare('UPDATE reward_products SET is_active = 0, updated_at = ? WHERE id = ?').run(nowIso(), req.params.id);
+  db.prepare('DELETE FROM reward_qrs WHERE reward_product_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM reward_products WHERE id = ?').run(req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'reward_product_deleted', entityType: 'reward_product', entityId: req.params.id, payload: {} });
   res.json({ ok: true });
 });
@@ -1038,7 +1054,7 @@ app.patch('/api/admin/catalog/offers/:id', adminAuth, (req, res) => {
 });
 
 app.delete('/api/admin/catalog/offers/:id', adminAuth, (req, res) => {
-  db.prepare('UPDATE offers SET is_active = 0, updated_at = ? WHERE id = ?').run(nowIso(), req.params.id);
+  db.prepare('DELETE FROM offers WHERE id = ?').run(req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'offer_deleted', entityType: 'offer', entityId: req.params.id, payload: {} });
   res.json({ ok: true });
 });
@@ -1054,7 +1070,9 @@ app.patch('/api/admin/catalog/challenges/:id', adminAuth, (req, res) => {
 });
 
 app.delete('/api/admin/catalog/challenges/:id', adminAuth, (req, res) => {
-  db.prepare('UPDATE challenges SET is_active = 0 WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM client_challenge_days WHERE challenge_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM client_challenge_rewards WHERE challenge_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM challenges WHERE id = ?').run(req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'challenge_deleted', entityType: 'challenge', entityId: req.params.id, payload: {} });
   res.json({ ok: true });
 });
@@ -1070,7 +1088,8 @@ app.patch('/api/admin/catalog/stamps/:id', adminAuth, (req, res) => {
 });
 
 app.delete('/api/admin/catalog/stamps/:id', adminAuth, (req, res) => {
-  db.prepare('UPDATE stamp_programs SET is_active = 0 WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM client_stamp_progress WHERE program_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM stamp_programs WHERE id = ?').run(req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'stamp_program_deleted', entityType: 'stamp_program', entityId: req.params.id, payload: {} });
   res.json({ ok: true });
 });
@@ -1086,7 +1105,7 @@ app.patch('/api/admin/catalog/news/:id', adminAuth, (req, res) => {
 });
 
 app.delete('/api/admin/catalog/news/:id', adminAuth, (req, res) => {
-  db.prepare('UPDATE news SET is_active = 0 WHERE id = ?').run(req.params.id);
+  db.prepare('DELETE FROM news WHERE id = ?').run(req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'news_deleted', entityType: 'news', entityId: req.params.id, payload: {} });
   res.json({ ok: true });
 });
