@@ -19,7 +19,7 @@ const state = {
 };
 
 const icons = {
-  home: '⌂', stores: '⌖', offers: '◇', stars: '★', more: '•••', card: '▣', rewards: '🎁', history: '↺', profile: '♙', challenges: '🏆', news: '✦'
+  home: '🏠', stores: '📍', offers: '🏷', stars: '⭐', more: '•••', card: '💳', rewards: '🎁', history: '↺', profile: '👤', challenges: '🏆', news: '✦'
 };
 
 const fallbackStores = [
@@ -192,10 +192,13 @@ function registerScreen() {
   const stores = state.stores?.length ? state.stores : fallbackStores;
   const storeOptions = stores.map((s) => `<option value="${s.id}" ${c.favorite_store === s.id ? 'selected' : ''}>${s.name}</option>`).join('');
   const needPassword = !c.password_set;
+  const bonus = c.profile_progress?.bonus || { enabled: true, stars: 500, grantWhen: 'immediately' };
+  const showBonus = bonus.enabled && !c.profile_bonus_awarded;
+  const bonusText = bonus.grantWhen === 'after_first_purchase' ? 'після першої покупки' : 'після повного профілю';
   return `
     ${header(c.registered ? 'Профіль' : 'Реєстрація', true)}
     <form id="registerForm" class="stack">
-      ${!c.profile_bonus_awarded ? `<div class="banner"><span class="circle-icon">★</span><div>Заповніть повний профіль<br>та отримайте <strong>500 ★</strong></div></div>` : ''}
+      ${showBonus ? `<div class="banner"><span class="circle-icon">★</span><div>Заповніть повний профіль<br>та отримайте <strong>${fmtStars(bonus.stars)} ★</strong> ${bonusText}</div></div>` : ''}
       <input class="input" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+380XXXXXXXXX" value="${c.phone || '+380'}" pattern="^(\\+?380\\d{9}|0\\d{9})$" maxlength="13" required>
       <input class="input" name="name" placeholder="Імʼя" value="${c.name || ''}" required>
       <input class="input" name="birth_date" type="date" value="${c.birth_date || ''}" required>
@@ -203,6 +206,8 @@ function registerScreen() {
         <option value="">Улюблений магазин</option>
         ${storeOptions}
       </select>
+      <input class="input" name="email" type="email" autocomplete="email" placeholder="Email (необовʼязково)" value="${c.email || ''}">
+      <input class="input" name="preferences" placeholder="Вподобання через кому: кава, випічка" value="${Array.isArray(c.preferences) ? c.preferences.join(', ') : ''}">
       ${needPassword ? `
         <input class="input" name="password" type="password" autocomplete="new-password" placeholder="Пароль мінімум 6 символів" minlength="6" required>
         <input class="input" name="password_confirm" type="password" autocomplete="new-password" placeholder="Повторіть пароль" minlength="6" required>
@@ -217,7 +222,8 @@ function registerScreen() {
 
 function homeScreen() {
   const c = state.client;
-  const progress = c.profile_progress || { percent: 0 };
+  const progress = c.profile_progress || { percent: 0, bonus: { enabled: true, stars: 500 } };
+  const bonus = progress.bonus || { enabled: true, stars: 500 };
   const live = state.data.progress || { stamps: [], challenges: [] };
   const challenge = live.challenges?.[0];
   const stamp = live.stamps?.[0];
@@ -245,7 +251,7 @@ function homeScreen() {
           <div class="progress-row">
             <div>
               <b>Заповніть профіль</b>
-              <p class="small">Отримайте бонус 500 ★ після завершення анкети</p>
+              <p class="small">${bonus.enabled ? `Отримайте бонус ${fmtStars(bonus.stars)} ★` : 'Заповніть анкету для персональних пропозицій'}</p>
             </div>
             <div class="progress-ring">${progress.percent}%</div>
           </div>
@@ -463,6 +469,36 @@ function progressScreen() {
   `;
 }
 
+function showReceiptModal(receiptId) {
+  const receipt = (state.data.receipts || []).find((r) => String(r.id) === String(receiptId));
+  if (!receipt) {
+    toast('Чек не знайдено');
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-backdrop';
+  const items = receipt.items || [];
+  wrap.innerHTML = `
+    <div class="modal receipt-modal">
+      <h2>${receipt.is_reward_purchase ? 'Покупка за зірки' : 'Чек покупки'}</h2>
+      <p class="small">${receipt.store_id || 'Магазин Star'} · ${fmtDate(receipt.purchased_at)} ${fmtTime(receipt.purchased_at)}</p>
+      <div class="receipt-summary">
+        <span>Сума</span><b>${receipt.is_reward_purchase ? `${fmtStars(receipt.stars_spent)} ★ списано` : `${receipt.total_uah} грн`}</b>
+      </div>
+      <div class="receipt-items">
+        ${items.length ? items.map((item) => `
+          <div class="receipt-item">
+            <div><b>${item.name || 'Товар'}</b><p class="small">${item.external_product_id || item.product_id || ''}</p></div>
+            <div class="receipt-item-right"><span>${Number(item.qty || 1)} шт</span><b>${Math.round(Number(item.line_total_cents || 0)) / 100} грн</b></div>
+          </div>
+        `).join('') : '<div class="empty">У цьому чеку товари не передані з 1С</div>'}
+      </div>
+      <div class="modal-actions"><button class="btn" type="button" data-close-modal>Готово</button></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector('[data-close-modal]').onclick = () => wrap.remove();
+}
+
 function historyScreen() {
   const ledger = state.data.ledger || [];
   const receipts = state.data.receipts || [];
@@ -479,7 +515,7 @@ function historyScreen() {
       <section class="card">
         <b>Чеки</b>
         <div class="timeline">
-          ${receipts.length ? receipts.map((r) => `<div class="tx"><span>${r.is_reward_purchase ? '★' : '🧾'}</span><div><b>${r.is_reward_purchase ? 'Покупка за зірки' : (r.store_id || 'Магазин Star')}</b><p class="small">${fmtDate(r.purchased_at)} · ${r.items.length} товарів${r.is_reward_purchase ? ' · товар отримано за зірки' : ''}</p></div><b class="${r.is_reward_purchase ? 'minus' : ''}">${r.is_reward_purchase ? `-${r.stars_spent} ★` : `${r.total_uah} грн`}</b></div>`).join('') : '<div class="empty">Чеки зʼявляться після покупок із картою</div>'}
+          ${receipts.length ? receipts.map((r) => `<button class="tx receipt-row" type="button" data-open-receipt="${r.id}"><span>${r.is_reward_purchase ? '★' : '🧾'}</span><div><b>${r.is_reward_purchase ? 'Покупка за зірки' : (r.store_id || 'Магазин Star')}</b><p class="small">${fmtDate(r.purchased_at)} · ${r.items.length} товарів${r.is_reward_purchase ? ' · товар отримано за зірки' : ''}</p></div><b class="${r.is_reward_purchase ? 'minus' : ''}">${r.is_reward_purchase ? `-${r.stars_spent} ★` : `${r.total_uah} грн`}</b></button>`).join('') : '<div class="empty">Чеки зʼявляться після покупок із картою</div>'}
         </div>
       </section>
     </div>
@@ -688,6 +724,8 @@ function bindEvents() {
       if (state.route === 'rewards' || state.route === 'rewardCodes') render();
     } catch (e) { toast(e.message); }
   });
+  document.querySelectorAll('[data-open-receipt]').forEach((el) => el.onclick = () => showReceiptModal(el.dataset.openReceipt));
+
   document.querySelectorAll('[data-open-reward-code]').forEach((el) => el.onclick = async () => {
     const qrs = state.data.rewards?.qrs || state.data.rewardQrs || (await api('/api/client/reward-qrs')).qrs || [];
     const qr = qrs.find((item) => item.token === el.dataset.openRewardCode || item.manual_code === el.dataset.openRewardCode);
@@ -791,7 +829,7 @@ function bindEvents() {
           localStorage.setItem('starclub_session', state.token);
         }
         state.client = data.client;
-        toast(data.client?.profile_bonus_awarded ? 'Профіль збережено. Бонус 500 ★ активний.' : 'Профіль збережено');
+        toast(data.client?.profile_bonus_awarded ? 'Профіль збережено. Бонус активний.' : 'Профіль збережено');
         setRoute('home');
       } catch (e) {
         if (e.message === 'CLIENT_UNAUTHORIZED') {

@@ -2,3 +2,6 @@
 
 .form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}.form-grid input,.form-grid select,.form-grid textarea{width:100%;min-height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.2);color:var(--text);padding:10px}.form-grid textarea{grid-column:span 2;resize:vertical}.form-grid button{background:linear-gradient(135deg,#f6d37b,#b9852c);color:#111;text-align:center}.muted-box{border:1px dashed rgba(228,183,95,.3);border-radius:16px;padding:12px;color:var(--muted);margin:10px 0}@media(max-width:900px){.form-grid{grid-template-columns:1fr}.form-grid textarea{grid-column:auto}}
 .checkline{min-height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.2);color:var(--muted);padding:10px;display:flex;align-items:center;gap:8px;font-size:13px}.checkline input{height:auto}.actions button{white-space:nowrap}.card table pre{max-height:120px;margin:0;font-size:12px}.form-grid select{height:44px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.2);color:var(--text);padding:0 12px}
+
+.card.inner { background: rgba(255,255,255,.04); box-shadow: none; }
+.form-grid .card.inner { grid-column: 1 / -1; }

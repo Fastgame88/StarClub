@@ -66,7 +66,8 @@ function money(cents) {
 
 function formatClient(client) {
   if (!client) return null;
-  const required = getSetting('profile_bonus', { requiredFields: ['phone', 'name', 'birth_date', 'favorite_store'] }).requiredFields;
+  const bonus = getProfileBonusConfig();
+  const required = bonus.requiredFields;
   const completed = required.filter((key) => Boolean(client[key])).length;
   const reserved = getReservedStars(client.id);
   return {
@@ -90,8 +91,9 @@ function formatClient(client) {
     profile_progress: {
       completed,
       total: required.length,
-      percent: Math.round((completed / required.length) * 100),
-      required_fields: required
+      percent: required.length ? Math.round((completed / required.length) * 100) : 100,
+      required_fields: required,
+      bonus
     },
     registered_at: client.registered_at,
     last_purchase_at: client.last_purchase_at
@@ -117,6 +119,54 @@ function calculateEligibleCents(items = [], explicitEligible) {
     const excluded = Boolean(flags.is_alcohol || flags.is_tobacco || flags.is_min_margin || flags.no_star_accrual);
     return excluded ? sum : sum + Math.round(Number(item.line_total_cents ?? item.total_cents ?? item.sum_cents ?? 0));
   }, 0);
+}
+
+function getProfileBonusConfig() {
+  const raw = getSetting('profile_bonus', {
+    enabled: true,
+    stars: 500,
+    grantWhen: 'immediately',
+    requiredFields: ['phone', 'name', 'birth_date', 'favorite_store']
+  });
+  const allowedFields = ['phone', 'name', 'birth_date', 'favorite_store', 'email', 'preferences'];
+  const requiredFields = Array.isArray(raw.requiredFields) && raw.requiredFields.length
+    ? raw.requiredFields.filter((field) => allowedFields.includes(field))
+    : ['phone', 'name', 'birth_date', 'favorite_store'];
+  return {
+    enabled: raw.enabled !== false,
+    stars: Math.max(0, Math.floor(Number(raw.stars ?? 500))),
+    grantWhen: raw.grantWhen === 'after_first_purchase' ? 'after_first_purchase' : 'immediately',
+    requiredFields
+  };
+}
+
+function clientHasProfileFields(client, requiredFields = []) {
+  return requiredFields.every((field) => {
+    if (field === 'preferences') {
+      try {
+        const prefs = client.preferences ? JSON.parse(client.preferences) : [];
+        return Array.isArray(prefs) && prefs.length > 0;
+      } catch {
+        return false;
+      }
+    }
+    return Boolean(client[field]);
+  });
+}
+
+function tryAwardProfileBonus(clientId, trigger = 'immediately') {
+  let client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+  if (!client) return { awarded: false, reason: 'CLIENT_NOT_FOUND' };
+  const bonus = getProfileBonusConfig();
+  if (!bonus.enabled) return { awarded: false, reason: 'DISABLED' };
+  if (Number(client.profile_bonus_awarded || 0)) return { awarded: false, reason: 'ALREADY_AWARDED' };
+  if (bonus.grantWhen !== trigger) return { awarded: false, reason: 'WRONG_TRIGGER' };
+  if (!clientHasProfileFields(client, bonus.requiredFields)) return { awarded: false, reason: 'PROFILE_INCOMPLETE' };
+
+  const balance = awardStars(client.id, 'profile_bonus', bonus.stars, 'profile', `+${bonus.stars} ⭐ бонус за повний профіль`);
+  db.prepare('UPDATE clients SET profile_bonus_awarded = 1, updated_at = ? WHERE id = ?').run(nowIso(), client.id);
+  logAudit({ actorType: 'client', actorId: String(client.id), action: 'profile_bonus_awarded', entityType: 'client', entityId: String(client.id), payload: { stars: bonus.stars, balance, trigger, requiredFields: bonus.requiredFields } });
+  return { awarded: true, stars: bonus.stars, balance };
 }
 
 function addChallengeVisit(clientId, receiptId, purchasedAt, totalCents, eligibleItems) {
@@ -441,17 +491,14 @@ app.post('/api/client/register', optionalClientAuth, (req, res) => {
   const t = nowIso();
   const nextPasswordHash = shouldSetPassword ? hashPassword(password) : currentBeforeUpdate.password_hash;
   const nextPasswordSetAt = shouldSetPassword ? t : currentBeforeUpdate.password_set_at;
+  const preferences = Array.isArray(body.preferences)
+    ? body.preferences.map((v) => String(v).trim()).filter(Boolean)
+    : String(body.preferences || '').split(',').map((v) => v.trim()).filter(Boolean);
   db.prepare(`UPDATE clients SET phone = ?, name = ?, birth_date = ?, favorite_store = ?, email = ?, marketing_allowed = ?, preferences = ?, password_hash = ?, password_set_at = ?, updated_at = ? WHERE id = ?`)
-    .run(phone, name, birthDate, favoriteStore, body.email || null, body.marketing_allowed ? 1 : 0, JSON.stringify(body.preferences || []), nextPasswordHash, nextPasswordSetAt, t, req.client.id);
+    .run(phone, name, birthDate, favoriteStore, body.email || null, body.marketing_allowed ? 1 : 0, JSON.stringify(preferences), nextPasswordHash, nextPasswordSetAt, t, req.client.id);
 
   let client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
-  const bonus = getSetting('profile_bonus', { enabled: true, stars: 500, grantWhen: 'immediately', requiredFields: ['phone', 'name', 'birth_date', 'favorite_store'] });
-  const full = bonus.requiredFields.every((key) => Boolean(client[key]));
-  if (bonus.enabled && full && !client.profile_bonus_awarded && bonus.grantWhen === 'immediately') {
-    const balance = awardStars(client.id, 'profile_bonus', bonus.stars, 'profile', `+${bonus.stars} ⭐ бонус за повний профіль`);
-    db.prepare('UPDATE clients SET profile_bonus_awarded = 1, updated_at = ? WHERE id = ?').run(nowIso(), client.id);
-    logAudit({ actorType: 'client', actorId: String(client.id), action: 'profile_bonus_awarded', entityType: 'client', entityId: String(client.id), payload: { stars: bonus.stars, balance } });
-  }
+  tryAwardProfileBonus(client.id, 'immediately');
   client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
   const session = createSession(client.id);
   res.json({ ok: true, session, client: formatClient(client) });
@@ -780,6 +827,8 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   db.prepare('UPDATE clients SET last_purchase_at = ?, updated_at = ? WHERE id = ?')
     .run(purchasedAt, nowIso(), client.id);
 
+  const profileBonusResult = tryAwardProfileBonus(client.id, 'after_first_purchase');
+
   if (!isRewardReceipt) {
     addChallengeVisit(client.id, body.id, purchasedAt, totalCents, items);
     updateStampProgress(client.id, body.id, items);
@@ -791,7 +840,7 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     action: isRewardReceipt ? 'reward_receipt_imported' : 'receipt_imported',
     entityType: 'receipt',
     entityId: body.id,
-    payload: { starsAccrued, starsSpent, eligibleCents, rewardTokens: cleanRewardTokens }
+    payload: { starsAccrued, starsSpent, eligibleCents, rewardTokens: cleanRewardTokens, profileBonus: profileBonusResult }
   });
 
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);

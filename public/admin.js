@@ -135,6 +135,37 @@ async function news(editId=null){
   const form=$('#newsForm'); form.onsubmit=async ev=>{ev.preventDefault();const body={title:val(form,'title'),tag:val(form,'tag'),image_url:val(form,'image_url')||'/assets/star.svg',text:val(form,'text'),is_active:check(form,'is_active')}; await api(edit?`/api/admin/catalog/news/${edit.id}`:'/api/admin/catalog/news',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});news();}; $('#cancelEdit')?.addEventListener('click',()=>news()); $$('[data-edit-news]').forEach(b=>b.onclick=()=>news(b.dataset.editNews)); $$('[data-delete-news]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити новину?')){await api(`/api/admin/catalog/news/${b.dataset.deleteNews}`,{method:'DELETE'});news();}});
 }
 
+async function settings(){
+  title.textContent='Налаштування';
+  const data=await api('/api/admin/settings');
+  const map={};
+  (data.settings||[]).forEach(s=>map[s.key]=s.value);
+  const bonus=map.profile_bonus||{enabled:true,stars:500,grantWhen:'immediately',requiredFields:['phone','name','birth_date','favorite_store']};
+  const required=new Set(bonus.requiredFields||[]);
+  const field = (name,label) => `<label class="checkline"><input type="checkbox" name="requiredFields" value="${name}" ${required.has(name)?'checked':''}> ${label}</label>`;
+  content.innerHTML=`<div class="card"><h2>Бонус за повний профіль</h2><p class="small">Ці параметри керують тим, чи отримує клієнт бонус, який розмір бонусу, коли він нараховується і які поля вважаються повним профілем.</p>
+    <form id="bonusSettingsForm" class="form-grid">
+      <label class="checkline"><input type="checkbox" name="enabled" ${bonus.enabled!==false?'checked':''}> Давати бонус</label>
+      <input name="stars" type="number" min="0" step="1" placeholder="Розмір бонусу, ★" value="${esc(bonus.stars??500)}">
+      <select name="grantWhen">
+        <option value="immediately" ${bonus.grantWhen!=='after_first_purchase'?'selected':''}>Одразу після повного профілю</option>
+        <option value="after_first_purchase" ${bonus.grantWhen==='after_first_purchase'?'selected':''}>Після першої покупки</option>
+      </select>
+      <div class="card inner"><b>Поля повного профілю</b>
+        ${field('phone','Номер телефону')}
+        ${field('name','Імʼя')}
+        ${field('birth_date','Дата народження')}
+        ${field('favorite_store','Улюблений магазин')}
+        ${field('email','Email')}
+        ${field('preferences','Вподобання')}
+      </div>
+      <button>Зберегти налаштування</button>
+    </form>
+  </div>`;
+  const form=$('#bonusSettingsForm');
+  form.onsubmit=async ev=>{ev.preventDefault();const fd=new FormData(form);const requiredFields=fd.getAll('requiredFields');const body={value:{enabled:fd.has('enabled'),stars:Number(fd.get('stars')||0),grantWhen:fd.get('grantWhen')||'immediately',requiredFields}};await api('/api/admin/settings/profile_bonus',{method:'PUT',body:JSON.stringify(body)});alert('Налаштування бонусу збережено');settings();};
+}
+
 async function qrs(){
   title.textContent='QR за зірки';
   const {qrs}=await api('/api/admin/reward-qrs');
@@ -156,6 +187,7 @@ async function render(){
     if(tab==='stamps') await stamps();
     if(tab==='news') await news();
     if(tab==='qrs') await qrs();
+    if(tab==='settings') await settings();
     if(tab==='audit') await audit();
   } catch(e){content.innerHTML=`<div class="card"><h2>Помилка</h2><p>${esc(e.message)}</p><p class="small">Перевір ADMIN_API_KEY у .env і введи його у полі зверху.</p></div>`;}
 }
