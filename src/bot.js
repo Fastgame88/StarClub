@@ -5,8 +5,19 @@ import { fileURLToPath } from 'url';
  dotenv.config();
 
 function normalizeUrl(value, fallback) {
-  const raw = String(value || fallback || '').trim();
-  return raw.replace(/\/$/, '');
+  let raw = String(value || fallback || '').trim();
+
+  if (!raw) {
+    return '';
+  }
+
+  raw = raw.replace(/\/+$/, '');
+
+  if (!/^https?:\/\//i.test(raw)) {
+    raw = `https://${raw}`;
+  }
+
+  return raw;
 }
 
 export function createStarClubBot() {
