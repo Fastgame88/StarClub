@@ -42,3 +42,23 @@ table{width:100%;border-collapse:collapse;background:#10131a;border-radius:18px;
   .offer-editor .admin-help{grid-column:auto}
   .hide-while-editing{display:none!important}
 }
+
+/* v15: force every admin list into true mobile cards and prevent Telegram overflow */
+html,body{max-width:100%;overflow-x:hidden}
+#content,.listing-card,.editor-card{min-width:0;max-width:100%;overflow-x:hidden}
+@media(max-width:900px){
+  main{width:100%;max-width:100%;overflow-x:hidden}
+  .card{width:100%;max-width:100%;min-width:0}
+  .card>table,.listing-card>table,table.mobile-cards{display:block!important;width:100%!important;max-width:100%!important;table-layout:fixed!important;background:transparent!important}
+  table.mobile-cards thead{display:none!important}
+  table.mobile-cards tbody{display:grid!important;width:100%!important;gap:12px!important}
+  table.mobile-cards tr{display:block!important;width:100%!important;max-width:100%!important;padding:13px!important;border-radius:18px!important;background:linear-gradient(165deg,rgba(26,31,41,.98),rgba(14,17,23,.98))!important;border:1px solid rgba(255,255,255,.08)!important;overflow:hidden!important}
+  table.mobile-cards td{display:grid!important;width:100%!important;max-width:100%!important;grid-template-columns:minmax(92px,36%) minmax(0,1fr)!important;gap:9px!important;padding:8px 0!important;border:0!important;white-space:normal!important;word-break:break-word!important;overflow-wrap:anywhere!important}
+  table.mobile-cards td::before{content:attr(data-label)!important;color:#a4acb8!important;font-size:11px!important;font-weight:800!important}
+  table.mobile-cards td.actions{display:grid!important;grid-template-columns:1fr!important;gap:8px!important;margin-top:8px!important}
+  table.mobile-cards td.actions::before{display:none!important}
+  table.mobile-cards td.actions button{width:100%!important;min-height:44px!important;white-space:normal!important}
+  table.mobile-cards td[colspan]{display:block!important;text-align:center!important}
+  .form-grid,.offer-editor{grid-template-columns:1fr!important}
+  .form-grid>*{grid-column:auto!important;min-width:0!important}
+}

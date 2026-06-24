@@ -194,11 +194,28 @@ function normalizeMatchValue(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function itemCategoryCandidates(item = {}) {
+  return [
+    item.category,
+    item.category_code,
+    item.category_name,
+    item.product_group_code,
+    item.product_group_name
+  ].map(normalizeMatchValue).filter(Boolean);
+}
+
+function categoryMatches(expected, item = {}) {
+  const wanted = normalizeMatchValue(expected);
+  if (!wanted) return true;
+  return itemCategoryCandidates(item).some((candidate) =>
+    candidate === wanted || candidate.includes(wanted) || wanted.includes(candidate)
+  );
+}
+
 function offerMatchesItem(offer, item) {
   const externalId = normalizeMatchValue(item.external_product_id || item.product_id);
-  const category = normalizeMatchValue(item.category);
   if (offer.product_external_id) return externalId === normalizeMatchValue(offer.product_external_id);
-  if (offer.category) return category === normalizeMatchValue(offer.category) || category.includes(normalizeMatchValue(offer.category));
+  if (offer.category) return categoryMatches(offer.category, item);
   return true;
 }
 
@@ -429,10 +446,10 @@ function updateStampProgress(clientId, receiptId, items = []) {
   const programs = db.prepare('SELECT * FROM stamp_programs WHERE is_active = 1').all();
   for (const program of programs) {
     const count = items.reduce((sum, item) => {
-      const category = String(item.category || '').toLowerCase();
+      const categories = itemCategoryCandidates(item).join(' ');
       const name = String(item.name || '').toLowerCase();
-      if (program.category === 'coffee' && (category.includes('coffee') || category.includes('кава') || name.includes('кава'))) return sum + Math.ceil(Number(item.qty || 1));
-      if (program.category === 'bakery' && (category.includes('bakery') || category.includes('випіч') || category.includes('хліб') || name.includes('багет') || name.includes('круасан'))) return sum + Math.ceil(Number(item.qty || 1));
+      if (program.category === 'coffee' && (categories.includes('coffee') || categories.includes('кава') || name.includes('кава'))) return sum + Math.ceil(Number(item.qty || 1));
+      if (program.category === 'bakery' && (categories.includes('bakery') || categories.includes('випіч') || categories.includes('хліб') || name.includes('багет') || name.includes('круасан'))) return sum + Math.ceil(Number(item.qty || 1));
       return sum;
     }, 0);
     if (!count) continue;

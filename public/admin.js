@@ -124,7 +124,7 @@ function offerForm(o={}){
     <label class="admin-field"><span>Опис</span><input name="description" placeholder="Коротко поясніть умову" value="${esc(o.description||'')}"></label>
     <label class="admin-field"><span>Фото</span><input name="image_url" placeholder="Фото URL" value="${esc(o.image_url||'/assets/star.svg')}"></label>
     <label class="admin-field"><span>Код конкретного товару з 1С</span><input name="product_external_id" placeholder="Наприклад: ЦБ000008652" value="${esc(o.product_external_id||'')}"></label>
-    <label class="admin-field"><span>Категорія з 1С</span><input name="category" placeholder="Наприклад: bakery або випічка" value="${esc(o.category||'')}"></label>
+    <label class="admin-field"><span>Група товарів з 1С</span><input name="category" placeholder="Код або назва групи: ЦБ000001210 чи Випічка" value="${esc(o.category||'')}"></label>
     <div class="admin-help">Заповніть або <b>код товару 1С</b> для конкретного товару, або <b>категорію 1С</b> для всієї групи. 1С повинна передавати ці значення в кожній позиції чека.</div>
     <label class="admin-field"><span>Клубна ціна, грн</span><input name="club_price_uah" type="number" step="0.01" placeholder="42" value="${esc(centsToUah(o.club_price_cents))}"></label>
     <label class="admin-field"><span>Звичайна ціна, грн</span><input name="old_price_uah" type="number" step="0.01" placeholder="55" value="${esc(centsToUah(o.old_price_cents))}"></label>
@@ -162,7 +162,7 @@ async function stamps(editId=null){
   title.textContent='Накопичувальні програми';
   const {programs}=await api('/api/admin/catalog/stamps');
   const edit=editId?programs.find(x=>String(x.id)===String(editId)):null;
-  content.innerHTML=`<div class="card editor-card ${edit?'edit-panel':''}"><h3>${edit?'Редагувати програму':'Створити програму'}</h3><form id="stampForm" class="form-grid"><input name="name" placeholder="Назва" value="${esc(edit?.name||'')}" required><input name="category" placeholder="Категорія з 1С, напр. coffee" value="${esc(edit?.category||'')}" required><input name="required_qty" type="number" placeholder="Кількість" value="${esc(edit?.required_qty||10)}"><input name="reward_stars" type="number" placeholder="Бонус ★" value="${esc(edit?.reward_stars||1000)}"><input name="code" placeholder="Код" value="${esc(edit?.code||'')}"><label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label><button>${edit?'Зберегти':'Створити'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</form></div><div class="card listing-card ${edit?'hide-while-editing':''}"><table><thead><tr><th>Назва</th><th>Категорія</th><th>Кількість</th><th>Бонус</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${programs.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.category)}</td><td>${p.required_qty}</td><td>${num(p.reward_stars)} ★</td><td>${activeText(p.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-stamp="${p.id}"`)}${btn('Видалити',`data-delete-stamp="${p.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
+  content.innerHTML=`<div class="card editor-card ${edit?'edit-panel':''}"><h3>${edit?'Редагувати програму':'Створити програму'}</h3><form id="stampForm" class="form-grid"><input name="name" placeholder="Назва" value="${esc(edit?.name||'')}" required><input name="category" placeholder="Код або назва групи 1С" value="${esc(edit?.category||'')}" required><input name="required_qty" type="number" placeholder="Кількість" value="${esc(edit?.required_qty||10)}"><input name="reward_stars" type="number" placeholder="Бонус ★" value="${esc(edit?.reward_stars||1000)}"><input name="code" placeholder="Код" value="${esc(edit?.code||'')}"><label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label><button>${edit?'Зберегти':'Створити'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</form></div><div class="card listing-card ${edit?'hide-while-editing':''}"><table><thead><tr><th>Назва</th><th>Категорія</th><th>Кількість</th><th>Бонус</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${programs.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.category)}</td><td>${p.required_qty}</td><td>${num(p.reward_stars)} ★</td><td>${activeText(p.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-stamp="${p.id}"`)}${btn('Видалити',`data-delete-stamp="${p.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
   const form=$('#stampForm'); form.onsubmit=async ev=>{ev.preventDefault();const body={name:val(form,'name'),category:val(form,'category'),required_qty:Number(val(form,'required_qty')),reward_stars:Number(val(form,'reward_stars')),code:val(form,'code')||undefined,is_active:check(form,'is_active')}; await api(edit?`/api/admin/catalog/stamps/${edit.id}`:'/api/admin/catalog/stamps',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});stamps();}; $('#cancelEdit')?.addEventListener('click',()=>stamps()); $$('[data-edit-stamp]').forEach(b=>b.onclick=async()=>{await stamps(b.dataset.editStamp);scrollAdminFormIntoView();}); $$('[data-delete-stamp]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити програму?')){await api(`/api/admin/catalog/stamps/${b.dataset.deleteStamp}`,{method:'DELETE'});stamps();}});
 }
 
@@ -286,8 +286,8 @@ async function audit(){
 function syncActiveNavigation(){
   $$('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
 }
-function enhanceMobileTables(){
-  content.querySelectorAll('table').forEach(table=>{
+function enhanceMobileTables(root=content){
+  root.querySelectorAll('table').forEach(table=>{
     table.classList.add('mobile-cards');
     const headers=[...table.querySelectorAll('thead th')].map(th=>th.textContent.trim());
     table.querySelectorAll('tbody tr').forEach(row=>{
@@ -297,6 +297,8 @@ function enhanceMobileTables(){
     });
   });
 }
+const mobileTableObserver=new MutationObserver(()=>requestAnimationFrame(()=>enhanceMobileTables()));
+mobileTableObserver.observe(content,{childList:true,subtree:true});
 function closeMobileMenu(){ $('#mobileMenuOverlay')?.classList.add('hidden'); }
 async function render(){
   syncActiveNavigation();
