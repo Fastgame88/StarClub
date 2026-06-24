@@ -236,6 +236,118 @@ function calculateAccrualWithOffers(items = [], storeId, purchasedAt) {
   return { stars, applied };
 }
 
+
+function parseWholesaleTiers(offer) {
+  if (!offer?.tiers_json) return [];
+  try {
+    const tiers = JSON.parse(offer.tiers_json);
+    return Array.isArray(tiers)
+      ? tiers.map((tier) => ({ qty: Number(tier.qty || 0), priceCents: Math.round(Number(tier.price || 0) * 100) }))
+          .filter((tier) => tier.qty > 0 && tier.priceCents >= 0)
+          .sort((a, b) => a.qty - b.qty)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
+  const offers = getActiveOffers(storeId, purchasedAt);
+  const calculatedItems = [];
+  const appliedConditions = [];
+  let regularTotalCents = 0;
+  let finalTotalCents = 0;
+  let expectedStars = 0;
+
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index] || {};
+    const qty = Math.max(0, Number(item.qty || 0));
+    const regularUnitPriceCents = Math.max(0, Math.round(Number(item.price_cents || 0)));
+    const regularLineTotalCents = Math.max(0, Math.round(Number(item.line_total_cents ?? regularUnitPriceCents * qty)));
+    const flags = item.flags || item;
+    const priceCandidates = [{ priceCents: regularUnitPriceCents, offer: null, source: 'regular' }];
+
+    for (const offer of offers) {
+      if (!offerMatchesItem(offer, item)) continue;
+      if (offer.type === 'club' && (offer.product_external_id || offer.category) && offer.club_price_cents !== null && offer.club_price_cents !== undefined && Number.isFinite(Number(offer.club_price_cents)) && Number(offer.club_price_cents) >= 0) {
+        priceCandidates.push({ priceCents: Math.round(Number(offer.club_price_cents)), offer, source: 'club' });
+      }
+      if (offer.type === 'wholesale' && (offer.product_external_id || offer.category)) {
+        const tiers = parseWholesaleTiers(offer);
+        const eligibleTiers = tiers.filter((tier) => qty >= tier.qty);
+        if (eligibleTiers.length) {
+          const tier = eligibleTiers[eligibleTiers.length - 1];
+          priceCandidates.push({ priceCents: tier.priceCents, offer, source: 'wholesale', tierQty: tier.qty });
+        }
+      }
+    }
+
+    const bestPrice = priceCandidates.reduce((best, candidate) => candidate.priceCents < best.priceCents ? candidate : best, priceCandidates[0]);
+    const finalUnitPriceCents = bestPrice.priceCents;
+    const finalLineTotalCents = Math.max(0, Math.round(finalUnitPriceCents * qty));
+
+    let multiplier = 1;
+    let multiplierOffer = null;
+    const excluded = Boolean(flags.is_alcohol || flags.is_tobacco || flags.is_min_margin || flags.no_star_accrual);
+    if (!excluded) {
+      for (const offer of offers) {
+        if (offer.type !== 'stars_multiplier' || !offer.stars_multiplier || !offerMatchesItem(offer, item)) continue;
+        if (Number(offer.stars_multiplier) > multiplier) {
+          multiplier = Number(offer.stars_multiplier);
+          multiplierOffer = offer;
+        }
+      }
+    }
+
+    const itemExpectedStars = excluded ? 0 : Math.floor((finalLineTotalCents / 100) * multiplier);
+    regularTotalCents += regularLineTotalCents;
+    finalTotalCents += finalLineTotalCents;
+    expectedStars += itemExpectedStars;
+
+    const applied = [];
+    if (bestPrice.offer) {
+      applied.push({
+        type: bestPrice.source,
+        offer_id: bestPrice.offer.id,
+        name: bestPrice.offer.name,
+        regular_price_cents: regularUnitPriceCents,
+        final_price_cents: finalUnitPriceCents,
+        tier_qty: bestPrice.tierQty || null
+      });
+      appliedConditions.push({ offer_id: bestPrice.offer.id, name: bestPrice.offer.name, type: bestPrice.source, line_no: item.line_no ?? index + 1 });
+    }
+    if (multiplierOffer) {
+      applied.push({ type: 'stars_multiplier', offer_id: multiplierOffer.id, name: multiplierOffer.name, multiplier });
+      appliedConditions.push({ offer_id: multiplierOffer.id, name: multiplierOffer.name, type: 'stars_multiplier', multiplier, line_no: item.line_no ?? index + 1 });
+    }
+
+    calculatedItems.push({
+      line_no: Number(item.line_no ?? index + 1),
+      external_product_id: item.external_product_id || item.product_id || null,
+      name: item.name || 'Товар',
+      category: item.category || null,
+      qty,
+      regular_price_cents: regularUnitPriceCents,
+      final_price_cents: finalUnitPriceCents,
+      regular_line_total_cents: regularLineTotalCents,
+      final_line_total_cents: finalLineTotalCents,
+      discount_cents: Math.max(0, regularLineTotalCents - finalLineTotalCents),
+      stars_multiplier: multiplier,
+      expected_stars: itemExpectedStars,
+      applied
+    });
+  }
+
+  return {
+    items: calculatedItems,
+    regular_total_cents: regularTotalCents,
+    final_total_cents: finalTotalCents,
+    discount_total_cents: Math.max(0, regularTotalCents - finalTotalCents),
+    expected_stars: expectedStars,
+    applied_conditions: appliedConditions
+  };
+}
+
 function getProfileBonusConfig() {
   const raw = getSetting('profile_bonus', {
     enabled: true,
@@ -932,6 +1044,38 @@ app.get('/api/1c/client/search', oneCAuth, (req, res) => {
     stamp_rewards: stamps,
     restrictions: ['no_alcohol', 'no_tobacco', 'no_min_margin']
   } });
+});
+
+
+app.post('/api/1c/calculate', oneCAuth, (req, res) => {
+  const body = req.body || {};
+  const client = findClientForOneC({
+    card_number: body.card_number,
+    card_token: body.card_token,
+    phone: body.phone
+  });
+  if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (!items.length) return res.status(400).json({ ok: false, error: 'ITEMS_REQUIRED' });
+
+  const calculation = calculateDraftWithOffers({
+    items,
+    storeId: body.store_id,
+    purchasedAt: body.purchased_at || nowIso()
+  });
+
+  res.json({
+    ok: true,
+    client: {
+      id: client.id,
+      name: client.name,
+      phone: client.phone,
+      card_number: client.card_number,
+      stars_balance: client.stars_balance,
+      available_stars: getClientAvailableStars(client.id)
+    },
+    ...calculation
+  });
 });
 
 app.post('/api/1c/receipts', oneCAuth, (req, res) => {
