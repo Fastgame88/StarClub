@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/admin.css" />
 </head>
 <body>
+  <div id="adminLogin" class="admin-login hidden"><div class="login-card"><div class="brand-mark">★</div><h1>Star Club Admin</h1><p>Увійдіть через Telegram Mini App або використайте ADMIN_API_KEY.</p><button id="telegramAdminLogin" class="primary">Увійти через Telegram</button><div class="or">або</div><input id="loginApiKey" placeholder="ADMIN_API_KEY"><button id="keyAdminLogin">Увійти за ключем</button></div></div>
   <aside class="sidebar">
     <div class="brand"><span>★</span><b>Star Club</b><small>Admin panel</small></div>
     <button data-tab="dashboard" class="active">Аналітика</button>
@@ -17,6 +18,8 @@
     <button data-tab="stamps">Накопичувальні</button>
     <button data-tab="news">Новини</button>
     <button data-tab="qrs">QR за зірки</button>
+    <button data-tab="support">Підтримка</button>
+    <button data-tab="admins" data-owner-only>Адміністратори</button>
     <button data-tab="settings">Налаштування</button>
     <button data-tab="audit">Журнал</button>
     <a href="/" target="_blank">Mini App</a>
@@ -29,6 +32,7 @@
     </header>
     <section id="content"></section>
   </main>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script type="module" src="/admin.js"></script>
 </body>
 </html>

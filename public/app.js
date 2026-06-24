@@ -19,7 +19,7 @@ const state = {
 };
 
 const icons = {
-  home: '🏠', stores: '📍', offers: '🏷', stars: '⭐', more: '•••', card: '💳', rewards: '🎁', history: '↺', profile: '👤', challenges: '🏆', news: '✦'
+  home: '🏠', stores: '📍', offers: '🏷', stars: '⭐', more: '•••', card: '💳', rewards: '🎁', history: '↺', profile: '👤', challenges: '🏆', news: '✦', support: '💬'
 };
 
 const fallbackStores = [
@@ -284,6 +284,7 @@ function homeScreen() {
         <button data-route="rewards"><b>🎁</b>За зірки</button>
         <button data-route="history"><b>↺</b>Історія</button>
         <button data-route="profile"><b>♙</b>Профіль</button>
+      <button data-route="support"><b>💬</b>Підтримка</button>
       </div>
     </div>
   `;
@@ -321,6 +322,10 @@ async function loadHistory() {
 
 async function loadNews() {
   state.data.news = (await api('/api/client/news')).news;
+}
+
+async function loadSupport() {
+  state.data.supportTickets = (await api('/api/client/support/tickets')).tickets || [];
 }
 
 async function cardScreen() {
@@ -469,34 +474,38 @@ function progressScreen() {
   `;
 }
 
-function showReceiptModal(receiptId) {
-  const receipt = (state.data.receipts || []).find((r) => String(r.id) === String(receiptId));
-  if (!receipt) {
-    toast('Чек не знайдено');
-    return;
+async function showReceiptModal(receiptId) {
+  let receipt = (state.data.receipts || []).find((r) => String(r.id) === String(receiptId));
+  try {
+    const detail = await api(`/api/client/receipts/${encodeURIComponent(receiptId)}`);
+    receipt = detail.receipt;
+  } catch (error) {
+    if (!receipt) return toast('Чек не знайдено');
   }
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop';
   const items = receipt.items || [];
   wrap.innerHTML = `
     <div class="modal receipt-modal">
-      <h2>${receipt.is_reward_purchase ? 'Покупка за зірки' : 'Чек покупки'}</h2>
+      <div class="modal-heading"><div><p class="eyebrow">STAR CLUB RECEIPT</p><h2>${receipt.is_reward_purchase ? 'Покупка за зірки' : 'Чек покупки'}</h2></div><button class="icon-btn compact" data-close-modal>×</button></div>
       <p class="small">${receipt.store_id || 'Магазин Star'} · ${fmtDate(receipt.purchased_at)} ${fmtTime(receipt.purchased_at)}</p>
-      <div class="receipt-summary">
-        <span>Сума</span><b>${receipt.is_reward_purchase ? `${fmtStars(receipt.stars_spent)} ★ списано` : `${receipt.total_uah} грн`}</b>
+      <div class="receipt-summary-grid">
+        <div><span>Сума</span><b>${receipt.is_reward_purchase ? '0 грн' : `${receipt.total_uah} грн`}</b></div>
+        <div><span>${receipt.is_reward_purchase ? 'Списано' : 'Нараховано'}</span><b>${receipt.is_reward_purchase ? `-${fmtStars(receipt.stars_spent)} ★` : `+${fmtStars(receipt.stars_accrued)} ★`}</b></div>
       </div>
       <div class="receipt-items">
         ${items.length ? items.map((item) => `
           <div class="receipt-item">
-            <div><b>${item.name || 'Товар'}</b><p class="small">${item.external_product_id || item.product_id || ''}</p></div>
-            <div class="receipt-item-right"><span>${Number(item.qty || 1)} шт</span><b>${Math.round(Number(item.line_total_cents || 0)) / 100} грн</b></div>
+            <div class="receipt-item-main"><b>${item.name || 'Товар'}</b><p class="small">${item.external_product_id || item.product_id || 'Без коду'}</p></div>
+            <div class="receipt-item-right"><span>${Number(item.qty || 1)} × ${(Math.round(Number(item.price_cents || 0)) / 100).toFixed(2)} грн</span><b>${(Math.round(Number(item.line_total_cents || 0)) / 100).toFixed(2)} грн</b></div>
           </div>
-        `).join('') : '<div class="empty">У цьому чеку товари не передані з 1С</div>'}
+        `).join('') : '<div class="empty">1С не передала товарні позиції цього чека. Перевірте масив items у відправці чека.</div>'}
       </div>
+      <div class="receipt-total"><span>Разом</span><b>${receipt.is_reward_purchase ? `${fmtStars(receipt.stars_spent)} ★` : `${receipt.total_uah} грн`}</b></div>
       <div class="modal-actions"><button class="btn" type="button" data-close-modal>Готово</button></div>
     </div>`;
   document.body.appendChild(wrap);
-  wrap.querySelector('[data-close-modal]').onclick = () => wrap.remove();
+  wrap.querySelectorAll('[data-close-modal]').forEach((b) => b.onclick = () => wrap.remove());
 }
 
 function historyScreen() {
@@ -550,8 +559,31 @@ function moreScreen() {
       <button data-route="history"><b>↺</b>Історія</button>
       <button data-route="news"><b>✦</b>Новини</button>
       <button data-route="profile"><b>♙</b>Профіль</button>
+      <button data-route="support"><b>💬</b>Підтримка</button>
     </div>
   `;
+}
+
+function supportScreen() {
+  const tickets = state.data.supportTickets || [];
+  return `
+    ${header('Підтримка', true)}
+    <div class="stack">
+      <section class="card gold-border support-intro"><p class="eyebrow">STAR CLUB SUPPORT</p><h3>Ми поруч</h3><p class="small">Опишіть питання — Owner або Admin відповість у цьому чаті.</p></section>
+      <form id="supportForm" class="card stack compact-stack">
+        <input class="input" name="subject" placeholder="Тема звернення" required>
+        <textarea class="input textarea" name="message" placeholder="Опишіть проблему або запитання" required></textarea>
+        <button class="btn" type="submit">Створити звернення</button>
+      </form>
+      <section class="stack">
+        ${tickets.length ? tickets.map((t) => `
+          <article class="card support-ticket">
+            <div class="progress-row"><div><b>#${t.id} · ${t.subject}</b><p class="small">Оновлено ${fmtDate(t.updated_at)} ${fmtTime(t.updated_at)}</p></div><span class="pill">${t.status === 'open' ? 'відкрите' : t.status === 'answered' ? 'є відповідь' : 'закрите'}</span></div>
+            <div class="support-thread">${(t.messages || []).map((m) => `<div class="support-message ${m.sender_type}"><b>${m.sender_type === 'client' ? 'Ви' : 'Підтримка'}</b><p>${m.message}</p><span>${fmtTime(m.created_at)}</span></div>`).join('')}</div>
+            ${t.status !== 'closed' ? `<form class="supportReplyForm" data-ticket-id="${t.id}"><textarea class="input textarea" name="message" placeholder="Ваша відповідь" required></textarea><button class="btn secondary" type="submit">Надіслати</button></form>` : ''}
+          </article>`).join('') : '<div class="empty">Звернень поки немає</div>'}
+      </section>
+    </div>`;
 }
 
 function newsScreen() {
@@ -659,6 +691,7 @@ async function render() {
     else if (state.route === 'stars') $app.innerHTML = starsScreen();
     else if (state.route === 'more') $app.innerHTML = moreScreen();
     else if (state.route === 'news') { await loadNews(); $app.innerHTML = newsScreen(); }
+    else if (state.route === 'support') { await loadSupport(); $app.innerHTML = supportScreen(); }
     else if (state.route === 'profile') $app.innerHTML = profileScreen();
     else if (state.route === 'rewardCodes') { await loadRewardQrs(); $app.innerHTML = rewardCodesScreen(); }
     else if (state.route === 'telegramPassword') $app.innerHTML = telegramPasswordScreen();
@@ -725,6 +758,27 @@ function bindEvents() {
     } catch (e) { toast(e.message); }
   });
   document.querySelectorAll('[data-open-receipt]').forEach((el) => el.onclick = () => showReceiptModal(el.dataset.openReceipt));
+
+  const supportForm = document.querySelector('#supportForm');
+  if (supportForm) supportForm.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(supportForm);
+    try {
+      await api('/api/client/support/tickets', { method: 'POST', body: JSON.stringify({ subject: fd.get('subject'), message: fd.get('message') }) });
+      toast('Звернення створено');
+      await loadSupport();
+      render();
+    } catch (e) { toast(e.message); }
+  };
+  document.querySelectorAll('.supportReplyForm').forEach((form) => form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    try {
+      await api(`/api/client/support/tickets/${form.dataset.ticketId}/messages`, { method: 'POST', body: JSON.stringify({ message: fd.get('message') }) });
+      await loadSupport();
+      render();
+    } catch (e) { toast(e.message); }
+  });
 
   document.querySelectorAll('[data-open-reward-code]').forEach((el) => el.onclick = async () => {
     const qrs = state.data.rewards?.qrs || state.data.rewardQrs || (await api('/api/client/reward-qrs')).qrs || [];

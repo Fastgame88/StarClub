@@ -27,11 +27,56 @@ app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+function parseCsvEnv(name) {
+  return String(process.env[name] || '').split(',').map((v) => v.trim()).filter(Boolean);
+}
+
+function getAdminBySession(token) {
+  if (!token) return null;
+  return db.prepare(`SELECT a.* FROM admin_sessions s JOIN admin_users a ON a.id = s.admin_user_id
+    WHERE s.token = ? AND s.expires_at > ? AND a.is_active = 1`).get(token, nowIso()) || null;
+}
+
 function adminAuth(req, res, next) {
   const expected = process.env.ADMIN_API_KEY || 'change-this-admin-key';
-  const got = req.header('x-admin-key') || req.query.admin_key;
-  if (!got || got !== expected) return res.status(401).json({ ok: false, error: 'ADMIN_UNAUTHORIZED' });
+  const key = req.header('x-admin-key') || req.query.admin_key;
+  if (key && key === expected) {
+    req.admin = { id: 0, telegram_id: 'api-key', name: 'Owner API key', role: 'owner', permissions_json: null };
+    return next();
+  }
+  const header = req.header('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : req.query.admin_session;
+  const admin = getAdminBySession(token);
+  if (!admin) return res.status(401).json({ ok: false, error: 'ADMIN_UNAUTHORIZED' });
+  req.admin = admin;
+  if (admin.role !== 'owner') {
+    let permissions = [];
+    try { permissions = admin.permissions_json ? JSON.parse(admin.permissions_json) : []; } catch {}
+    const path = req.path;
+    const permission = path.includes('/clients') ? 'clients'
+      : path.includes('/catalog/rewards') ? 'rewards'
+      : path.includes('/catalog/offers') ? 'offers'
+      : path.includes('/catalog/challenges') ? 'challenges'
+      : path.includes('/catalog/stamps') ? 'stamps'
+      : path.includes('/catalog/news') ? 'news'
+      : path.includes('/reward-qrs') ? 'qrs'
+      : path.includes('/support') ? 'support'
+      : path.includes('/settings') ? 'settings'
+      : path.includes('/audit') ? 'audit'
+      : path.includes('/summary') ? 'dashboard'
+      : null;
+    if (permission && permissions.length && !permissions.includes(permission)) {
+      return res.status(403).json({ ok: false, error: 'ADMIN_PERMISSION_DENIED', permission });
+    }
+  }
   next();
+}
+
+function ownerAuth(req, res, next) {
+  return adminAuth(req, res, () => {
+    if (req.admin?.role !== 'owner') return res.status(403).json({ ok: false, error: 'OWNER_REQUIRED' });
+    next();
+  });
 }
 
 function oneCAuth(req, res, next) {
@@ -57,6 +102,29 @@ function optionalClientAuth(req, res, next) {
   const client = getClientBySession(token);
   if (client && !client.is_blocked) req.client = client;
   next();
+}
+
+
+function formatAdmin(admin) {
+  let permissions = [];
+  try { permissions = admin?.permissions_json ? JSON.parse(admin.permissions_json) : []; } catch {}
+  return admin ? {
+    id: admin.id,
+    telegram_id: admin.telegram_id,
+    name: admin.name,
+    username: admin.username,
+    role: admin.role,
+    permissions,
+    is_active: Boolean(admin.is_active)
+  } : null;
+}
+
+function createAdminSession(adminId) {
+  const token = randomToken('adm_');
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString();
+  db.prepare('INSERT INTO admin_sessions(token, admin_user_id, created_at, expires_at) VALUES(?, ?, ?, ?)')
+    .run(token, adminId, nowIso(), expiresAt);
+  return { token, expires_at: expiresAt };
 }
 
 
@@ -376,6 +444,37 @@ function findClientForOneC({ card_number, card_token, phone }) {
   return null;
 }
 
+app.post('/api/admin/auth/telegram', (req, res) => {
+  const initData = String(req.body?.initData || '');
+  let user = null;
+  if (initData) {
+    const verified = verifyTelegramInitData(initData, process.env.BOT_TOKEN);
+    if (!verified.ok) return res.status(401).json({ ok: false, error: 'TELEGRAM_AUTH_FAILED', reason: verified.reason });
+    user = verified.user;
+  } else if (process.env.ALLOW_DEV_LOGIN === 'true' && req.body?.devUser) {
+    user = req.body.devUser;
+  }
+  if (!user?.id) return res.status(400).json({ ok: false, error: 'TELEGRAM_USER_REQUIRED' });
+  const telegramId = String(user.id);
+  const ownerIds = parseCsvEnv('OWNER_TELEGRAM_IDS');
+  let admin = db.prepare('SELECT * FROM admin_users WHERE telegram_id = ?').get(telegramId);
+  if (!admin && ownerIds.includes(telegramId)) {
+    const now = nowIso();
+    const r = db.prepare(`INSERT INTO admin_users(telegram_id, name, username, role, permissions_json, is_active, created_at, updated_at)
+      VALUES(?, ?, ?, 'owner', '[]', 1, ?, ?)`).run(telegramId, [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Owner', user.username || null, now, now);
+    admin = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(r.lastInsertRowid);
+  }
+  if (!admin || !admin.is_active) return res.status(403).json({ ok: false, error: 'ADMIN_ACCESS_DENIED' });
+  db.prepare('UPDATE admin_users SET name = ?, username = ?, updated_at = ? WHERE id = ?')
+    .run([user.first_name, user.last_name].filter(Boolean).join(' ') || admin.name, user.username || admin.username, nowIso(), admin.id);
+  admin = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(admin.id);
+  const session = createAdminSession(admin.id);
+  logAudit({ actorType: 'admin', actorId: String(admin.id), action: 'admin_telegram_login', entityType: 'admin_user', entityId: String(admin.id), payload: { telegram_id: telegramId } });
+  res.json({ ok: true, admin: formatAdmin(admin), session });
+});
+
+app.get('/api/admin/me', adminAuth, (req, res) => res.json({ ok: true, admin: formatAdmin(req.admin) }));
+
 app.get('/health', (req, res) => res.json({ ok: true, service: 'star-club', time: nowIso() }));
 
 app.get('/api/public/stores', (req, res) => {
@@ -553,6 +652,22 @@ app.get('/api/client/receipts', clientAuth, (req, res) => {
   }) });
 });
 
+app.get('/api/client/receipts/:id', clientAuth, (req, res) => {
+  const r = db.prepare('SELECT * FROM receipts WHERE id = ? AND client_id = ?').get(req.params.id, req.client.id);
+  if (!r) return res.status(404).json({ ok: false, error: 'RECEIPT_NOT_FOUND' });
+  const items = db.prepare('SELECT * FROM receipt_items WHERE receipt_id = ? ORDER BY id').all(r.id);
+  const isRewardPurchase = Number(r.stars_spent || 0) > 0;
+  res.json({ ok: true, receipt: {
+    ...r,
+    total_uah: money(r.total_cents),
+    eligible_uah: money(r.eligible_cents),
+    is_reward_purchase: isRewardPurchase,
+    display_title: isRewardPurchase ? 'Покупка за зірки' : (r.store_id || 'Магазин Star'),
+    display_amount: isRewardPurchase ? `-${r.stars_spent} ⭐` : `${money(r.total_cents)} грн`,
+    items
+  } });
+});
+
 app.get('/api/client/rewards', clientAuth, (req, res) => {
   expireReservedRewardQrs(req.client.id);
   const items = db.prepare('SELECT * FROM reward_products WHERE is_active = 1 ORDER BY stars_price ASC').all();
@@ -634,6 +749,37 @@ app.get('/api/client/progress', clientAuth, (req, res) => {
 
 app.get('/api/client/news', clientAuth, (req, res) => {
   res.json({ ok: true, news: db.prepare('SELECT * FROM news WHERE is_active = 1 ORDER BY created_at DESC').all() });
+});
+
+app.get('/api/client/support/tickets', clientAuth, (req, res) => {
+  const tickets = db.prepare('SELECT * FROM support_tickets WHERE client_id = ? ORDER BY updated_at DESC').all(req.client.id);
+  const msg = db.prepare('SELECT * FROM support_messages WHERE ticket_id = ? ORDER BY created_at ASC');
+  res.json({ ok: true, tickets: tickets.map((t) => ({ ...t, messages: msg.all(t.id) })) });
+});
+
+app.post('/api/client/support/tickets', clientAuth, (req, res) => {
+  const subject = String(req.body?.subject || '').trim();
+  const message = String(req.body?.message || '').trim();
+  if (!subject || !message) return res.status(400).json({ ok: false, error: 'SUBJECT_AND_MESSAGE_REQUIRED' });
+  const now = nowIso();
+  const r = db.prepare(`INSERT INTO support_tickets(client_id, subject, status, created_at, updated_at) VALUES(?, ?, 'open', ?, ?)`)
+    .run(req.client.id, subject, now, now);
+  db.prepare(`INSERT INTO support_messages(ticket_id, sender_type, sender_id, message, created_at) VALUES(?, 'client', ?, ?, ?)`)
+    .run(r.lastInsertRowid, String(req.client.id), message, now);
+  logAudit({ actorType: 'client', actorId: String(req.client.id), action: 'support_ticket_created', entityType: 'support_ticket', entityId: String(r.lastInsertRowid), payload: { subject } });
+  res.json({ ok: true, ticket_id: r.lastInsertRowid });
+});
+
+app.post('/api/client/support/tickets/:id/messages', clientAuth, (req, res) => {
+  const ticket = db.prepare('SELECT * FROM support_tickets WHERE id = ? AND client_id = ?').get(req.params.id, req.client.id);
+  if (!ticket) return res.status(404).json({ ok: false, error: 'TICKET_NOT_FOUND' });
+  const message = String(req.body?.message || '').trim();
+  if (!message) return res.status(400).json({ ok: false, error: 'MESSAGE_REQUIRED' });
+  const now = nowIso();
+  db.prepare(`INSERT INTO support_messages(ticket_id, sender_type, sender_id, message, created_at) VALUES(?, 'client', ?, ?, ?)`)
+    .run(ticket.id, String(req.client.id), message, now);
+  db.prepare(`UPDATE support_tickets SET status = 'open', updated_at = ? WHERE id = ?`).run(now, ticket.id);
+  res.json({ ok: true });
 });
 
 app.get('/api/svg/qr', async (req, res) => {
@@ -1156,6 +1302,58 @@ app.patch('/api/admin/catalog/news/:id', adminAuth, (req, res) => {
 app.delete('/api/admin/catalog/news/:id', adminAuth, (req, res) => {
   db.prepare('DELETE FROM news WHERE id = ?').run(req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'news_deleted', entityType: 'news', entityId: req.params.id, payload: {} });
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/support/tickets', adminAuth, (req, res) => {
+  const tickets = db.prepare(`SELECT t.*, c.name AS client_name, c.phone, c.card_number FROM support_tickets t
+    JOIN clients c ON c.id = t.client_id ORDER BY CASE t.status WHEN 'open' THEN 0 WHEN 'answered' THEN 1 ELSE 2 END, t.updated_at DESC`).all();
+  const msg = db.prepare('SELECT * FROM support_messages WHERE ticket_id = ? ORDER BY created_at ASC');
+  res.json({ ok: true, tickets: tickets.map((t) => ({ ...t, messages: msg.all(t.id) })) });
+});
+
+app.post('/api/admin/support/tickets/:id/reply', adminAuth, (req, res) => {
+  const ticket = db.prepare('SELECT * FROM support_tickets WHERE id = ?').get(req.params.id);
+  if (!ticket) return res.status(404).json({ ok: false, error: 'TICKET_NOT_FOUND' });
+  const message = String(req.body?.message || '').trim();
+  if (!message) return res.status(400).json({ ok: false, error: 'MESSAGE_REQUIRED' });
+  const now = nowIso();
+  db.prepare(`INSERT INTO support_messages(ticket_id, sender_type, sender_id, message, created_at) VALUES(?, 'admin', ?, ?, ?)`)
+    .run(ticket.id, String(req.admin.id), message, now);
+  db.prepare(`UPDATE support_tickets SET status = 'answered', assigned_admin_id = ?, updated_at = ? WHERE id = ?`).run(req.admin.id || null, now, ticket.id);
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'support_ticket_replied', entityType: 'support_ticket', entityId: String(ticket.id), payload: {} });
+  res.json({ ok: true });
+});
+
+app.patch('/api/admin/support/tickets/:id', adminAuth, (req, res) => {
+  const status = ['open', 'answered', 'closed'].includes(req.body?.status) ? req.body.status : 'open';
+  db.prepare('UPDATE support_tickets SET status = ?, updated_at = ?, closed_at = ? WHERE id = ?')
+    .run(status, nowIso(), status === 'closed' ? nowIso() : null, req.params.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/users', ownerAuth, (req, res) => {
+  res.json({ ok: true, users: db.prepare('SELECT * FROM admin_users ORDER BY role DESC, created_at DESC').all().map(formatAdmin) });
+});
+
+app.post('/api/admin/users', ownerAuth, (req, res) => {
+  const telegramId = String(req.body?.telegram_id || '').trim();
+  if (!telegramId) return res.status(400).json({ ok: false, error: 'TELEGRAM_ID_REQUIRED' });
+  const role = req.body?.role === 'owner' ? 'owner' : 'admin';
+  const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
+  const now = nowIso();
+  db.prepare(`INSERT INTO admin_users(telegram_id, name, username, role, permissions_json, is_active, created_at, updated_at)
+    VALUES(?, ?, ?, ?, ?, 1, ?, ?)
+    ON CONFLICT(telegram_id) DO UPDATE SET name=excluded.name, role=excluded.role, permissions_json=excluded.permissions_json, is_active=1, updated_at=excluded.updated_at`)
+    .run(telegramId, req.body?.name || 'Admin', req.body?.username || null, role, JSON.stringify(permissions), now, now);
+  res.json({ ok: true });
+});
+
+app.patch('/api/admin/users/:id', ownerAuth, (req, res) => {
+  const role = req.body?.role === 'owner' ? 'owner' : 'admin';
+  const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
+  db.prepare('UPDATE admin_users SET name = ?, role = ?, permissions_json = ?, is_active = ?, updated_at = ? WHERE id = ?')
+    .run(req.body?.name || 'Admin', role, JSON.stringify(permissions), req.body?.is_active === false ? 0 : 1, nowIso(), req.params.id);
   res.json({ ok: true });
 });
 

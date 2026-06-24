@@ -3,16 +3,28 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const content = $('#content');
 const title = $('#title');
 const keyInput = $('#apiKey');
+const loginOverlay = $('#adminLogin');
+const tg = window.Telegram?.WebApp;
 let tab = 'dashboard';
-keyInput.value = localStorage.getItem('starclub_admin_key') || 'change-this-admin-key';
+let admin = null;
+let adminToken = localStorage.getItem('starclub_admin_session') || '';
+keyInput.value = localStorage.getItem('starclub_admin_key') || '';
 
-function key(){ return localStorage.getItem('starclub_admin_key') || keyInput.value || 'change-this-admin-key'; }
+function key(){ return localStorage.getItem('starclub_admin_key') || keyInput.value || ''; }
+function showLogin(){ loginOverlay?.classList.remove('hidden'); }
+function hideLogin(){ loginOverlay?.classList.add('hidden'); }
 async function api(path, options={}){
-  const res = await fetch(path,{...options,headers:{'Content-Type':'application/json','x-admin-key':key(),...(options.headers||{})}});
+  const headers={'Content-Type':'application/json',...(options.headers||{})};
+  if(adminToken) headers.Authorization=`Bearer ${adminToken}`;
+  else if(key()) headers['x-admin-key']=key();
+  const res = await fetch(path,{...options,headers});
   const data = await res.json().catch(()=>({}));
-  if(!res.ok||data.ok===false) throw new Error(data.message||data.error||'Admin API error');
+  if(!res.ok||data.ok===false){
+    const err=new Error(data.message||data.error||'Admin API error'); err.status=res.status; err.code=data.error; throw err;
+  }
   return data;
 }
+
 function esc(v){return String(v ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function num(n){return new Intl.NumberFormat('uk-UA').format(Number(n||0));}
 function money(n){return `${num(n)} грн`;}
@@ -166,6 +178,22 @@ async function settings(){
   form.onsubmit=async ev=>{ev.preventDefault();const fd=new FormData(form);const requiredFields=fd.getAll('requiredFields');const body={value:{enabled:fd.has('enabled'),stars:Number(fd.get('stars')||0),grantWhen:fd.get('grantWhen')||'immediately',requiredFields}};await api('/api/admin/settings/profile_bonus',{method:'PUT',body:JSON.stringify(body)});alert('Налаштування бонусу збережено');settings();};
 }
 
+async function support(){
+  title.textContent='Підтримка';
+  const {tickets}=await api('/api/admin/support/tickets');
+  content.innerHTML=`<div class="support-board">${tickets.map(t=>`<article class="card support-admin-card"><div class="support-head"><div><span class="ticket-id">#${t.id}</span><h3>${esc(t.subject)}</h3><p class="small">${esc(t.client_name||'Клієнт')} · ${esc(t.phone||'')} · ${esc(t.card_number||'')}</p></div><span class="pill">${esc(t.status)}</span></div><div class="support-thread">${(t.messages||[]).map(m=>`<div class="support-message ${m.sender_type}"><b>${m.sender_type==='client'?'Клієнт':'Адмін'}</b><p>${esc(m.message)}</p><span>${dt(m.created_at)}</span></div>`).join('')}</div><form class="adminReply" data-ticket="${t.id}"><textarea name="message" placeholder="Відповідь клієнту" required></textarea><div class="actions"><button class="primary">Відповісти</button><button type="button" data-close-ticket="${t.id}">Закрити</button></div></form></article>`).join('')||'<div class="card">Звернень немає</div>'}</div>`;
+  $$('.adminReply').forEach(f=>f.onsubmit=async e=>{e.preventDefault();const fd=new FormData(f);await api(`/api/admin/support/tickets/${f.dataset.ticket}/reply`,{method:'POST',body:JSON.stringify({message:fd.get('message')})});support();});
+  $$('[data-close-ticket]').forEach(b=>b.onclick=async()=>{await api(`/api/admin/support/tickets/${b.dataset.closeTicket}`,{method:'PATCH',body:JSON.stringify({status:'closed'})});support();});
+}
+
+async function admins(){
+  title.textContent='Адміністратори';
+  const {users}=await api('/api/admin/users');
+  const perms=['dashboard','clients','rewards','offers','challenges','stamps','news','qrs','support','settings','audit'];
+  content.innerHTML=`<div class="card"><h2>Додати Admin / Owner</h2><form id="adminForm" class="form-grid"><input name="telegram_id" placeholder="Telegram ID" required><input name="name" placeholder="Імʼя"><select name="role"><option value="admin">Admin</option><option value="owner">Owner</option></select><div class="permission-grid">${perms.map(p=>`<label class="checkline"><input type="checkbox" name="permissions" value="${p}" checked> ${p}</label>`).join('')}</div><button class="primary">Зберегти</button></form></div><div class="card"><table><thead><tr><th>Користувач</th><th>Telegram ID</th><th>Роль</th><th>Доступ</th><th>Статус</th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.name||'—')}</td><td>${esc(u.telegram_id)}</td><td>${esc(u.role)}</td><td>${esc((u.permissions||[]).join(', ')||'усі')}</td><td>${u.is_active?'активний':'вимкнений'}</td></tr>`).join('')}</tbody></table></div>`;
+  $('#adminForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);await api('/api/admin/users',{method:'POST',body:JSON.stringify({telegram_id:fd.get('telegram_id'),name:fd.get('name'),role:fd.get('role'),permissions:fd.getAll('permissions')})});admins();};
+}
+
 async function qrs(){
   title.textContent='QR за зірки';
   const {qrs}=await api('/api/admin/reward-qrs');
@@ -187,10 +215,24 @@ async function render(){
     if(tab==='stamps') await stamps();
     if(tab==='news') await news();
     if(tab==='qrs') await qrs();
+    if(tab==='support') await support();
+    if(tab==='admins') await admins();
     if(tab==='settings') await settings();
     if(tab==='audit') await audit();
-  } catch(e){content.innerHTML=`<div class="card"><h2>Помилка</h2><p>${esc(e.message)}</p><p class="small">Перевір ADMIN_API_KEY у .env і введи його у полі зверху.</p></div>`;}
+  } catch(e){ if(e.status===401){showLogin(); return;} content.innerHTML=`<div class="card"><h2>Помилка</h2><p>${esc(e.message)}</p></div>`; }
 }
 $$('.sidebar button[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();});
-$('#saveKey').onclick=()=>{localStorage.setItem('starclub_admin_key',keyInput.value);render();};
-render();
+$('#saveKey').onclick=()=>{localStorage.setItem('starclub_admin_key',keyInput.value);adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();};
+$('#keyAdminLogin').onclick=()=>{const v=$('#loginApiKey').value.trim();if(!v)return;localStorage.setItem('starclub_admin_key',v);keyInput.value=v;adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();};
+$('#telegramAdminLogin').onclick=async()=>{try{const data=await fetch('/api/admin/auth/telegram',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({initData:tg?.initData||'',devUser:{id:'111111111',first_name:'Owner'}})}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'LOGIN_FAILED');return d});adminToken=data.session.token;localStorage.setItem('starclub_admin_session',adminToken);localStorage.removeItem('starclub_admin_key');keyInput.value='';admin=data.admin;hideLogin();applyAdminVisibility();render();}catch(e){alert(e.message)}};
+function applyAdminVisibility(){
+  const owner = admin?.role === 'owner' || Boolean(key());
+  const permissions = new Set(admin?.permissions || []);
+  $$('[data-owner-only]').forEach(el=>el.style.display=owner?'':'none');
+  $$('.sidebar button[data-tab]').forEach(el=>{
+    if(owner) return el.style.display='';
+    el.style.display = permissions.size===0 || permissions.has(el.dataset.tab) ? '' : 'none';
+  });
+}
+async function bootstrapAdmin(){try{const data=await api('/api/admin/me');admin=data.admin;hideLogin();applyAdminVisibility();render();}catch(e){showLogin();}}
+bootstrapAdmin();
