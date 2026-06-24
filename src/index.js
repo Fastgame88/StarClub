@@ -9,6 +9,7 @@ import QRCode from 'qrcode';
 import bwipjs from 'bwip-js';
 import { initDb, db, nowIso, normalizePhone, randomToken, getOrCreateClientFromTelegram, createSession, getClientBySession, getSetting, awardStars, hashPassword, verifyPassword, getClientAvailableStars, getReservedStars, logAudit, generateCardNumber } from './db.js';
 import { verifyTelegramInitData } from './telegram.js';
+import { startStarClubBot } from './bot.js';
 
 dotenv.config();
 await initDb();
@@ -65,7 +66,7 @@ function adminAuth(req, res, next) {
       : path.includes('/audit') ? 'audit'
       : path.includes('/summary') ? 'dashboard'
       : null;
-    if (permission && permissions.length && !permissions.includes(permission)) {
+    if (permission && !permissions.includes(permission)) {
       return res.status(403).json({ ok: false, error: 'ADMIN_PERMISSION_DENIED', permission });
     }
   }
@@ -451,18 +452,37 @@ app.post('/api/admin/auth/telegram', (req, res) => {
     const verified = verifyTelegramInitData(initData, process.env.BOT_TOKEN);
     if (!verified.ok) return res.status(401).json({ ok: false, error: 'TELEGRAM_AUTH_FAILED', reason: verified.reason });
     user = verified.user;
-  } else if (process.env.ALLOW_DEV_LOGIN === 'true' && req.body?.devUser) {
+  } else if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_LOGIN === 'true' && req.body?.devUser) {
     user = req.body.devUser;
   }
   if (!user?.id) return res.status(400).json({ ok: false, error: 'TELEGRAM_USER_REQUIRED' });
   const telegramId = String(user.id);
   const ownerIds = parseCsvEnv('OWNER_TELEGRAM_IDS');
+  const isEnvironmentOwner = ownerIds.includes(telegramId);
+
   let admin = db.prepare('SELECT * FROM admin_users WHERE telegram_id = ?').get(telegramId);
-  if (!admin && ownerIds.includes(telegramId)) {
+
+  // Only Owner is bootstrapped from ENV. All Admin users and their permissions
+  // are created and managed by Owner from the admin panel.
+  if (!admin && isEnvironmentOwner) {
     const now = nowIso();
     const r = db.prepare(`INSERT INTO admin_users(telegram_id, name, username, role, permissions_json, is_active, created_at, updated_at)
-      VALUES(?, ?, ?, 'owner', '[]', 1, ?, ?)`).run(telegramId, [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Owner', user.username || null, now, now);
+      VALUES(?, ?, ?, 'owner', '[]', 1, ?, ?)`).run(
+        telegramId,
+        [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Owner',
+        user.username || null,
+        now,
+        now
+      );
     admin = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(r.lastInsertRowid);
+  }
+
+  // OWNER_TELEGRAM_IDS is the recovery source of truth for Owner access.
+  if (admin && isEnvironmentOwner && (admin.role !== 'owner' || !admin.is_active)) {
+    db.prepare(`UPDATE admin_users
+      SET role = 'owner', permissions_json = '[]', is_active = 1, updated_at = ?
+      WHERE id = ?`).run(nowIso(), admin.id);
+    admin = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(admin.id);
   }
   if (!admin || !admin.is_active) return res.status(403).json({ ok: false, error: 'ADMIN_ACCESS_DENIED' });
   db.prepare('UPDATE admin_users SET name = ?, username = ?, updated_at = ? WHERE id = ?')
@@ -1339,21 +1359,42 @@ app.get('/api/admin/users', ownerAuth, (req, res) => {
 app.post('/api/admin/users', ownerAuth, (req, res) => {
   const telegramId = String(req.body?.telegram_id || '').trim();
   if (!telegramId) return res.status(400).json({ ok: false, error: 'TELEGRAM_ID_REQUIRED' });
-  const role = req.body?.role === 'owner' ? 'owner' : 'admin';
-  const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
+  const permissions = Array.isArray(req.body?.permissions) ? [...new Set(req.body.permissions.map(String))] : [];
+  if (!permissions.length) return res.status(400).json({ ok: false, error: 'ADMIN_PERMISSIONS_REQUIRED' });
   const now = nowIso();
   db.prepare(`INSERT INTO admin_users(telegram_id, name, username, role, permissions_json, is_active, created_at, updated_at)
-    VALUES(?, ?, ?, ?, ?, 1, ?, ?)
-    ON CONFLICT(telegram_id) DO UPDATE SET name=excluded.name, role=excluded.role, permissions_json=excluded.permissions_json, is_active=1, updated_at=excluded.updated_at`)
-    .run(telegramId, req.body?.name || 'Admin', req.body?.username || null, role, JSON.stringify(permissions), now, now);
-  res.json({ ok: true });
+    VALUES(?, ?, ?, 'admin', ?, 1, ?, ?)
+    ON CONFLICT(telegram_id) DO UPDATE SET
+      name=excluded.name, username=excluded.username, role='admin',
+      permissions_json=excluded.permissions_json, is_active=1, updated_at=excluded.updated_at`)
+    .run(telegramId, req.body?.name || 'Admin', req.body?.username || null, JSON.stringify(permissions), now, now);
+  const created = db.prepare('SELECT * FROM admin_users WHERE telegram_id = ?').get(telegramId);
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'admin_created_or_updated', entityType: 'admin_user', entityId: String(created.id), payload: { telegram_id: telegramId, permissions } });
+  res.json({ ok: true, user: formatAdmin(created) });
 });
 
 app.patch('/api/admin/users/:id', ownerAuth, (req, res) => {
-  const role = req.body?.role === 'owner' ? 'owner' : 'admin';
-  const permissions = Array.isArray(req.body?.permissions) ? req.body.permissions : [];
-  db.prepare('UPDATE admin_users SET name = ?, role = ?, permissions_json = ?, is_active = ?, updated_at = ? WHERE id = ?')
-    .run(req.body?.name || 'Admin', role, JSON.stringify(permissions), req.body?.is_active === false ? 0 : 1, nowIso(), req.params.id);
+  const current = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
+  if (!current) return res.status(404).json({ ok: false, error: 'ADMIN_NOT_FOUND' });
+  if (current.role === 'owner') return res.status(400).json({ ok: false, error: 'OWNER_CANNOT_BE_EDITED_HERE' });
+  const permissions = Array.isArray(req.body?.permissions) ? [...new Set(req.body.permissions.map(String))] : [];
+  if (req.body?.is_active !== false && !permissions.length) return res.status(400).json({ ok: false, error: 'ADMIN_PERMISSIONS_REQUIRED' });
+  db.prepare(`UPDATE admin_users
+    SET name = ?, username = ?, role = 'admin', permissions_json = ?, is_active = ?, updated_at = ?
+    WHERE id = ?`)
+    .run(req.body?.name || current.name || 'Admin', req.body?.username ?? current.username, JSON.stringify(permissions), req.body?.is_active === false ? 0 : 1, nowIso(), req.params.id);
+  const updated = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'admin_permissions_updated', entityType: 'admin_user', entityId: String(updated.id), payload: { permissions, is_active: Boolean(updated.is_active) } });
+  res.json({ ok: true, user: formatAdmin(updated) });
+});
+
+app.delete('/api/admin/users/:id', ownerAuth, (req, res) => {
+  const current = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
+  if (!current) return res.status(404).json({ ok: false, error: 'ADMIN_NOT_FOUND' });
+  if (current.role === 'owner') return res.status(400).json({ ok: false, error: 'OWNER_CANNOT_BE_DELETED' });
+  db.prepare('DELETE FROM admin_sessions WHERE admin_user_id = ?').run(current.id);
+  db.prepare('DELETE FROM admin_users WHERE id = ?').run(current.id);
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'admin_deleted', entityType: 'admin_user', entityId: String(current.id), payload: { telegram_id: current.telegram_id } });
   res.json({ ok: true });
 });
 
@@ -1420,6 +1461,20 @@ app.get('/api/admin/audit', adminAuth, (req, res) => {
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'admin.html')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
-app.listen(port, () => {
+const server = app.listen(port, async () => {
   console.log(`Star Club prototype is running on http://localhost:${port}`);
+
+  if (process.env.RUN_BOT === 'true') {
+    try {
+      const bot = await startStarClubBot();
+      const stop = (signal) => {
+        try { bot.stop(signal); } catch {}
+        server.close(() => process.exit(0));
+      };
+      process.once('SIGINT', () => stop('SIGINT'));
+      process.once('SIGTERM', () => stop('SIGTERM'));
+    } catch (error) {
+      console.error('Telegram bot was not started:', error.message || error);
+    }
+  }
 });

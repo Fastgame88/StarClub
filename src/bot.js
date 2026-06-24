@@ -1,33 +1,71 @@
 import dotenv from 'dotenv';
 import { Telegraf, Markup } from 'telegraf';
+import { fileURLToPath } from 'url';
 
-dotenv.config();
+ dotenv.config();
 
-const token = process.env.BOT_TOKEN;
-const webAppUrl = process.env.WEBAPP_URL || process.env.APP_URL || 'http://localhost:3000';
-
-if (!token || token.startsWith('123456:')) {
-  console.error('BOT_TOKEN is not configured. Add BOT_TOKEN to .env.');
-  process.exit(1);
+function normalizeUrl(value, fallback) {
+  const raw = String(value || fallback || '').trim();
+  return raw.replace(/\/$/, '');
 }
 
-const bot = new Telegraf(token);
+export function createStarClubBot() {
+  const token = process.env.BOT_TOKEN;
+  const webAppUrl = normalizeUrl(process.env.WEBAPP_URL || process.env.APP_URL, 'http://localhost:3000');
+  const adminUrl = `${webAppUrl}/admin`;
 
-bot.start(async (ctx) => {
-  await ctx.reply(
-    'Вітаємо у Star Club ⭐\nВідкрийте клубну карту, збирайте зірки та отримуйте пропозиції тільки для учасників.',
-    Markup.inlineKeyboard([
-      Markup.button.webApp('Відкрити Star Club', webAppUrl)
-    ])
-  );
-});
+  if (!token || token.startsWith('123456:')) {
+    throw new Error('BOT_TOKEN is not configured. Add a real BOT_TOKEN to the environment.');
+  }
 
-bot.command('club', async (ctx) => {
-  await ctx.reply('Відкрити Star Club:', Markup.inlineKeyboard([Markup.button.webApp('Star Club Mini App', webAppUrl)]));
-});
+  const bot = new Telegraf(token);
 
-bot.launch();
-console.log('Star Club bot launched');
+  bot.start(async (ctx) => {
+    await ctx.reply(
+      'Вітаємо у Star Club ⭐\n\nВідкрийте застосунок, отримайте цифрову картку, накопичуйте зірки та користуйтеся клубними пропозиціями.',
+      Markup.inlineKeyboard([
+        [Markup.button.webApp('Відкрити Star Club', webAppUrl)]
+      ])
+    );
+  });
 
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+  bot.command('club', async (ctx) => {
+    await ctx.reply(
+      'Відкрити клієнтський застосунок Star Club:',
+      Markup.inlineKeyboard([[Markup.button.webApp('Відкрити застосунок', webAppUrl)]])
+    );
+  });
+
+  bot.command('admin', async (ctx) => {
+    await ctx.reply(
+      'Адмін-панель Star Club\n\nДоступ буде надано лише Telegram ID, зазначеним як Owner або Admin.',
+      Markup.inlineKeyboard([[Markup.button.webApp('Відкрити адмін-панель', adminUrl)]])
+    );
+  });
+
+  bot.catch((error, ctx) => {
+    console.error(`Telegram bot error for update ${ctx?.update?.update_id || 'unknown'}:`, error);
+  });
+
+  return bot;
+}
+
+export async function startStarClubBot() {
+  const bot = createStarClubBot();
+  await bot.launch();
+  console.log('Star Club Telegram bot launched');
+  return bot;
+}
+
+const isDirectRun = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isDirectRun) {
+  startStarClubBot()
+    .then((bot) => {
+      process.once('SIGINT', () => bot.stop('SIGINT'));
+      process.once('SIGTERM', () => bot.stop('SIGTERM'));
+    })
+    .catch((error) => {
+      console.error(error.message || error);
+      process.exit(1);
+    });
+}

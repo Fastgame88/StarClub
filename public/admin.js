@@ -5,6 +5,12 @@ const title = $('#title');
 const keyInput = $('#apiKey');
 const loginOverlay = $('#adminLogin');
 const tg = window.Telegram?.WebApp;
+try {
+  tg?.ready();
+  tg?.expand();
+  tg?.setHeaderColor?.('#0b0d11');
+  tg?.setBackgroundColor?.('#0b0d11');
+} catch {}
 let tab = 'dashboard';
 let admin = null;
 let adminToken = localStorage.getItem('starclub_admin_session') || '';
@@ -189,11 +195,63 @@ async function support(){
 async function admins(){
   title.textContent='Адміністратори';
   const {users}=await api('/api/admin/users');
-  const perms=['dashboard','clients','rewards','offers','challenges','stamps','news','qrs','support','settings','audit'];
-  content.innerHTML=`<div class="card"><h2>Додати Admin / Owner</h2><form id="adminForm" class="form-grid"><input name="telegram_id" placeholder="Telegram ID" required><input name="name" placeholder="Імʼя"><select name="role"><option value="admin">Admin</option><option value="owner">Owner</option></select><div class="permission-grid">${perms.map(p=>`<label class="checkline"><input type="checkbox" name="permissions" value="${p}" checked> ${p}</label>`).join('')}</div><button class="primary">Зберегти</button></form></div><div class="card"><table><thead><tr><th>Користувач</th><th>Telegram ID</th><th>Роль</th><th>Доступ</th><th>Статус</th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.name||'—')}</td><td>${esc(u.telegram_id)}</td><td>${esc(u.role)}</td><td>${esc((u.permissions||[]).join(', ')||'усі')}</td><td>${u.is_active?'активний':'вимкнений'}</td></tr>`).join('')}</tbody></table></div>`;
-  $('#adminForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);await api('/api/admin/users',{method:'POST',body:JSON.stringify({telegram_id:fd.get('telegram_id'),name:fd.get('name'),role:fd.get('role'),permissions:fd.getAll('permissions')})});admins();};
+  const permissionLabels={
+    dashboard:'Аналітика',clients:'Клієнти',rewards:'Товари за зірки',offers:'Пропозиції',
+    challenges:'Челенджі',stamps:'Накопичувальні',news:'Новини',qrs:'QR-коди',
+    support:'Підтримка',settings:'Налаштування',audit:'Журнал дій'
+  };
+  const perms=Object.keys(permissionLabels);
+  const checks=(selected=[])=>perms.map(p=>`<label class="checkline"><input type="checkbox" name="permissions" value="${p}" ${selected.includes(p)?'checked':''}> ${permissionLabels[p]}</label>`).join('');
+  content.innerHTML=`
+    <div class="card">
+      <h2>Призначити адміністратора</h2>
+      <p class="small">Owner вказує Telegram ID та сам обирає, до яких розділів матиме доступ Admin.</p>
+      <form id="adminForm" class="form-grid">
+        <input name="telegram_id" placeholder="Telegram ID" inputmode="numeric" required>
+        <input name="name" placeholder="Імʼя адміністратора">
+        <input name="username" placeholder="Telegram username без @">
+        <div class="permission-grid">${checks(perms.filter(p=>!['settings','audit'].includes(p)))}</div>
+        <button class="primary">Додати Admin</button>
+      </form>
+    </div>
+    <div class="admin-user-grid">
+      ${users.map(u=>`<article class="card admin-user-card" data-admin-id="${u.id}">
+        <div class="support-head"><div><h3>${esc(u.name||'—')}</h3><p class="small">Telegram ID: ${esc(u.telegram_id)}${u.username?` · @${esc(u.username)}`:''}</p></div><span class="pill">${u.role==='owner'?'Owner':'Admin'}</span></div>
+        ${u.role==='owner'
+          ? `<p class="small">Owner має повний доступ. Основний Owner визначається через OWNER_TELEGRAM_IDS.</p>`
+          : `<form class="adminEditForm">
+              <input name="name" value="${esc(u.name||'')}" placeholder="Імʼя">
+              <input name="username" value="${esc(u.username||'')}" placeholder="Telegram username">
+              <div class="permission-grid">${checks(u.permissions||[])}</div>
+              <label class="checkline"><input type="checkbox" name="is_active" ${u.is_active?'checked':''}> Доступ активний</label>
+              <div class="actions"><button class="primary">Зберегти права</button><button type="button" class="danger" data-delete-admin="${u.id}">Видалити Admin</button></div>
+            </form>`}
+      </article>`).join('')}
+    </div>`;
+  $('#adminForm').onsubmit=async e=>{
+    e.preventDefault();
+    const fd=new FormData(e.currentTarget);
+    const permissions=fd.getAll('permissions');
+    if(!permissions.length) return alert('Оберіть хоча б один доступний розділ.');
+    await api('/api/admin/users',{method:'POST',body:JSON.stringify({telegram_id:fd.get('telegram_id'),name:fd.get('name'),username:fd.get('username'),permissions})});
+    admins();
+  };
+  $$('.adminEditForm').forEach(form=>form.onsubmit=async e=>{
+    e.preventDefault();
+    const card=form.closest('[data-admin-id]');
+    const fd=new FormData(form);
+    const permissions=fd.getAll('permissions');
+    const is_active=fd.has('is_active');
+    if(is_active&&!permissions.length) return alert('Для активного Admin оберіть хоча б один розділ.');
+    await api(`/api/admin/users/${card.dataset.adminId}`,{method:'PATCH',body:JSON.stringify({name:fd.get('name'),username:fd.get('username'),permissions,is_active})});
+    admins();
+  });
+  $$('[data-delete-admin]').forEach(btn=>btn.onclick=async()=>{
+    if(!confirm('Видалити цього адміністратора та завершити його активні сесії?')) return;
+    await api(`/api/admin/users/${btn.dataset.deleteAdmin}`,{method:'DELETE'});
+    admins();
+  });
 }
-
 async function qrs(){
   title.textContent='QR за зірки';
   const {qrs}=await api('/api/admin/reward-qrs');
@@ -224,14 +282,52 @@ async function render(){
 $$('.sidebar button[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();});
 $('#saveKey').onclick=()=>{localStorage.setItem('starclub_admin_key',keyInput.value);adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();};
 $('#keyAdminLogin').onclick=()=>{const v=$('#loginApiKey').value.trim();if(!v)return;localStorage.setItem('starclub_admin_key',v);keyInput.value=v;adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();};
-$('#telegramAdminLogin').onclick=async()=>{try{const data=await fetch('/api/admin/auth/telegram',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({initData:tg?.initData||'',devUser:{id:'111111111',first_name:'Owner'}})}).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'LOGIN_FAILED');return d});adminToken=data.session.token;localStorage.setItem('starclub_admin_session',adminToken);localStorage.removeItem('starclub_admin_key');keyInput.value='';admin=data.admin;hideLogin();applyAdminVisibility();render();}catch(e){alert(e.message)}};
+$('#telegramAdminLogin').onclick=async()=>{
+  try {
+    const initData = tg?.initData || '';
+    const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+    if (!initData && !isLocal) {
+      throw new Error('Відкрийте адмін-панель через команду /admin у Telegram-боті.');
+    }
+    const payload = { initData };
+    if (!initData && isLocal) {
+      payload.devUser = { id: '111111111', first_name: 'Local Owner' };
+    }
+    const data = await fetch('/api/admin/auth/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(async (r) => {
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const messages = {
+          ADMIN_ACCESS_DENIED: 'Ваш Telegram ID не має доступу до адмін-панелі.',
+          TELEGRAM_AUTH_FAILED: 'Не вдалося підтвердити Telegram-вхід. Відкрийте панель повторно через /admin.',
+          TELEGRAM_USER_REQUIRED: 'Telegram не передав дані користувача. Відкрийте панель через кнопку бота.'
+        };
+        throw new Error(messages[d.error] || d.error || 'LOGIN_FAILED');
+      }
+      return d;
+    });
+    adminToken = data.session.token;
+    localStorage.setItem('starclub_admin_session', adminToken);
+    localStorage.removeItem('starclub_admin_key');
+    keyInput.value = '';
+    admin = data.admin;
+    hideLogin();
+    applyAdminVisibility();
+    render();
+  } catch (e) {
+    alert(e.message);
+  }
+};
 function applyAdminVisibility(){
   const owner = admin?.role === 'owner' || Boolean(key());
   const permissions = new Set(admin?.permissions || []);
   $$('[data-owner-only]').forEach(el=>el.style.display=owner?'':'none');
   $$('.sidebar button[data-tab]').forEach(el=>{
     if(owner) return el.style.display='';
-    el.style.display = permissions.size===0 || permissions.has(el.dataset.tab) ? '' : 'none';
+    el.style.display = permissions.has(el.dataset.tab) ? '' : 'none';
   });
 }
 async function bootstrapAdmin(){try{const data=await api('/api/admin/me');admin=data.admin;hideLogin();applyAdminVisibility();render();}catch(e){showLogin();}}
