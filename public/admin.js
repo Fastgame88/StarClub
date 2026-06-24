@@ -15,6 +15,7 @@ let tab = 'dashboard';
 let admin = null;
 let adminToken = localStorage.getItem('starclub_admin_session') || '';
 keyInput.value = localStorage.getItem('starclub_admin_key') || '';
+if ($('#mobileApiKey')) $('#mobileApiKey').value = keyInput.value;
 
 function key(){ return localStorage.getItem('starclub_admin_key') || keyInput.value || ''; }
 function showLogin(){ loginOverlay?.classList.remove('hidden'); }
@@ -262,8 +263,23 @@ async function audit(){
   const {logs}=await api('/api/admin/audit');
   content.innerHTML=`<div class="card"><table><thead><tr><th>Дата</th><th>Хто</th><th>Дія</th><th>Обʼєкт</th><th>Опис</th></tr></thead><tbody>${logs.map(l=>`<tr><td>${dt(l.created_at)}</td><td>${esc(l.actor_type)} ${esc(l.actor_id||'')}</td><td>${esc(l.action)}</td><td>${esc(l.entity_type||'')} ${esc(l.entity_id||'')}</td><td><pre>${esc(l.payload_json||'')}</pre></td></tr>`).join('') || '<tr><td colspan="5">Журнал порожній</td></tr>'}</tbody></table></div>`;
 }
+function syncActiveNavigation(){
+  $$('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+}
+function enhanceMobileTables(){
+  content.querySelectorAll('table').forEach(table=>{
+    table.classList.add('mobile-cards');
+    const headers=[...table.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+    table.querySelectorAll('tbody tr').forEach(row=>{
+      [...row.children].forEach((cell,index)=>{
+        if(cell.tagName==='TD'&&!cell.hasAttribute('colspan')) cell.dataset.label=headers[index]||'';
+      });
+    });
+  });
+}
+function closeMobileMenu(){ $('#mobileMenuOverlay')?.classList.add('hidden'); }
 async function render(){
-  $$('.sidebar button[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  syncActiveNavigation();
   try{
     if(tab==='dashboard') await dashboard();
     if(tab==='clients') await clients();
@@ -278,8 +294,15 @@ async function render(){
     if(tab==='settings') await settings();
     if(tab==='audit') await audit();
   } catch(e){ if(e.status===401){showLogin(); return;} content.innerHTML=`<div class="card"><h2>Помилка</h2><p>${esc(e.message)}</p></div>`; }
+  enhanceMobileTables();
+  syncActiveNavigation();
 }
-$$('.sidebar button[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();});
+$$('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;closeMobileMenu();render();});
+$('#mobileMenuButton')?.addEventListener('click',()=>$('#mobileMenuOverlay')?.classList.remove('hidden'));
+$('#mobileMoreButton')?.addEventListener('click',()=>$('#mobileMenuOverlay')?.classList.remove('hidden'));
+$('#mobileMenuClose')?.addEventListener('click',closeMobileMenu);
+$('#mobileMenuBackdrop')?.addEventListener('click',closeMobileMenu);
+$('#mobileSaveKey')?.addEventListener('click',()=>{const v=$('#mobileApiKey')?.value||'';localStorage.setItem('starclub_admin_key',v);keyInput.value=v;adminToken='';localStorage.removeItem('starclub_admin_session');closeMobileMenu();bootstrapAdmin();});
 $('#saveKey').onclick=()=>{localStorage.setItem('starclub_admin_key',keyInput.value);adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();};
 $('#keyAdminLogin').onclick=()=>{const v=$('#loginApiKey').value.trim();if(!v)return;localStorage.setItem('starclub_admin_key',v);keyInput.value=v;adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();};
 $('#telegramAdminLogin').onclick=async()=>{
@@ -325,7 +348,7 @@ function applyAdminVisibility(){
   const owner = admin?.role === 'owner' || Boolean(key());
   const permissions = new Set(admin?.permissions || []);
   $$('[data-owner-only]').forEach(el=>el.style.display=owner?'':'none');
-  $$('.sidebar button[data-tab]').forEach(el=>{
+  $$('[data-tab]').forEach(el=>{
     if(owner) return el.style.display='';
     el.style.display = permissions.has(el.dataset.tab) ? '' : 'none';
   });
