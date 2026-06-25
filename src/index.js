@@ -215,6 +215,19 @@ function categoryMatches(expected, item = {}) {
   );
 }
 
+function challengeDebugEnabled() {
+  return String(process.env.CHALLENGE_DEBUG || 'false').toLowerCase() === 'true';
+}
+
+function writeChallengeDebug(entry) {
+  if (!challengeDebugEnabled()) return;
+  try {
+    console.log('[STARCLUB_CHALLENGE_DEBUG]', JSON.stringify(entry));
+  } catch (error) {
+    console.log('[STARCLUB_CHALLENGE_DEBUG]', entry);
+  }
+}
+
 function offerMatchesItem(offer, item) {
   const externalId = normalizeMatchValue(item.external_product_id || item.product_id);
   if (offer.product_external_id) return externalId === normalizeMatchValue(offer.product_external_id);
@@ -417,46 +430,116 @@ function tryAwardProfileBonus(clientId, trigger = 'immediately') {
 }
 
 function addChallengeVisit(clientId, receiptId, purchasedAt, totalCents, eligibleItems) {
+  const diagnostics = [];
   const day = new Date(purchasedAt).toISOString().slice(0, 10);
   const challenges = db.prepare('SELECT * FROM challenges WHERE is_active = 1').all();
+
   for (const ch of challenges) {
-    if (totalCents < Number(ch.min_total_cents || 0)) continue;
-    if (!receiptHasEligibleItems(eligibleItems)) continue;
+    const diagnostic = {
+      challenge_id: ch.id,
+      challenge_code: ch.code,
+      challenge_name: ch.name,
+      expected_category: ch.category || '',
+      min_total_cents: Number(ch.min_total_cents || 0),
+      receipt_total_cents: Number(totalCents || 0),
+      day,
+      receipt_id: receiptId,
+      matched: false,
+      progress_added: false,
+      reason: '',
+      items: eligibleItems.map((item) => ({
+        name: item.name || '',
+        external_product_id: item.external_product_id || item.product_id || '',
+        raw_category: item.category || '',
+        raw_category_code: item.category_code || '',
+        raw_category_name: item.category_name || '',
+        raw_product_group_code: item.product_group_code || '',
+        raw_product_group_name: item.product_group_name || '',
+        raw_parent_group_code: item.parent_group_code || '',
+        raw_parent_group_name: item.parent_group_name || '',
+        normalized_candidates: itemCategoryCandidates(item)
+      }))
+    };
+
+    if (totalCents < Number(ch.min_total_cents || 0)) {
+      diagnostic.reason = 'MIN_TOTAL_NOT_REACHED';
+      diagnostics.push(diagnostic);
+      writeChallengeDebug(diagnostic);
+      continue;
+    }
+
+    if (!receiptHasEligibleItems(eligibleItems)) {
+      diagnostic.reason = 'NO_ELIGIBLE_ITEMS';
+      diagnostics.push(diagnostic);
+      writeChallengeDebug(diagnostic);
+      continue;
+    }
+
+    if (ch.store_id && ch.store_id !== 'all') {
+      diagnostic.store_id = ch.store_id;
+    }
+
     if (ch.category) {
       const hasCategory = eligibleItems.some((item) =>
         categoryMatches(ch.category, item) ||
         normalizeMatchValue(item.name).includes(normalizeMatchValue(ch.category))
       );
+      diagnostic.matched = hasCategory;
       if (!hasCategory) {
+        diagnostic.reason = 'CATEGORY_NOT_MATCHED';
         logAudit({
           actorType: 'system',
           action: 'challenge_category_not_matched',
           entityType: 'challenge',
           entityId: String(ch.id),
-          payload: {
-            expected: ch.category,
-            receiptId,
-            itemCategories: eligibleItems.map((item) => ({
-              name: item.name || '',
-              candidates: itemCategoryCandidates(item)
-            }))
-          }
+          payload: diagnostic
         });
+        diagnostics.push(diagnostic);
+        writeChallengeDebug(diagnostic);
         continue;
       }
+    } else {
+      diagnostic.matched = true;
     }
+
     const periodKey = getPeriodKey(ch.period_type, new Date(purchasedAt));
-    db.prepare('INSERT OR IGNORE INTO client_challenge_days(client_id, challenge_id, day, receipt_id, created_at) VALUES(?, ?, ?, ?, ?)')
+    const before = db.prepare('SELECT COUNT(*) AS c FROM client_challenge_days WHERE client_id = ? AND challenge_id = ?').get(clientId, ch.id).c;
+    const insertResult = db.prepare('INSERT OR IGNORE INTO client_challenge_days(client_id, challenge_id, day, receipt_id, created_at) VALUES(?, ?, ?, ?, ?)')
       .run(clientId, ch.id, day, receiptId, nowIso());
     const progress = db.prepare('SELECT COUNT(*) AS c FROM client_challenge_days WHERE client_id = ? AND challenge_id = ?').get(clientId, ch.id).c;
     const alreadyAwarded = db.prepare('SELECT 1 FROM client_challenge_rewards WHERE client_id = ? AND challenge_id = ? AND period_key = ?').get(clientId, ch.id, periodKey);
+
+    diagnostic.progress_before = Number(before || 0);
+    diagnostic.progress_after = Number(progress || 0);
+    diagnostic.required_visits = Number(ch.required_visits || 0);
+    diagnostic.insert_changes = Number(insertResult?.changes || 0);
+    diagnostic.progress_added = diagnostic.progress_after > diagnostic.progress_before;
+    diagnostic.period_key = periodKey;
+    diagnostic.already_awarded = Boolean(alreadyAwarded);
+
+    if (!diagnostic.progress_added) {
+      diagnostic.reason = 'ALREADY_COUNTED_FOR_THIS_DAY';
+    } else {
+      diagnostic.reason = 'PROGRESS_ADDED';
+    }
+
     if (progress >= ch.required_visits && !alreadyAwarded) {
       db.prepare('INSERT INTO client_challenge_rewards(client_id, challenge_id, period_key, awarded_at) VALUES(?, ?, ?, ?)')
         .run(clientId, ch.id, periodKey, nowIso());
       const balance = awardStars(clientId, 'challenge_bonus', ch.reward_stars, 'challenge', `+${ch.reward_stars} ⭐ бонус за челендж «${ch.name}»`, receiptId, null);
-      logAudit({ actorType: 'system', action: 'challenge_awarded', entityType: 'client', entityId: String(clientId), payload: { challenge: ch.code, reward: ch.reward_stars, balance } });
+      logAudit({ actorType: 'system', actorId: 'system', action: 'challenge_awarded', entityType: 'client', entityId: String(clientId), payload: { challenge: ch.code, reward: ch.reward_stars, balance } });
+      diagnostic.awarded = true;
+      diagnostic.balance_after_award = balance;
+      diagnostic.reason = 'CHALLENGE_AWARDED';
+    } else {
+      diagnostic.awarded = false;
     }
+
+    diagnostics.push(diagnostic);
+    writeChallengeDebug(diagnostic);
   }
+
+  return diagnostics;
 }
 
 function updateStampProgress(clientId, receiptId, items = []) {
@@ -1133,13 +1216,20 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
         storeId: body.store_id || '1c'
       }));
     }
+    const duplicateDebug = {
+      reason: 'DUPLICATE_RECEIPT_ID',
+      receipt_id: existing.id,
+      note: 'Челенджі повторно не обробляються для вже імпортованого receipt_id. Створіть новий чек/новий номер документа в 1С.'
+    };
+    writeChallengeDebug(duplicateDebug);
     return res.json({
       ok: true,
       duplicate: true,
       receipt_id: existing.id,
       stars_accrued: existing.stars_accrued,
       stars_spent: existing.stars_spent,
-      reward_finalize: finalized
+      reward_finalize: finalized,
+      challenge_debug: challengeDebugEnabled() ? [duplicateDebug] : undefined
     });
   }
 
@@ -1229,8 +1319,9 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
 
   const profileBonusResult = tryAwardProfileBonus(client.id, 'after_first_purchase');
 
+  let challengeDiagnostics = [];
   if (!isRewardReceipt) {
-    addChallengeVisit(client.id, body.id, purchasedAt, totalCents, items);
+    challengeDiagnostics = addChallengeVisit(client.id, body.id, purchasedAt, totalCents, items);
     updateStampProgress(client.id, body.id, items);
   }
 
@@ -1240,11 +1331,20 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     action: isRewardReceipt ? 'reward_receipt_imported' : 'receipt_imported',
     entityType: 'receipt',
     entityId: body.id,
-    payload: { starsAccrued, starsSpent, eligibleCents, rewardTokens: cleanRewardTokens, profileBonus: profileBonusResult }
+    payload: { starsAccrued, starsSpent, eligibleCents, rewardTokens: cleanRewardTokens, profileBonus: profileBonusResult, challengeDebug: challengeDebugEnabled() ? challengeDiagnostics : undefined }
   });
 
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
-  res.json({ ok: true, duplicate: false, receipt_id: body.id, stars_accrued: starsAccrued, stars_spent: starsSpent, balance: fresh.stars_balance, reward_finalize: finalized });
+  res.json({
+    ok: true,
+    duplicate: false,
+    receipt_id: body.id,
+    stars_accrued: starsAccrued,
+    stars_spent: starsSpent,
+    balance: fresh.stars_balance,
+    reward_finalize: finalized,
+    challenge_debug: challengeDebugEnabled() ? challengeDiagnostics : undefined
+  });
 });
 
 app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
@@ -1686,6 +1786,18 @@ app.post('/api/admin/clients/:id/adjust-stars', adminAuth, (req, res) => {
 app.get('/api/admin/reward-qrs', adminAuth, (req, res) => {
   const rows = db.prepare(`SELECT q.*, c.name AS client_name, c.phone, r.name AS reward_name FROM reward_qrs q JOIN clients c ON c.id = q.client_id JOIN reward_products r ON r.id = q.reward_product_id ORDER BY q.created_at DESC LIMIT 200`).all();
   res.json({ ok: true, qrs: rows });
+});
+
+app.get('/api/admin/debug/challenges', adminAuth, (req, res) => {
+  const logs = db.prepare(`SELECT * FROM audit_logs
+    WHERE action IN ('challenge_category_not_matched', 'challenge_awarded', 'receipt_imported')
+    ORDER BY created_at DESC LIMIT 100`).all().map((row) => {
+      let payload = null;
+      try { payload = row.payload_json ? JSON.parse(row.payload_json) : null; } catch {}
+      return { ...row, payload };
+    });
+  const activeChallenges = db.prepare('SELECT * FROM challenges WHERE is_active = 1 ORDER BY id DESC').all();
+  res.json({ ok: true, debug_enabled: challengeDebugEnabled(), active_challenges: activeChallenges, logs });
 });
 
 app.get('/api/admin/audit', adminAuth, (req, res) => {
