@@ -196,7 +196,7 @@ function normalizeMatchValue(value) {
 }
 
 function itemCategoryCandidates(item = {}) {
-  return [
+  const scalarCandidates = [
     item.category,
     item.category_code,
     item.category_name,
@@ -204,7 +204,18 @@ function itemCategoryCandidates(item = {}) {
     item.product_group_name,
     item.parent_group_code,
     item.parent_group_name
-  ].map(normalizeMatchValue).filter(Boolean);
+  ];
+
+  const pathCandidates = [
+    ...(Array.isArray(item.group_path_codes) ? item.group_path_codes : []),
+    ...(Array.isArray(item.group_path_names) ? item.group_path_names : []),
+    ...(Array.isArray(item.category_path_codes) ? item.category_path_codes : []),
+    ...(Array.isArray(item.category_path_names) ? item.category_path_names : [])
+  ];
+
+  return [...scalarCandidates, ...pathCandidates]
+    .map(normalizeMatchValue)
+    .filter(Boolean);
 }
 
 function categoryMatches(expected, item = {}) {
@@ -465,7 +476,11 @@ function addChallengeVisit(clientId, receiptId, purchasedAt, totalCents, eligibl
         raw_product_group_name: item.product_group_name || '',
         raw_parent_group_code: item.parent_group_code || '',
         raw_parent_group_name: item.parent_group_name || '',
-        normalized_candidates: itemCategoryCandidates(item)
+        raw_group_path_codes: Array.isArray(item.group_path_codes) ? item.group_path_codes : [],
+        raw_group_path_names: Array.isArray(item.group_path_names) ? item.group_path_names : [],
+        normalized_group_path_codes: Array.isArray(item.group_path_codes) ? item.group_path_codes : [],
+        group_path_names: Array.isArray(item.group_path_names) ? item.group_path_names : [],
+        candidates: itemCategoryCandidates(item)
       }))
     };
 
@@ -573,6 +588,8 @@ function updateStampProgress(clientId, receiptId, items = []) {
       items: items.map(item => ({
         name: item.name || '',
         external_product_id: item.external_product_id || item.product_id || '',
+        group_path_codes: Array.isArray(item.group_path_codes) ? item.group_path_codes : [],
+        group_path_names: Array.isArray(item.group_path_names) ? item.group_path_names : [],
         candidates: itemCategoryCandidates(item)
       }))
     });
@@ -1628,7 +1645,7 @@ app.post('/api/admin/catalog/stamps', adminAuth, (req, res) => {
   if (!b.name || !b.category || !Number(b.required_qty) || !Number(b.reward_stars)) return res.status(400).json({ ok: false, error: 'STAMP_FIELDS_REQUIRED' });
   const t = nowIso();
   const result = db.prepare('INSERT INTO stamp_programs(code, name, category, required_qty, reward_stars, is_repeatable, is_active, created_at) VALUES(?, ?, ?, ?, ?, ?, 1, ?)')
-    .run(b.code || randomToken('stamp_'), b.name, b.category, Number(b.required_qty), Number(b.reward_stars), b.is_repeatable === false ? 0 : 1, t);
+    .run(String(b.code || '').trim() || randomToken('stamp_'), b.name, b.category, Number(b.required_qty), Number(b.reward_stars), b.is_repeatable === false ? 0 : 1, t);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'stamp_program_created', entityType: 'stamp_program', entityId: String(result.lastInsertRowid), payload: b });
   res.json({ ok: true, id: result.lastInsertRowid });
 });
@@ -1694,8 +1711,8 @@ app.patch('/api/admin/catalog/stamps/:id', adminAuth, (req, res) => {
   const b = req.body || {};
   const existing = db.prepare('SELECT * FROM stamp_programs WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ ok: false, error: 'STAMP_NOT_FOUND' });
-  db.prepare('UPDATE stamp_programs SET name=?, category=?, required_qty=?, reward_stars=?, is_repeatable=?, is_active=? WHERE id=?')
-    .run(b.name ?? existing.name, b.category ?? existing.category, b.required_qty ?? existing.required_qty, b.reward_stars ?? existing.reward_stars, b.is_repeatable === undefined ? existing.is_repeatable : (b.is_repeatable ? 1 : 0), b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), req.params.id);
+  db.prepare('UPDATE stamp_programs SET code=?, name=?, category=?, required_qty=?, reward_stars=?, is_repeatable=?, is_active=? WHERE id=?')
+    .run(String(b.code || existing.code).trim(), b.name ?? existing.name, b.category ?? existing.category, b.required_qty ?? existing.required_qty, b.reward_stars ?? existing.reward_stars, b.is_repeatable === undefined ? existing.is_repeatable : (b.is_repeatable ? 1 : 0), b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'stamp_program_updated', entityType: 'stamp_program', entityId: req.params.id, payload: b });
   res.json({ ok: true });
 });

@@ -240,8 +240,50 @@ async function stamps(editId=null){
   title.textContent='Накопичувальні програми';
   const {programs}=await api('/api/admin/catalog/stamps');
   const edit=editId?programs.find(x=>String(x.id)===String(editId)):null;
-  content.innerHTML=`<div class="card editor-card ${edit?'edit-panel':''}"><h3>${edit?'Редагувати програму':'Створити програму'}</h3><form id="stampForm" class="form-grid"><input name="name" placeholder="Назва" value="${esc(edit?.name||'')}" required><input name="category" placeholder="Код або назва групи 1С" value="${esc(edit?.category||'')}" required><input name="required_qty" type="number" placeholder="Кількість" value="${esc(edit?.required_qty||10)}"><input name="reward_stars" type="number" placeholder="Бонус ★" value="${esc(edit?.reward_stars||1000)}"><input name="code" placeholder="Код" value="${esc(edit?.code||'')}"><label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label><button>${edit?'Зберегти':'Створити'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</form></div><div class="card listing-card ${edit?'hide-while-editing':''}"><table><thead><tr><th>Назва</th><th>Категорія</th><th>Кількість</th><th>Бонус</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${programs.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.category)}</td><td>${p.required_qty}</td><td>${num(p.reward_stars)} ★</td><td>${activeText(p.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-stamp="${p.id}"`)}${btn('Видалити',`data-delete-stamp="${p.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
-  const form=$('#stampForm'); form.onsubmit=async ev=>{ev.preventDefault();const body={name:val(form,'name'),category:val(form,'category'),required_qty:Number(val(form,'required_qty')),reward_stars:Number(val(form,'reward_stars')),code:val(form,'code')||undefined,is_active:check(form,'is_active')}; await api(edit?`/api/admin/catalog/stamps/${edit.id}`:'/api/admin/catalog/stamps',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});stamps();}; $('#cancelEdit')?.addEventListener('click',()=>stamps()); $$('[data-edit-stamp]').forEach(b=>b.onclick=async()=>{await stamps(b.dataset.editStamp);scrollAdminFormIntoView();}); $$('[data-delete-stamp]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити програму?')){await api(`/api/admin/catalog/stamps/${b.dataset.deleteStamp}`,{method:'DELETE'});stamps();}});
+  content.innerHTML=`
+    <div class="card editor-card ${edit?'edit-panel':''}">
+      <h3>${edit?'Редагувати програму':'Створити програму'}</h3>
+      <p class="small">Вкажіть код або назву будь-якої папки з 1С. Будуть враховані товари з цієї папки та всіх вкладених підпапок.</p>
+      <form id="stampForm" class="form-grid">
+        <label class="admin-field"><span>Назва програми</span><input name="name" placeholder="Наприклад: 10-та покупка випічки" value="${esc(edit?.name||'')}" required></label>
+        <label class="admin-field"><span>Код або назва групи товарів з 1С</span><input name="category" placeholder="Наприклад: ЦБ000001210" value="${esc(edit?.category||'')}" required></label>
+        <label class="admin-field"><span>Скільки товарів потрібно купити</span><input name="required_qty" type="number" min="1" placeholder="10" value="${esc(edit?.required_qty||10)}" required></label>
+        <label class="admin-field"><span>Бонус після виконання, ★</span><input name="reward_stars" type="number" min="1" placeholder="1000" value="${esc(edit?.reward_stars||1000)}" required></label>
+        <label class="checkline"><input type="checkbox" name="is_repeatable" ${edit?(Number(edit.is_repeatable)?'checked':''):'checked'}> Повторювати програму після отримання бонусу</label>
+        <label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label>
+        ${edit?`<div class="technical-code">Технічний код: <b>${esc(edit.code)}</b></div>`:''}
+        <div class="form-actions"><button class="primary">${edit?'Зберегти':'Створити'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</div>
+      </form>
+    </div>
+    <div class="offer-list ${edit?'hide-while-editing':''}">
+      ${programs.map(p=>`<article class="offer-mobile-card">
+        <div class="offer-card-head"><div><span class="pill">Накопичувальна</span><h3>${esc(p.name)}</h3></div><span>${activeText(p.is_active)}</span></div>
+        <dl>
+          <div><dt>Група 1С</dt><dd>${esc(p.category)}</dd></div>
+          <div><dt>Потрібно товарів</dt><dd>${num(p.required_qty)}</dd></div>
+          <div><dt>Бонус</dt><dd>${num(p.reward_stars)} ★</dd></div>
+          <div><dt>Повторювана</dt><dd>${Number(p.is_repeatable)?'так':'ні'}</dd></div>
+        </dl>
+        <div class="actions">${btn('Редагувати',`data-edit-stamp="${p.id}"`)}${btn('Видалити',`data-delete-stamp="${p.id}"`)}</div>
+      </article>`).join('')||'<div class="card">Програм поки немає</div>'}
+    </div>`;
+  const form=$('#stampForm');
+  form.onsubmit=async ev=>{
+    ev.preventDefault();
+    const body={
+      name:val(form,'name'),
+      category:val(form,'category'),
+      required_qty:Number(val(form,'required_qty')),
+      reward_stars:Number(val(form,'reward_stars')),
+      is_repeatable:check(form,'is_repeatable'),
+      is_active:check(form,'is_active')
+    };
+    await api(edit?`/api/admin/catalog/stamps/${edit.id}`:'/api/admin/catalog/stamps',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});
+    stamps();
+  };
+  $('#cancelEdit')?.addEventListener('click',()=>stamps());
+  $$('[data-edit-stamp]').forEach(b=>b.onclick=async()=>{await stamps(b.dataset.editStamp);scrollAdminFormIntoView();});
+  $$('[data-delete-stamp]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити програму?')){await api(`/api/admin/catalog/stamps/${b.dataset.deleteStamp}`,{method:'DELETE'});stamps();}});
 }
 
 async function news(editId=null){
