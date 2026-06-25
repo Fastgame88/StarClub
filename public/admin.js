@@ -66,9 +66,9 @@ async function dashboard(){
 
 async function clients(){
   title.textContent='Клієнти';
-  const {clients}=await api('/api/admin/clients');
+  const {clients: clientItems}=await api('/api/admin/clients');
   content.innerHTML=`<div class="card"><table><thead><tr><th>Клієнт</th><th>Телефон</th><th>Картка</th><th>Баланс</th><th>Профіль</th><th>Статус</th><th></th></tr></thead><tbody>
-    ${clients.map(c=>`<tr><td><b>${esc(c.name||'—')}</b><div class="small">${dt(c.registered_at)}</div></td><td>${esc(c.phone||'—')}</td><td>${esc(c.card_number)}</td><td>${num(c.stars_balance)} ★</td><td>${c.profile_progress.percent}%</td><td><span class="pill">${c.registered?'registered':'lead'}</span></td><td><div class="actions"><button data-client="${c.id}">Деталі</button></div></td></tr>`).join('')}
+    ${clientItems.map(c=>`<tr><td><b>${esc(c.name||'—')}</b><div class="small">${dt(c.registered_at)}</div></td><td>${esc(c.phone||'—')}</td><td>${esc(c.card_number)}</td><td>${num(c.stars_balance)} ★</td><td>${c.profile_progress.percent}%</td><td><span class="pill">${c.registered?'registered':'lead'}</span></td><td><div class="actions"><button data-client="${c.id}">Деталі</button></div></td></tr>`).join('')}
   </tbody></table></div>`;
   $$('[data-client]').forEach(b=>b.onclick=()=>clientDetails(b.dataset.client));
 }
@@ -150,10 +150,10 @@ function offerForm(o={}){
 
 async function offers(editId=null){
   title.textContent='Пропозиції';
-  const {offers}=await api('/api/admin/catalog/offers');
-  const edit=editId?offers.find(x=>String(x.id)===String(editId)):null;
+  const {offers: offerItems}=await api('/api/admin/catalog/offers');
+  const edit=editId?offerItems.find(x=>String(x.id)===String(editId)):null;
   content.innerHTML=`<div class="card editor-card ${edit?'edit-panel':''}"><h3>${edit?'Редагувати пропозицію':'Створити пропозицію'}</h3>${offerForm(edit||{})}</div>
-  <div class="offer-list">${offers.map(o=>`<article class="offer-mobile-card">
+  <div class="offer-list">${offerItems.map(o=>`<article class="offer-mobile-card">
     <div class="offer-card-head"><div><span class="pill">${esc(o.type)}</span><h3>${esc(o.name)}</h3></div><span>${activeText(o.is_active)}</span></div>
     <dl><div><dt>Умова</dt><dd>${esc(offerCondition(o))}</dd></div><div><dt>Товар або група</dt><dd>${esc(o.product_external_id||o.category||'усі')}</dd></div><div><dt>Магазин</dt><dd>${esc(o.store_id||'all')}</dd></div></dl>
     <div class="actions">${btn('Редагувати',`data-edit-offer="${o.id}"`)}${btn('Видалити',`data-delete-offer="${o.id}"`)}</div>
@@ -211,8 +211,8 @@ async function offers(editId=null){
 
 async function challenges(editId=null){
   title.textContent='Челенджі';
-  const {challenges}=await api('/api/admin/catalog/challenges');
-  const edit=editId?challenges.find(x=>String(x.id)===String(editId)):null;
+  const {challenges: challengeItems}=await api('/api/admin/catalog/challenges');
+  const edit=editId?challengeItems.find(x=>String(x.id)===String(editId)):null;
   content.innerHTML=`<div class="card editor-card ${edit?'edit-panel':''}"><h3>${edit?'Редагувати челендж':'Створити челендж'}</h3>
     <form id="challengeForm" class="form-grid">
       <label class="admin-field"><span>Назва</span><input name="name" value="${esc(edit?.name||'')}" required></label>
@@ -228,7 +228,7 @@ async function challenges(editId=null){
       <div class="form-actions"><button class="primary">${edit?'Зберегти':'Створити'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</div>
     </form>
   </div>
-  <div class="offer-list">${challenges.map(c=>`<article class="offer-mobile-card">
+  <div class="offer-list">${challengeItems.map(c=>`<article class="offer-mobile-card">
     <div class="offer-card-head"><div><span class="pill">Челендж</span><h3>${esc(c.name)}</h3></div><span>${activeText(c.is_active)}</span></div>
     <dl><div><dt>Група 1С</dt><dd>${esc(c.category||'усі товари')}</dd></div><div><dt>Умова</dt><dd>${c.required_visits} відвідувань</dd></div><div><dt>Мін. чек</dt><dd>${num(c.min_total_cents/100)} грн</dd></div><div><dt>Бонус</dt><dd>${num(c.reward_stars)} ★</dd></div></dl>
     <div class="actions">${btn('Редагувати',`data-edit-challenge="${c.id}"`)}${btn('Видалити',`data-delete-challenge="${c.id}"`)}</div>
@@ -297,9 +297,9 @@ async function stamps(editId=null){
 
 async function news(editId=null){
   title.textContent='Новини';
-  const {news}=await api('/api/admin/catalog/news');
-  const edit=editId?news.find(x=>String(x.id)===String(editId)):null;
-  content.innerHTML=`<div class="card editor-card ${edit?'edit-panel':''}"><h3>${edit?'Редагувати новину':'Додати новину'}</h3><form id="newsForm" class="form-grid"><input name="title" placeholder="Заголовок" value="${esc(edit?.title||'')}" required><input name="tag" placeholder="Тег" value="${esc(edit?.tag||'')}"><input name="image_url" placeholder="Фото URL" value="${esc(edit?.image_url||'/assets/star.svg')}"><textarea name="text" placeholder="Текст" required>${esc(edit?.text||'')}</textarea><label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label><button>${edit?'Зберегти':'Додати'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</form></div><div class="card listing-card ${edit?'hide-while-editing':''}"><table><thead><tr><th>Дата</th><th>Тег</th><th>Заголовок</th><th>Текст</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${news.map(n=>`<tr><td>${dt(n.created_at)}</td><td>${esc(n.tag||'')}</td><td>${esc(n.title)}</td><td>${esc(n.text)}</td><td>${activeText(n.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-news="${n.id}"`)}${btn('Видалити',`data-delete-news="${n.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
+  const {news: newsItems}=await api('/api/admin/catalog/news');
+  const edit=editId?newsItems.find(x=>String(x.id)===String(editId)):null;
+  content.innerHTML=`<div class="card editor-card ${edit?'edit-panel':''}"><h3>${edit?'Редагувати новину':'Додати новину'}</h3><form id="newsForm" class="form-grid"><input name="title" placeholder="Заголовок" value="${esc(edit?.title||'')}" required><input name="tag" placeholder="Тег" value="${esc(edit?.tag||'')}"><input name="image_url" placeholder="Фото URL" value="${esc(edit?.image_url||'/assets/star.svg')}"><textarea name="text" placeholder="Текст" required>${esc(edit?.text||'')}</textarea><label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label><button>${edit?'Зберегти':'Додати'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</form></div><div class="card listing-card ${edit?'hide-while-editing':''}"><table><thead><tr><th>Дата</th><th>Тег</th><th>Заголовок</th><th>Текст</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${newsItems.map(n=>`<tr><td>${dt(n.created_at)}</td><td>${esc(n.tag||'')}</td><td>${esc(n.title)}</td><td>${esc(n.text)}</td><td>${activeText(n.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-news="${n.id}"`)}${btn('Видалити',`data-delete-news="${n.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
   const form=$('#newsForm'); form.onsubmit=async ev=>{ev.preventDefault();const body={title:val(form,'title'),tag:val(form,'tag'),image_url:val(form,'image_url')||'/assets/star.svg',text:val(form,'text'),is_active:check(form,'is_active')}; await api(edit?`/api/admin/catalog/news/${edit.id}`:'/api/admin/catalog/news',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});news();}; $('#cancelEdit')?.addEventListener('click',()=>news()); $$('[data-edit-news]').forEach(b=>b.onclick=async()=>{await news(b.dataset.editNews);scrollAdminFormIntoView();}); $$('[data-delete-news]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити новину?')){await api(`/api/admin/catalog/news/${b.dataset.deleteNews}`,{method:'DELETE'});news();}});
 }
 
@@ -404,8 +404,8 @@ async function admins(){
 }
 async function qrs(){
   title.textContent='QR за зірки';
-  const {qrs}=await api('/api/admin/reward-qrs');
-  content.innerHTML=`<div class="card"><table><thead><tr><th>Дата</th><th>Клієнт</th><th>Товар</th><th>Код</th><th>Зірки</th><th>Статус</th><th>Діє до</th></tr></thead><tbody>${qrs.map(q=>`<tr><td>${dt(q.created_at)}</td><td>${esc(q.client_name||q.phone)}</td><td>${esc(q.reward_name)}</td><td><b>${esc(q.token)}</b></td><td>${num(q.stars_reserved)} ★</td><td><span class="pill">${esc(q.status)}</span></td><td>${dt(q.expires_at)}</td></tr>`).join('') || '<tr><td colspan="7">Поки QR не створювались</td></tr>'}</tbody></table></div>`;
+  const {qrs: qrItems}=await api('/api/admin/reward-qrs');
+  content.innerHTML=`<div class="card"><table><thead><tr><th>Дата</th><th>Клієнт</th><th>Товар</th><th>Код</th><th>Зірки</th><th>Статус</th><th>Діє до</th></tr></thead><tbody>${qrItems.map(q=>`<tr><td>${dt(q.created_at)}</td><td>${esc(q.client_name||q.phone)}</td><td>${esc(q.reward_name)}</td><td><b>${esc(q.token)}</b></td><td>${num(q.stars_reserved)} ★</td><td><span class="pill">${esc(q.status)}</span></td><td>${dt(q.expires_at)}</td></tr>`).join('') || '<tr><td colspan="7">Поки QR не створювались</td></tr>'}</tbody></table></div>`;
 }
 async function audit(){
   title.textContent='Журнал дій';
