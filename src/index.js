@@ -1224,10 +1224,12 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
   const items = Array.isArray(body.items) ? body.items : [];
   if (!items.length) return res.status(400).json({ ok: false, error: 'ITEMS_REQUIRED' });
 
+  const calculationTime = nowIso();
+
   const calculation = calculateDraftWithOffers({
     items,
     storeId: body.store_id,
-    purchasedAt: body.purchased_at || nowIso()
+    purchasedAt: calculationTime
   });
 
   writeIntegrationDebug('CALCULATE', {
@@ -1241,7 +1243,9 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
       qty: item.qty,
       price_cents: item.price_cents
     })),
-    active_offers: getActiveOffers(body.store_id, body.purchased_at || nowIso()).map(o => ({
+    active_offers: getActiveOffers(
+    body.store_id,
+    calculationTime).map(o => ({
       id:o.id,type:o.type,name:o.name,product_external_id:o.product_external_id,category:o.category,
       club_price_cents:o.club_price_cents,stars_multiplier:o.stars_multiplier,tiers_json:o.tiers_json,store_id:o.store_id
     })),
