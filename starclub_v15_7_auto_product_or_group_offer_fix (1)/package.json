@@ -1,0 +1,28 @@
+{
+  "name": "star-club-miniapp-prototype",
+  "version": "1.0.0",
+  "description": "Star Club Telegram Mini App prototype with REST API for 1C test integration",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "bot": "RUN_BOT=true node src/bot.js",
+    "seed": "node src/seed.js",
+    "check": "node --check src/index.js && node --check src/db.js && node --check src/telegram.js && node --check public/app.js && node --check public/admin.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "sql.js": "^1.13.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "qrcode": "^1.5.4",
+    "telegraf": "^4.16.3",
+    "bwip-js": "^4.5.1"
+  }
+}
