@@ -99,6 +99,7 @@ async function bootstrap() {
     state.stores = [];
   }
   render();
+  startLiveRefresh();
 }
 
 function header(title, back = false) {
@@ -292,42 +293,6 @@ async function refreshClient() {
   renderNav();
 }
 
-
-async function refreshLiveData({ silent = true, rerender = false } = {}) {
-  if (!state.token) return;
-  try {
-    const me = await api('/api/client/me');
-    state.client = me.client;
-    if (state.client?.registered) {
-      const [progress, qrs, support, history, receipts] = await Promise.all([
-        api('/api/client/progress').catch(() => null),
-        api('/api/client/reward-qrs').catch(() => null),
-        api('/api/client/support/tickets').catch(() => null),
-        api('/api/client/star-history').catch(() => null),
-        api('/api/client/receipts').catch(() => null)
-      ]);
-      if (progress) state.data.progress = progress;
-      if (qrs) state.data.rewardQrs = qrs.qrs || [];
-      if (support) state.data.supportTickets = support.tickets || [];
-      if (history) state.data.ledger = history.items || [];
-      if (receipts) state.data.receipts = receipts.receipts || [];
-    }
-    renderNav();
-    if (rerender && state.client?.registered) render();
-  } catch (error) {
-    if (!silent) toast(error.message || 'Не вдалося оновити дані');
-  }
-}
-
-let liveRefreshTimer = null;
-function startLiveRefresh() {
-  if (liveRefreshTimer) clearInterval(liveRefreshTimer);
-  liveRefreshTimer = setInterval(() => refreshLiveData({ silent: true, rerender: ['home','history','support','progress','rewardCodes','rewards','stars'].includes(state.route) }), 7000);
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshLiveData({ silent: true, rerender: true });
-  });
-}
-
 async function loadRewards() {
   const data = await api('/api/client/rewards');
   const qrs = await api('/api/client/reward-qrs');
@@ -359,6 +324,48 @@ async function loadNews() {
 async function loadSupport() {
   state.data.supportTickets = (await api('/api/client/support/tickets')).tickets || [];
 }
+
+let liveRefreshTimer = null;
+let liveRefreshBusy = false;
+
+function shouldLiveRender() {
+  const active = document.activeElement;
+  if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return false;
+  return ['home', 'stars', 'history', 'rewards', 'rewardCodes', 'progress', 'support'].includes(state.route);
+}
+
+async function refreshLiveData({ silent = true, forceRender = false } = {}) {
+  if (!state.token || !state.client?.registered || liveRefreshBusy) return;
+  liveRefreshBusy = true;
+  try {
+    const me = await api('/api/client/me');
+    state.client = me.client;
+    const tasks = [];
+    tasks.push(api('/api/client/progress').then((data) => { state.data.progress = data; }).catch(() => {}));
+    tasks.push(api('/api/client/reward-qrs').then((data) => { state.data.rewardQrs = data.qrs || []; }).catch(() => {}));
+    tasks.push(api('/api/client/support/tickets').then((data) => { state.data.supportTickets = data.tickets || []; }).catch(() => {}));
+    if (['history', 'stars', 'home'].includes(state.route)) {
+      tasks.push(api('/api/client/star-history').then((data) => { state.data.ledger = data.items || []; }).catch(() => {}));
+      tasks.push(api('/api/client/receipts').then((data) => { state.data.receipts = data.receipts || []; }).catch(() => {}));
+    }
+    await Promise.all(tasks);
+    renderNav();
+    if (forceRender || shouldLiveRender()) render();
+  } catch (error) {
+    if (!silent) toast(error.message || 'Не вдалося оновити дані');
+  } finally {
+    liveRefreshBusy = false;
+  }
+}
+
+function startLiveRefresh() {
+  if (liveRefreshTimer) clearInterval(liveRefreshTimer);
+  liveRefreshTimer = setInterval(() => refreshLiveData({ silent: true }), 7000);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) refreshLiveData({ silent: true, forceRender: true });
+});
 
 async function cardScreen() {
   const data = await api('/api/client/card');
@@ -497,10 +504,10 @@ function progressScreen() {
           <p class="small">Залишилось ${Math.max(0, c.required_visits - c.progress)} відвідування до бонусу ${fmtStars(c.reward_stars)} ★</p>
         </section>
       `).join('')}
-      <section class="card gold-border spark"><b>10-та кава / багет</b><p class="small">Після виконання автоматично створюється QR-код на безкоштовний товар. Код діє 7 днів.</p></section>
+      <section class="card gold-border spark"><b>10-та кава / багет</b><p class="small">Бонус нараховується автоматично після досягнення 10 позицій.</p></section>
       ${p.stamps.map((s) => `
         <section class="card">
-          <div class="progress-row"><div><b>${s.name}</b><p class="small">Ще ${Math.max(0, s.required_qty - s.progress)} до безкоштовного QR-коду</p></div><b>${s.progress}/${s.required_qty}</b></div>
+          <div class="progress-row"><div><b>${s.name}</b><p class="small">Ще ${Math.max(0, s.required_qty - s.progress)} до бонусу ${fmtStars(s.reward_stars)} ★</p></div><b>${s.progress}/${s.required_qty}</b></div>
           <div class="progressbar"><span style="width:${Math.min(100, s.progress / s.required_qty * 100)}%"></span></div>
         </section>
       `).join('')}
@@ -670,7 +677,10 @@ function showCashierModal(cardNumber) {
       <div class="modal-actions"><button class="btn" type="button" data-close-modal>Готово</button></div>
     </div>`;
   document.body.appendChild(wrap);
-  wrap.querySelector('[data-close-modal]').onclick = async () => { wrap.remove(); await refreshLiveData({ silent: true, rerender: false }); if (state.route === 'rewards') { state.route = 'rewardCodes'; localStorage.setItem('starclub_route', 'rewardCodes'); render(); } };
+  wrap.querySelector('[data-close-modal]').onclick = async () => {
+    wrap.remove();
+    await refreshLiveData({ silent: true, forceRender: true });
+  };
 }
 
 function showRewardModal(qr) {
@@ -695,14 +705,17 @@ function showRewardModal(qr) {
     </div>
   `;
   document.body.appendChild(wrap);
-  wrap.querySelector('[data-close-modal]').onclick = async () => { wrap.remove(); await refreshLiveData({ silent: true, rerender: false }); if (state.route === 'rewards') { state.route = 'rewardCodes'; localStorage.setItem('starclub_route', 'rewardCodes'); render(); } };
+  wrap.querySelector('[data-close-modal]').onclick = async () => {
+    wrap.remove();
+    await refreshLiveData({ silent: true, forceRender: true });
+  };
   wrap.querySelector('[data-copy-code]').onclick = async () => { try { await navigator.clipboard.writeText(manualCode); toast('Код скопійовано'); } catch { toast(manualCode); } };
   wrap.querySelector('[data-cancel-reward-code]').onclick = async () => {
     try {
       await api('/api/client/reward-qr/cancel', { method: 'POST', body: JSON.stringify({ token: manualCode }) });
       toast('Код скасовано, зірки знову доступні');
       wrap.remove();
-      await refreshLiveData({ silent: true, rerender: false });
+      await refreshClient();
       await loadRewards();
       if (state.route === 'rewards' || state.route === 'rewardCodes') render();
     } catch (e) { toast(e.message); }
@@ -848,8 +861,7 @@ render();
     try {
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });
       showRewardModal(data.qr);
-      await refreshLiveData({ silent: true, rerender: false });
-      renderNav();
+      await refreshLiveData({ silent: true, forceRender: false });
     } catch (e) { toast(e.message); }
   });
 
@@ -953,5 +965,4 @@ render();
   }
 }
 
-bootstrap().then(startLiveRefresh);
-
+bootstrap();

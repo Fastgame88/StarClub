@@ -366,7 +366,7 @@ export function migrate() {
       category TEXT,
       required_qty INTEGER NOT NULL,
       reward_stars INTEGER NOT NULL,
-      reward_product_id INTEGER,
+      reward_product_id INTEGER REFERENCES reward_products(id) ON DELETE SET NULL,
       reward_valid_days INTEGER DEFAULT 7,
       is_repeatable INTEGER DEFAULT 1,
       is_active INTEGER DEFAULT 1,
@@ -432,6 +432,8 @@ export function migrate() {
       telegram_id TEXT UNIQUE NOT NULL,
       name TEXT,
       username TEXT,
+      login TEXT UNIQUE,
+      password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'admin',
       permissions_json TEXT,
       is_active INTEGER DEFAULT 1,
@@ -472,9 +474,10 @@ export function migrate() {
       token TEXT UNIQUE NOT NULL,
       product_external_id TEXT,
       product_name TEXT,
-      discount_type TEXT DEFAULT 'percent',
-      discount_value INTEGER DEFAULT 10,
-      status TEXT DEFAULT 'active',
+      discount_percent REAL,
+      discount_cents INTEGER,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_by_admin_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL,
       expires_at TEXT,
       used_at TEXT
@@ -505,10 +508,31 @@ export function migrate() {
   if (!storeColumns.has('updated_at')) innerDb.run('ALTER TABLE stores ADD COLUMN updated_at TEXT');
   innerDb.run('UPDATE stores SET is_active = 1 WHERE is_active IS NULL');
 
+  const adminInfo = innerDb.exec('PRAGMA table_info(admin_users)');
+  const adminColumns = new Set((adminInfo?.[0]?.values || []).map((row) => row[1]));
+  if (!adminColumns.has('login')) innerDb.run('ALTER TABLE admin_users ADD COLUMN login TEXT');
+  if (!adminColumns.has('password_hash')) innerDb.run('ALTER TABLE admin_users ADD COLUMN password_hash TEXT');
+  innerDb.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_login ON admin_users(login) WHERE login IS NOT NULL');
+
   const stampInfo = innerDb.exec('PRAGMA table_info(stamp_programs)');
   const stampColumns = new Set((stampInfo?.[0]?.values || []).map((row) => row[1]));
-  if (!stampColumns.has('reward_product_id')) innerDb.run('ALTER TABLE stamp_programs ADD COLUMN reward_product_id INTEGER');
+  if (!stampColumns.has('reward_product_id')) innerDb.run('ALTER TABLE stamp_programs ADD COLUMN reward_product_id INTEGER REFERENCES reward_products(id) ON DELETE SET NULL');
   if (!stampColumns.has('reward_valid_days')) innerDb.run('ALTER TABLE stamp_programs ADD COLUMN reward_valid_days INTEGER DEFAULT 7');
+
+  innerDb.run(`CREATE TABLE IF NOT EXISTS personal_coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    product_external_id TEXT,
+    product_name TEXT,
+    discount_percent REAL,
+    discount_cents INTEGER,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_by_admin_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    used_at TEXT
+  )`);
 }
 
 
@@ -571,9 +595,11 @@ export function seed() {
 
   const stampCount = db.prepare('SELECT COUNT(*) AS c FROM stamp_programs').get().c;
   if (!stampCount) {
-    const insert = db.prepare('INSERT INTO stamp_programs(code, name, category, required_qty, reward_stars, is_repeatable, is_active, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)');
-    insert.run('coffee-10', '10-та кава', 'coffee', 10, 1000, 1, 1, t);
-    insert.run('baguette-10', '10-й багет', 'bakery', 10, 1000, 1, 1, t);
+    const coffeeReward = db.prepare("SELECT id FROM reward_products WHERE lower(name) LIKE '%кава%' ORDER BY id LIMIT 1").get();
+    const bakeryReward = db.prepare("SELECT id FROM reward_products WHERE lower(name) LIKE '%багет%' OR lower(name) LIKE '%круасан%' ORDER BY id LIMIT 1").get();
+    const insert = db.prepare('INSERT INTO stamp_programs(code, name, category, required_qty, reward_stars, reward_product_id, reward_valid_days, is_repeatable, is_active, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    insert.run('coffee-10', '10-та кава', 'coffee', 10, 0, coffeeReward?.id || null, 7, 1, 1, t);
+    insert.run('baguette-10', '10-й багет', 'bakery', 10, 0, bakeryReward?.id || null, 7, 1, 1, t);
   }
 
   const challengeCount = db.prepare('SELECT COUNT(*) AS c FROM challenges').get().c;

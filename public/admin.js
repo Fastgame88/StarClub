@@ -64,42 +64,73 @@ async function dashboard(){
   </div>`;
 }
 
-let clientDetailState = { id: null, receiptLimit: 3, ledgerLimit: 3 };
-
-async function clients(q=''){
+async function clients(q = ''){
   title.textContent='Клієнти';
-  const query = String(q || '').trim();
-  const {clients: clientItems}=await api(`/api/admin/clients${query ? `?q=${encodeURIComponent(query)}` : ''}`);
-  content.innerHTML=`<div class="card"><div class="form-grid" style="grid-template-columns:1fr auto"><input id="clientSearch" placeholder="Пошук за імʼям або телефоном" value="${esc(query)}"><button id="clientSearchBtn">Пошук</button></div></div>
-  <div class="card"><table><thead><tr><th>Імʼя</th><th>Телефон</th><th></th></tr></thead><tbody>
+  const search = String(q || '').trim();
+  const {clients: clientItems}=await api('/api/admin/clients' + (search ? `?q=${encodeURIComponent(search)}` : ''));
+  content.innerHTML=`<div class="card">
+    <div class="form-grid" style="grid-template-columns:1fr auto;align-items:end">
+      <label class="admin-field"><span>Пошук клієнта</span><input id="clientSearch" value="${esc(search)}" placeholder="Імʼя або номер телефону"></label>
+      <button id="clientSearchBtn" type="button">Пошук</button>
+    </div>
+  </div>
+  <div class="card"><table><thead><tr><th>Імʼя</th><th>Номер телефону</th><th></th></tr></thead><tbody>
     ${clientItems.map(c=>`<tr><td><b>${esc(c.name||'—')}</b><div class="small">${esc(c.card_number||'')}</div></td><td>${esc(c.phone||'—')}</td><td><div class="actions"><button data-client="${c.id}">Детально</button></div></td></tr>`).join('') || '<tr><td colspan="3">Клієнтів не знайдено</td></tr>'}
   </tbody></table></div>`;
-  $('#clientSearchBtn').onclick=()=>clients($('#clientSearch').value);
-  $('#clientSearch').onkeydown=(e)=>{ if(e.key==='Enter') clients($('#clientSearch').value); };
-  $$('[data-client]').forEach(b=>b.onclick=()=>{clientDetailState={id:b.dataset.client,receiptLimit:3,ledgerLimit:3};clientDetails(b.dataset.client)});
+  const input=$('#clientSearch');
+  $('#clientSearchBtn').onclick=()=>clients(input.value);
+  input.onkeydown=(ev)=>{if(ev.key==='Enter') clients(input.value);};
+  $$('[data-client]').forEach(b=>b.onclick=()=>clientDetails(b.dataset.client));
 }
-async function clientDetails(id, opts={}){
-  clientDetailState.id = id;
-  if (opts.receiptLimit) clientDetailState.receiptLimit = opts.receiptLimit;
-  if (opts.ledgerLimit) clientDetailState.ledgerLimit = opts.ledgerLimit;
-  const data=await api(`/api/admin/clients/${id}?receipt_limit=${clientDetailState.receiptLimit}&ledger_limit=${clientDetailState.ledgerLimit}`);
+
+function renderClientReceiptRows(receipts, limit){
+  const shown = receipts.slice(0, limit);
+  return shown.map((r, idx)=>`<tr>
+    <td>${esc(r.id)}</td><td>${dt(r.purchased_at)}</td><td>${num(Number(r.total_cents||0)/100)} грн</td><td>${num(r.stars_accrued)} ★</td>
+    <td><button type="button" data-toggle-receipt-items="${idx}">Товари</button></td>
+  </tr><tr class="hidden" data-receipt-items-row="${idx}"><td colspan="5">
+    ${(r.items||[]).length ? `<table><tbody>${(r.items||[]).map(i=>`<tr><td>${esc(i.name)}</td><td>${num(i.qty)}</td><td>${num(Number(i.line_total_cents||0)/100)} грн</td></tr>`).join('')}</tbody></table>` : '<span class="small">Товарів у цьому чеку не передано</span>'}
+  </td></tr>`).join('') || '<tr><td colspan="5">Поки немає чеків</td></tr>';
+}
+
+function renderClientLedgerRows(ledger, limit){
+  return ledger.slice(0, limit).map(l=>`<tr><td>${dt(l.created_at)}</td><td>${esc(l.description||l.type)}</td><td>${l.amount>0?'+':''}${num(l.amount)} ★</td></tr>`).join('') || '<tr><td colspan="3">Поки немає операцій</td></tr>';
+}
+
+async function clientDetails(id, receiptLimit=3, ledgerLimit=3){
+  const data=await api(`/api/admin/clients/${id}`);
   const c=data.client;
-  const receiptRows=(data.receipts||[]).map(r=>`<tr><td><b>${esc(r.id)}</b><div class="small">${dt(r.purchased_at)}</div></td><td>${num(r.total_cents/100)} грн</td><td>${num(r.stars_accrued)} ★</td><td><details><summary>Товари</summary>${(r.items||[]).map(i=>`<div class="small">${esc(i.name)} × ${num(i.qty)} — ${num(i.line_total_cents/100)} грн</div>`).join('')||'—'}</details></td></tr>`).join('') || '<tr><td colspan="4">Поки немає чеків</td></tr>';
-  const ledgerRows=(data.ledger||[]).map(l=>`<tr><td>${dt(l.created_at)}</td><td>${esc(l.description||l.type)}</td><td>${l.amount>0?'+':''}${num(l.amount)} ★</td></tr>`).join('') || '<tr><td colspan="3">Поки немає операцій</td></tr>';
-  const topProducts=(data.top_products||[]).map(p=>`<article class="card"><b>${esc(p.name)}</b><p class="small">Куплено: ${num(p.qty_total)} · чеків: ${num(p.times)}</p><div class="actions"><button data-create-coupon="${esc(p.external_product_id||'')}" data-product-name="${esc(p.name)}">QR знижка</button></div></article>`).join('') || '<div class="empty">Недостатньо покупок для аналітики</div>';
-  const coupons=(data.coupons||[]).map(cpn=>`<div class="small"><b>${esc(cpn.token)}</b> · ${esc(cpn.product_name||'товар')} · ${cpn.discount_value}${cpn.discount_type==='percent'?'%':' грн'} · ${esc(cpn.status)}</div>`).join('') || '<div class="small">Персональних QR ще немає</div>';
-  content.innerHTML=`<div class="card"><h2>${esc(c.name||'Клієнт')} · ${num(c.stars_balance)} ★</h2><p class="small">${esc(c.phone||'')} · ${esc(c.card_number)}</p><div class="actions"><button id="plus100">+100 ★</button><button id="minus100">-100 ★</button><button id="backClients">Назад</button></div></div>
-  <div class="card"><h3>Аналітика клієнта: топ-3 товари</h3><div class="grid">${topProducts}</div><h4>Персональні QR-знижки</h4>${coupons}</div>
-  <div class="card"><h3>Історія зірок</h3><table><tbody>${ledgerRows}</tbody></table><div class="actions"><button id="ledgerMore">Детальніше +10</button><button id="ledgerLess">Приховати</button></div></div>
-  <div class="card"><h3>Чеки</h3><table><tbody>${receiptRows}</tbody></table><div class="actions"><button id="receiptsMore">Детальніше +10</button><button id="receiptsLess">Приховати</button></div></div>`;
-  $('#backClients').onclick=()=>clients();
-  $('#plus100').onclick=async()=>{await api(`/api/admin/clients/${id}/adjust-stars`,{method:'POST',body:JSON.stringify({amount:100,description:'Ручне коригування +100 ★'})});clientDetails(id)};
-  $('#minus100').onclick=async()=>{await api(`/api/admin/clients/${id}/adjust-stars`,{method:'POST',body:JSON.stringify({amount:-100,description:'Ручне коригування -100 ★'})});clientDetails(id)};
-  $('#receiptsMore').onclick=()=>clientDetails(id,{receiptLimit:clientDetailState.receiptLimit+10});
-  $('#receiptsLess').onclick=()=>clientDetails(id,{receiptLimit:3});
-  $('#ledgerMore').onclick=()=>clientDetails(id,{ledgerLimit:clientDetailState.ledgerLimit+10});
-  $('#ledgerLess').onclick=()=>clientDetails(id,{ledgerLimit:3});
-  $$('[data-create-coupon]').forEach(b=>b.onclick=async()=>{const discount=prompt('Вкажіть знижку у %, наприклад 10', '10'); if(!discount)return; await api(`/api/admin/clients/${id}/coupons`,{method:'POST',body:JSON.stringify({product_external_id:b.dataset.createCoupon||null,product_name:b.dataset.productName,discount_type:'percent',discount_value:Number(discount),valid_days:7})}); clientDetails(id);});
+  const receipts=data.receipts||[];
+  const ledger=data.ledger||[];
+  const top=data.top_products||[];
+  const coupons=data.coupons||[];
+  content.innerHTML=`<div class="card"><h2>${esc(c.name||'Клієнт')} · ${num(c.stars_balance)} ★</h2>
+    <p class="small">${esc(c.phone||'')} · ${esc(c.card_number)} · Telegram: ${esc(c.telegram_id||'—')}</p>
+    <div class="grid">
+      <div><b>Email</b><p class="small">${esc(c.email||'—')}</p></div>
+      <div><b>Улюблений магазин</b><p class="small">${esc(c.favorite_store||'—')}</p></div>
+      <div><b>Профіль</b><p class="small">${c.profile_progress?.percent||0}%</p></div>
+      <div><b>Доступно</b><p class="small">${num(c.available_stars)} ★</p></div>
+    </div>
+    <div class="actions"><button id="plus100">+100 ★</button><button id="minus100">-100 ★</button><button id="backClients">Назад</button></div></div>
+
+    <div class="card"><h3>Топ-3 товари клієнта</h3>
+      ${top.length ? `<table><thead><tr><th>Товар</th><th>К-сть</th><th>Покупок</th><th>Дії</th></tr></thead><tbody>${top.map((p,i)=>`<tr><td>${esc(p.name)}</td><td>${num(p.qty_total)}</td><td>${num(p.times)}</td><td class="actions"><button data-personal-offer="${i}">Знижка</button><button data-discount-qr="${i}">QR знижка</button></td></tr>`).join('')}</tbody></table>` : '<p class="small">Аналітика зʼявиться після чеків із товарами.</p>'}
+      ${coupons.length ? `<h4>Останні QR-знижки</h4><table><tbody>${coupons.map(cp=>`<tr><td><b>${esc(cp.token)}</b></td><td>${esc(cp.product_name||'—')}</td><td>-${num(cp.discount_percent)}%</td><td>${esc(cp.status)}</td></tr>`).join('')}</tbody></table>` : ''}
+    </div>
+
+    <div class="card"><h3>Історія зірок</h3><table><tbody>${renderClientLedgerRows(ledger, ledgerLimit)}</tbody></table><div class="actions">${ledger.length>ledgerLimit?`<button id="moreLedger">Показати ще 10</button>`:''}${ledgerLimit>3?`<button id="hideLedger">Приховати</button>`:''}</div></div>
+    <div class="card"><h3>Чеки</h3><table><thead><tr><th>ID</th><th>Дата</th><th>Сума</th><th>Зірки</th><th></th></tr></thead><tbody>${renderClientReceiptRows(receipts, receiptLimit)}</tbody></table><div class="actions">${receipts.length>receiptLimit?`<button id="moreReceipts">Детальніше +10</button>`:''}${receiptLimit>3?`<button id="hideReceipts">Приховати</button>`:''}</div></div>`;
+  $('#backClients').onclick=clients;
+  $('#plus100').onclick=async()=>{await api(`/api/admin/clients/${id}/adjust-stars`,{method:'POST',body:JSON.stringify({amount:100,description:'Ручне коригування +100 ★'})});clientDetails(id, receiptLimit, ledgerLimit)};
+  $('#minus100').onclick=async()=>{await api(`/api/admin/clients/${id}/adjust-stars`,{method:'POST',body:JSON.stringify({amount:-100,description:'Ручне коригування -100 ★'})});clientDetails(id, receiptLimit, ledgerLimit)};
+  $('#moreReceipts')?.addEventListener('click',()=>clientDetails(id, receiptLimit+10, ledgerLimit));
+  $('#hideReceipts')?.addEventListener('click',()=>clientDetails(id, 3, ledgerLimit));
+  $('#moreLedger')?.addEventListener('click',()=>clientDetails(id, receiptLimit, ledgerLimit+10));
+  $('#hideLedger')?.addEventListener('click',()=>clientDetails(id, receiptLimit, 3));
+  $$('[data-toggle-receipt-items]').forEach(b=>b.onclick=()=>document.querySelector(`[data-receipt-items-row="${b.dataset.toggleReceiptItems}"]`)?.classList.toggle('hidden'));
+  $$('[data-personal-offer]').forEach(b=>b.onclick=async()=>{const p=top[Number(b.dataset.personalOffer)];const discount=Number(prompt('Знижка у %, наприклад 10', '10')||0);if(!discount)return;await api(`/api/admin/clients/${id}/personal-offer`,{method:'POST',body:JSON.stringify({product_name:p.name,external_product_id:p.external_product_id,discount_percent:discount})});alert('Персональну знижку створено');clientDetails(id,receiptLimit,ledgerLimit);});
+  $$('[data-discount-qr]').forEach(b=>b.onclick=async()=>{const p=top[Number(b.dataset.discountQr)];const discount=Number(prompt('Знижка у %, наприклад 10', '10')||0);if(!discount)return;const res=await api(`/api/admin/clients/${id}/discount-qr`,{method:'POST',body:JSON.stringify({product_name:p.name,external_product_id:p.external_product_id,discount_percent:discount,valid_days:7})});alert(`QR-код знижки: ${res.coupon.token}`);clientDetails(id,receiptLimit,ledgerLimit);});
 }
 
 function rewardForm(r={}){
@@ -322,9 +353,7 @@ async function stamps(editId=null){
         <label class="admin-field"><span>Назва програми</span><input name="name" placeholder="Наприклад: 10-та покупка випічки" value="${esc(edit?.name||'')}" required></label>
         <label class="admin-field"><span>Код товару або групи з 1С</span><input name="category" placeholder="Наприклад: ЦБ000001210" value="${esc(edit?.category||'')}" required></label>
         <label class="admin-field"><span>Скільки товарів потрібно купити</span><input name="required_qty" type="number" min="1" placeholder="10" value="${esc(edit?.required_qty||10)}" required></label>
-        <label class="admin-field"><span>Бонус після виконання, ★ (можна 0, якщо видається QR)</span><input name="reward_stars" type="number" min="0" placeholder="0" value="${esc(edit?.reward_stars||0)}"></label>
-        <label class="admin-field"><span>ID товару за зірки для безкоштовного QR</span><input name="reward_product_id" type="number" min="1" placeholder="ID з розділу Товари за зірки" value="${esc(edit?.reward_product_id||'')}"></label>
-        <label class="admin-field"><span>Строк дії QR, днів</span><input name="reward_valid_days" type="number" min="1" value="${esc(edit?.reward_valid_days||7)}"></label>
+        <label class="admin-field"><span>Бонус після виконання, ★</span><input name="reward_stars" type="number" min="1" placeholder="1000" value="${esc(edit?.reward_stars||1000)}" required></label>
         <label class="checkline"><input type="checkbox" name="is_repeatable" ${edit?(Number(edit.is_repeatable)?'checked':''):'checked'}> Повторювати програму після отримання бонусу</label>
         <label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label>
         ${edit?`<div class="technical-code">Технічний код: <b>${esc(edit.code)}</b></div>`:''}
@@ -337,7 +366,7 @@ async function stamps(editId=null){
         <dl>
           <div><dt>Товар або група 1С</dt><dd>${esc(p.category)}</dd></div>
           <div><dt>Потрібно товарів</dt><dd>${num(p.required_qty)}</dd></div>
-          <div><dt>Винагорода</dt><dd>QR на товар за 0,10 грн · ${num(p.reward_valid_days||7)} днів</dd></div>
+          <div><dt>Бонус</dt><dd>${num(p.reward_stars)} ★</dd></div>
           <div><dt>Повторювана</dt><dd>${Number(p.is_repeatable)?'так':'ні'}</dd></div>
         </dl>
         <div class="actions">${btn('Редагувати',`data-edit-stamp="${p.id}"`)}${btn('Видалити',`data-delete-stamp="${p.id}"`)}</div>
@@ -350,9 +379,7 @@ async function stamps(editId=null){
       name:val(form,'name'),
       category:val(form,'category'),
       required_qty:Number(val(form,'required_qty')),
-      reward_stars:Number(val(form,'reward_stars')||0),
-      reward_product_id:val(form,'reward_product_id')?Number(val(form,'reward_product_id')):null,
-      reward_valid_days:Number(val(form,'reward_valid_days')||7),
+      reward_stars:Number(val(form,'reward_stars')),
       is_repeatable:check(form,'is_repeatable'),
       is_active:check(form,'is_active')
     };
@@ -574,14 +601,7 @@ function applyAdminVisibility(){
     el.style.display = permissions.has(el.dataset.tab) ? '' : 'none';
   });
 }
-async function bootstrapAdmin(){try{const data=await api('/api/admin/me');admin=data.admin;hideLogin();applyAdminVisibility();render();startAdminLiveRefresh();}catch(e){showLogin();}}
-
-let adminLiveRefreshTimer = null;
-function startAdminLiveRefresh(){
-  if(adminLiveRefreshTimer) clearInterval(adminLiveRefreshTimer);
-  adminLiveRefreshTimer=setInterval(()=>{ if(!loginOverlay || loginOverlay.classList.contains('hidden')) render(); },15000);
-}
-
+async function bootstrapAdmin(){try{const data=await api('/api/admin/me');admin=data.admin;hideLogin();applyAdminVisibility();render();}catch(e){showLogin();}}
 
 function setupAdminMobileKeyboard(){
   const fields='input,textarea,select';

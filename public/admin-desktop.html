@@ -1,10 +1,45 @@
 <!doctype html>
-<html lang="uk"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Star Club Desktop Admin</title><link rel="stylesheet" href="/admin.css"/><link rel="stylesheet" href="/admin-desktop.css"/></head>
-<body class="desktop-admin-mode">
-  <div class="desktop-choice" id="adminViewChoice"><div class="login-card"><div class="brand-mark">★</div><h1>Star Club Admin</h1><p>Оберіть режим роботи</p><div class="actions"><a class="primary button-link" href="/admin.html">Мобільна версія</a><button id="continueDesktop" class="primary">Компʼютерна версія</button></div></div></div>
-  <div id="adminLogin" class="admin-login hidden"><div class="login-card"><div class="brand-mark">★</div><h1>Star Club Desktop Admin</h1><p>Увійдіть через Telegram або ADMIN_API_KEY.</p><button id="telegramAdminLogin" class="primary login-primary">Увійти через Telegram</button><details class="key-login"><summary>Резервний вхід за ключем</summary><input id="loginApiKey" placeholder="ADMIN_API_KEY"><button id="keyAdminLogin">Увійти за ключем</button></details></div></div>
-  <aside class="sidebar" id="sidebar"><div class="brand"><span>★</span><div><b>Star Club</b><small>Desktop Admin</small></div></div><nav class="desktop-nav" aria-label="Навігація"><button data-tab="dashboard" class="active"><span class="nav-icon">⌂</span><span>Аналітика</span></button><button data-tab="clients"><span class="nav-icon">◎</span><span>Клієнти</span></button><button data-tab="stores"><span class="nav-icon">⌖</span><span>Магазини</span></button><button data-tab="rewards"><span class="nav-icon">★</span><span>Товари за зірки</span></button><button data-tab="offers"><span class="nav-icon">◇</span><span>Пропозиції</span></button><button data-tab="challenges"><span class="nav-icon">🏆</span><span>Челенджі</span></button><button data-tab="stamps"><span class="nav-icon">◫</span><span>Накопичувальні</span></button><button data-tab="news"><span class="nav-icon">▤</span><span>Новини</span></button><button data-tab="qrs"><span class="nav-icon">▦</span><span>QR-коди</span></button><button data-tab="support"><span class="nav-icon">✉</span><span>Підтримка</span></button><button data-tab="admins" data-owner-only><span class="nav-icon">♙</span><span>Адміністратори</span></button><button data-tab="settings"><span class="nav-icon">⚙</span><span>Налаштування</span></button><button data-tab="audit"><span class="nav-icon">≡</span><span>Журнал</span></button><a href="/" target="_blank"><span class="nav-icon">↗</span><span>Mini App</span></a></nav></aside>
-  <div class="mobile-shell"><main><header class="page-header"><div><span class="eyebrow">Компʼютерна панель</span><h1 id="title">Аналітика</h1></div><div class="desktop-key-tools"><input id="apiKey" placeholder="ADMIN_API_KEY"/><button id="saveKey">Зберегти ключ</button></div></header><section id="content"></section></main></div>
-  <nav class="mobile-bottom-nav hidden"></nav><div id="mobileMenuOverlay" class="mobile-menu-overlay hidden"></div><input id="mobileApiKey" type="hidden"><button id="mobileSaveKey" hidden></button><button id="mobileMoreButton" hidden></button><button id="mobileMenuButton" hidden></button><button id="mobileMenuBackdrop" hidden></button><button id="mobileMenuClose" hidden></button>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script><script>document.getElementById('continueDesktop').onclick=()=>document.getElementById('adminViewChoice').classList.add('hidden');</script><script type="module" src="/admin.js"></script>
-</body></html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Star Club Desktop Admin</title>
+  <link rel="stylesheet" href="/admin-desktop.css" />
+</head>
+<body>
+  <div id="login" class="login-screen">
+    <form id="loginForm" class="login-card">
+      <div class="brand-star">★</div>
+      <h1>Star Club Admin</h1>
+      <p>ПК-версія адмінки. Telegram-адмінка залишається за адресою <b>/admin</b>.</p>
+      <input name="login" placeholder="Логін" autocomplete="username" required>
+      <input name="password" type="password" placeholder="Пароль" autocomplete="current-password" required>
+      <button>Увійти</button>
+      <small>Перший Owner: <b>owner</b> / <b>StarClubOwner2026!</b></small>
+    </form>
+  </div>
+  <div id="shell" class="shell hidden">
+    <aside>
+      <div class="brand"><span>★</span><b>Star Club</b><small>Desktop Admin</small></div>
+      <button data-tab="dashboard" class="active">Аналітика</button>
+      <button data-tab="clients">Клієнти</button>
+      <button data-tab="stores">Магазини</button>
+      <button data-tab="rewards">Товари за зірки</button>
+      <button data-tab="offers">Пропозиції</button>
+      <button data-tab="challenges">Челенджі</button>
+      <button data-tab="stamps">Накопичувальні</button>
+      <button data-tab="news">Новини</button>
+      <button data-tab="qrs">QR-коди</button>
+      <button data-tab="support">Підтримка</button>
+      <button data-tab="admins">Адміни</button>
+      <button id="logout">Вийти</button>
+      <a href="/admin" target="_blank">Мобільна Telegram-адмінка ↗</a>
+    </aside>
+    <main>
+      <header><h1 id="title">Аналітика</h1><div id="adminInfo"></div></header>
+      <section id="content"></section>
+    </main>
+  </div>
+  <script type="module" src="/admin-desktop.js"></script>
+</body>
+</html>

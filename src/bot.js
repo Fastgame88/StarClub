@@ -13,7 +13,7 @@ export function createStarClubBot() {
   const token = process.env.BOT_TOKEN;
   const webAppUrl = normalizeUrl(process.env.WEBAPP_URL || process.env.APP_URL, 'http://localhost:3000');
   const adminUrl = `${webAppUrl}/admin`;
-  const adminDesktopUrl = `${webAppUrl}/admin-desktop.html`;
+  const adminDesktopUrl = `${webAppUrl}/admin-desktop`;
 
   if (!token || token.startsWith('123456:')) {
     throw new Error('BOT_TOKEN is not configured. Add a real BOT_TOKEN to the environment.');
@@ -53,17 +53,8 @@ export function createStarClubBot() {
 
 export async function startStarClubBot() {
   const bot = createStarClubBot();
-  try {
-    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-  } catch (error) {
-    console.warn('Star Club Telegram webhook cleanup skipped:', error.message || error);
-  }
-  await bot.telegram.setMyCommands([
-    { command: 'start', description: 'Відкрити Star Club' },
-    { command: 'club', description: 'Клієнтський застосунок' },
-    { command: 'admin', description: 'Адмін-панель' }
-  ]);
-  await bot.launch({ dropPendingUpdates: true });
+  try { await bot.telegram.deleteWebhook({ drop_pending_updates: true }); } catch {}
+  await bot.launch();
   console.log('Star Club Telegram bot launched');
   return bot;
 }
