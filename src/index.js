@@ -54,7 +54,9 @@ function adminAuth(req, res, next) {
     let permissions = [];
     try { permissions = admin.permissions_json ? JSON.parse(admin.permissions_json) : []; } catch {}
     const path = req.path;
-    const permission = path.includes('/clients') ? 'clients'
+    const permission = path.includes('/personal-coupons') || path.includes('/coupons') ? 'coupons'
+      : path.includes('/clients') ? 'clients'
+      : path.includes('/stores') ? 'stores'
       : path.includes('/catalog/rewards') ? 'rewards'
       : path.includes('/catalog/offers') ? 'offers'
       : path.includes('/catalog/challenges') ? 'challenges'
@@ -114,9 +116,8 @@ function formatAdmin(admin) {
     telegram_id: admin.telegram_id,
     name: admin.name,
     username: admin.username,
-    login: admin.login,
+    login: admin.login || null,
     role: admin.role,
-    password_set: Boolean(admin.password_hash),
     permissions,
     is_active: Boolean(admin.is_active)
   } : null;
@@ -431,35 +432,37 @@ function updateStampProgress(clientId, receiptId, items = []) {
   const programs = db.prepare('SELECT * FROM stamp_programs WHERE is_active = 1').all();
   for (const program of programs) {
     const count = items.reduce((sum, item) => {
-      const category = String(item.category || '').toLowerCase();
-      const name = String(item.name || '').toLowerCase();
-      if (program.category === 'coffee' && (category.includes('coffee') || category.includes('кава') || name.includes('кава'))) return sum + Math.ceil(Number(item.qty || 1));
-      if (program.category === 'bakery' && (category.includes('bakery') || category.includes('випіч') || category.includes('хліб') || name.includes('багет') || name.includes('круасан'))) return sum + Math.ceil(Number(item.qty || 1));
-      return sum;
+      if (!stampProgramMatchesItem(program, item)) return sum;
+      return sum + Math.ceil(Number(item.qty || 1));
     }, 0);
     if (!count) continue;
-
     const existing = db.prepare('SELECT * FROM client_stamp_progress WHERE client_id = ? AND program_id = ?').get(clientId, program.id);
     if (!existing) {
       db.prepare('INSERT INTO client_stamp_progress(client_id, program_id, progress, completed_count, updated_at) VALUES(?, ?, 0, 0, ?)').run(clientId, program.id, nowIso());
     }
-
-    const threshold = Math.max(1, Number(program.required_qty || 10) - 1);
-    let next = Number(existing?.progress || 0) + count;
+    const current = Number(existing?.progress || 0);
+    const requiredQty = Math.max(1, Number(program.required_qty || 9));
+    let next = current + count;
     let completed = Number(existing?.completed_count || 0);
+    const createdCodes = [];
 
-    while (next >= threshold) {
-      next -= threshold;
+    while (next >= requiredQty) {
+      next -= requiredQty;
       completed += 1;
-      createFreeStampRewardQr({ clientId, program, receiptId });
-      if (!Number(program.is_repeatable)) {
-        next = threshold;
+      const qr = createStampRewardQr(clientId, program, receiptId);
+      if (qr) createdCodes.push(qr.token);
+      if (!program.is_repeatable) {
+        next = requiredQty;
         break;
       }
     }
 
     db.prepare('UPDATE client_stamp_progress SET progress = ?, completed_count = ?, updated_at = ? WHERE client_id = ? AND program_id = ?')
       .run(next, completed, nowIso(), clientId, program.id);
+
+    if (createdCodes.length) {
+      logAudit({ actorType: 'system', action: 'stamp_program_completed', entityType: 'client', entityId: String(clientId), payload: { program: program.code, receiptId, codes: createdCodes } });
+    }
   }
 }
 
@@ -475,6 +478,93 @@ function makeRewardManualCode() {
   let out = 'SC-';
   for (let i = 0; i < 8; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
   return out.slice(0, 6) + '-' + out.slice(6);
+}
+
+function makeCouponCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = 'SALE-';
+  for (let i = 0; i < 8; i += 1) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out.slice(0, 7) + '-' + out.slice(7);
+}
+
+function getUniqueRewardToken() {
+  let token = makeRewardManualCode();
+  for (let i = 0; i < 20; i += 1) {
+    const exists = db.prepare('SELECT id FROM reward_qrs WHERE token = ?').get(token);
+    if (!exists) return token;
+    token = makeRewardManualCode();
+  }
+  return `${makeRewardManualCode()}-${Date.now().toString(36).toUpperCase()}`;
+}
+
+function getUniqueCouponCode() {
+  let code = makeCouponCode();
+  for (let i = 0; i < 20; i += 1) {
+    const exists = db.prepare('SELECT id FROM personal_coupons WHERE code = ?').get(code);
+    if (!exists) return code;
+    code = makeCouponCode();
+  }
+  return `${makeCouponCode()}-${Date.now().toString(36).toUpperCase()}`;
+}
+
+function stampProgramMatchesItem(program, item = {}) {
+  const wanted = normalizeMatchValue(program.category);
+  if (!wanted) return false;
+  const values = [
+    item.external_product_id,
+    item.product_id,
+    item.category,
+    item.name
+  ].map(normalizeMatchValue).filter(Boolean);
+  if (wanted === 'coffee' || wanted.includes('кава')) {
+    return values.some((v) => v.includes('coffee') || v.includes('кава'));
+  }
+  if (wanted === 'bakery' || wanted.includes('випіч') || wanted.includes('хліб') || wanted.includes('багет')) {
+    return values.some((v) => v.includes('bakery') || v.includes('випіч') || v.includes('хліб') || v.includes('багет') || v.includes('круасан'));
+  }
+  return values.some((v) => v === wanted || v.includes(wanted) || wanted.includes(v));
+}
+
+function findRewardProductForStamp(program) {
+  const wanted = normalizeMatchValue(program.category);
+  let rows = db.prepare('SELECT * FROM reward_products WHERE is_active = 1 ORDER BY stars_price ASC, id ASC').all();
+  if (!rows.length) return null;
+  const direct = rows.find((r) => normalizeMatchValue(r.product_external_id) === wanted);
+  if (direct) return direct;
+  if (wanted === 'coffee' || wanted.includes('кава')) {
+    const coffee = rows.find((r) => normalizeMatchValue(r.name).includes('кава') || normalizeMatchValue(r.name).includes('coffee'));
+    if (coffee) return coffee;
+  }
+  if (wanted === 'bakery' || wanted.includes('багет') || wanted.includes('випіч')) {
+    const bakery = rows.find((r) => {
+      const n = normalizeMatchValue(r.name);
+      return n.includes('багет') || n.includes('випіч') || n.includes('круасан') || n.includes('bakery');
+    });
+    if (bakery) return bakery;
+  }
+  return rows[0];
+}
+
+function createStampRewardQr(clientId, program, receiptId = null) {
+  const active = db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions
+    FROM reward_qrs q
+    JOIN reward_products r ON r.id = q.reward_product_id
+    WHERE q.client_id = ? AND q.program_id = ? AND q.source_type = 'stamp_program' AND q.status = 'reserved' AND q.expires_at > ?
+    ORDER BY q.created_at DESC LIMIT 1`).get(clientId, program.id, nowIso());
+  if (active) return active;
+  const reward = findRewardProductForStamp(program);
+  if (!reward) return null;
+  const token = getUniqueRewardToken();
+  const createdAt = nowIso();
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString();
+  const r = db.prepare(`INSERT INTO reward_qrs(client_id, reward_product_id, token, status, stars_reserved, source_type, program_id, receipt_id, created_at, expires_at)
+    VALUES(?, ?, ?, 'reserved', 0, 'stamp_program', ?, ?, ?, ?)`)
+    .run(clientId, reward.id, token, program.id, receiptId, createdAt, expiresAt);
+  logAudit({ actorType: 'system', action: 'stamp_reward_qr_created', entityType: 'reward_qr', entityId: String(r.lastInsertRowid), payload: { clientId, program: program.code, reward: reward.name, token, expiresAt } });
+  return db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions
+    FROM reward_qrs q
+    JOIN reward_products r ON r.id = q.reward_product_id
+    WHERE q.id = ?`).get(r.lastInsertRowid);
 }
 
 function expireReservedRewardQrs(clientId = null) {
@@ -507,6 +597,9 @@ function formatRewardQr(row) {
     used_at: row.used_at,
     canceled_at: row.canceled_at,
     stars_reserved: row.stars_reserved,
+    source_type: row.source_type || 'stars',
+    program_id: row.program_id || null,
+    is_free_stamp_reward: (row.source_type === 'stamp_program') || Number(row.stars_reserved || 0) === 0,
     reward: {
       id: row.reward_product_id,
       name: row.name,
@@ -516,47 +609,6 @@ function formatRewardQr(row) {
       conditions: row.conditions
     }
   };
-}
-
-
-function findRewardProductForStamp(program) {
-  if (program?.reward_product_id) {
-    const byId = db.prepare('SELECT * FROM reward_products WHERE id = ? AND is_active = 1').get(program.reward_product_id);
-    if (byId) return byId;
-  }
-  const category = String(program?.category || '').toLowerCase();
-  if (category === 'coffee') {
-    return db.prepare("SELECT * FROM reward_products WHERE is_active = 1 AND lower(name) LIKE '%кава%' ORDER BY id LIMIT 1").get()
-      || db.prepare("SELECT * FROM reward_products WHERE is_active = 1 AND lower(name) LIKE '%coffee%' ORDER BY id LIMIT 1").get();
-  }
-  if (category === 'bakery') {
-    return db.prepare("SELECT * FROM reward_products WHERE is_active = 1 AND (lower(name) LIKE '%багет%' OR lower(name) LIKE '%круасан%' OR lower(name) LIKE '%випіч%') ORDER BY id LIMIT 1").get();
-  }
-  return db.prepare('SELECT * FROM reward_products WHERE is_active = 1 ORDER BY id LIMIT 1').get();
-}
-
-function createFreeStampRewardQr({ clientId, program, receiptId }) {
-  const reward = findRewardProductForStamp(program);
-  if (!reward) return { ok: false, error: 'STAMP_REWARD_PRODUCT_NOT_FOUND' };
-  const active = db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions
-    FROM reward_qrs q JOIN reward_products r ON r.id = q.reward_product_id
-    WHERE q.client_id = ? AND q.reward_product_id = ? AND q.status = 'reserved' AND q.stars_reserved = 0 AND q.expires_at > ?
-    ORDER BY q.created_at DESC LIMIT 1`).get(clientId, reward.id, nowIso());
-  if (active) return { ok: true, reused: true, qr: formatRewardQr(active) };
-
-  let token = makeRewardManualCode();
-  for (let i = 0; i < 10; i += 1) {
-    if (!db.prepare('SELECT id FROM reward_qrs WHERE token = ?').get(token)) break;
-    token = makeRewardManualCode();
-  }
-  const validDays = Math.max(1, Math.round(Number(program.reward_valid_days || 7)));
-  const expires = new Date(Date.now() + 1000 * 60 * 60 * 24 * validDays).toISOString();
-  const result = db.prepare(`INSERT INTO reward_qrs(client_id, reward_product_id, token, status, stars_reserved, created_at, expires_at)
-    VALUES(?, ?, ?, 'reserved', 0, ?, ?)`).run(clientId, reward.id, token, nowIso(), expires);
-  logAudit({ actorType: 'system', actorId: 'stamp_program', action: 'stamp_free_reward_qr_created', entityType: 'reward_qr', entityId: String(result.lastInsertRowid), payload: { program_id: program.id, program: program.name, receipt_id: receiptId, reward: reward.name, token, expires_at: expires } });
-  const row = db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions
-    FROM reward_qrs q JOIN reward_products r ON r.id = q.reward_product_id WHERE q.id = ?`).get(result.lastInsertRowid);
-  return { ok: true, reused: false, qr: formatRewardQr(row) };
 }
 
 function finalizeRewardQrOnce({ token, receiptId, actorId = '1c', storeId = '1c' }) {
@@ -595,7 +647,7 @@ function finalizeRewardQrOnce({ token, receiptId, actorId = '1c', storeId = '1c'
     WHERE reward_qr_id = ? AND type = 'reward_spend' LIMIT 1`).get(row.id);
 
   let balance;
-  if (alreadyLedger) {
+  if (alreadyLedger || Number(row.stars_reserved || 0) === 0) {
     const client = db.prepare('SELECT stars_balance FROM clients WHERE id = ?').get(row.client_id);
     balance = client?.stars_balance ?? null;
   } else {
@@ -709,54 +761,16 @@ app.post('/api/admin/auth/telegram', (req, res) => {
 
 
 app.post('/api/admin/auth/password', (req, res) => {
-  const login = String(req.body?.login || '').trim().toLowerCase();
+  const login = String(req.body?.login || '').trim();
   const password = String(req.body?.password || '');
   if (!login || password.length < 6) return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS' });
-
-  let admin = db.prepare('SELECT * FROM admin_users WHERE lower(login) = ? AND is_active = 1').get(login);
-
-  // Перший вхід Owner для браузерної ПК-адмінки. Дані можна змінити через ENV.
-  const defaultOwnerLogin = String(process.env.DESKTOP_OWNER_LOGIN || 'owner').trim().toLowerCase();
-  const defaultOwnerPassword = String(process.env.DESKTOP_OWNER_PASSWORD || 'StarClubOwner2026!');
-  if (!admin && login === defaultOwnerLogin && password === defaultOwnerPassword) {
-    const now = nowIso();
-    const existingOwner = db.prepare("SELECT * FROM admin_users WHERE role = 'owner' ORDER BY id LIMIT 1").get();
-    const passwordHash = hashPassword(defaultOwnerPassword);
-    if (existingOwner) {
-      db.prepare('UPDATE admin_users SET login = ?, password_hash = ?, is_active = 1, updated_at = ? WHERE id = ?')
-        .run(defaultOwnerLogin, passwordHash, now, existingOwner.id);
-      admin = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(existingOwner.id);
-    } else {
-      const r = db.prepare(`INSERT INTO admin_users(telegram_id, name, username, login, password_hash, role, permissions_json, is_active, created_at, updated_at)
-        VALUES(?, 'Owner', NULL, ?, ?, 'owner', '[]', 1, ?, ?)`).run('desktop-owner', defaultOwnerLogin, passwordHash, now, now);
-      admin = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(r.lastInsertRowid);
-    }
-  }
-
+  let admin = db.prepare('SELECT * FROM admin_users WHERE login = ? AND is_active = 1').get(login);
   if (!admin || !admin.password_hash || !verifyPassword(password, admin.password_hash)) {
     return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS' });
   }
   const session = createAdminSession(admin.id);
   logAudit({ actorType: 'admin', actorId: String(admin.id), action: 'admin_password_login', entityType: 'admin_user', entityId: String(admin.id), payload: { login } });
   res.json({ ok: true, admin: formatAdmin(admin), session });
-});
-
-app.post('/api/admin/users/password', ownerAuth, (req, res) => {
-  const login = String(req.body?.login || '').trim().toLowerCase();
-  const password = String(req.body?.password || '');
-  const name = String(req.body?.name || login || 'Admin').trim();
-  const permissions = Array.isArray(req.body?.permissions) ? [...new Set(req.body.permissions.map(String))] : [];
-  if (!login || password.length < 6) return res.status(400).json({ ok: false, error: 'LOGIN_AND_PASSWORD_REQUIRED' });
-  if (!permissions.length) return res.status(400).json({ ok: false, error: 'ADMIN_PERMISSIONS_REQUIRED' });
-  const now = nowIso();
-  const telegramId = String(req.body?.telegram_id || `desktop_${login}`);
-  const passwordHash = hashPassword(password);
-  db.prepare(`INSERT INTO admin_users(telegram_id, name, username, login, password_hash, role, permissions_json, is_active, created_at, updated_at)
-    VALUES(?, ?, ?, ?, ?, 'admin', ?, 1, ?, ?)
-    ON CONFLICT(telegram_id) DO UPDATE SET name=excluded.name, username=excluded.username, login=excluded.login, password_hash=excluded.password_hash, role='admin', permissions_json=excluded.permissions_json, is_active=1, updated_at=excluded.updated_at`)
-    .run(telegramId, name, req.body?.username || null, login, passwordHash, JSON.stringify(permissions), now, now);
-  const admin = db.prepare('SELECT * FROM admin_users WHERE telegram_id = ?').get(telegramId);
-  res.json({ ok: true, user: formatAdmin(admin) });
 });
 
 app.get('/api/admin/me', adminAuth, (req, res) => res.json({ ok: true, admin: formatAdmin(req.admin) }));
@@ -980,16 +994,10 @@ app.post('/api/client/rewards/:id/create-qr', clientAuth, (req, res) => {
   const available = getClientAvailableStars(req.client.id);
   if (available < reward.stars_price) return res.status(400).json({ ok: false, error: 'NOT_ENOUGH_STARS', available_stars: available });
 
-  let token = makeRewardManualCode();
-  for (let i = 0; i < 10; i += 1) {
-    const exists = db.prepare('SELECT id FROM reward_qrs WHERE token = ?').get(token);
-    if (!exists) break;
-    token = makeRewardManualCode();
-  }
-
+  const token = getUniqueRewardToken();
   const expires = new Date(Date.now() + 1000 * 60 * 15).toISOString();
-  const result = db.prepare(`INSERT INTO reward_qrs(client_id, reward_product_id, token, status, stars_reserved, created_at, expires_at)
-    VALUES(?, ?, ?, 'reserved', ?, ?, ?)`).run(req.client.id, reward.id, token, reward.stars_price, nowIso(), expires);
+  const result = db.prepare(`INSERT INTO reward_qrs(client_id, reward_product_id, token, status, stars_reserved, source_type, created_at, expires_at)
+    VALUES(?, ?, ?, 'reserved', ?, 'stars', ?, ?)`).run(req.client.id, reward.id, token, reward.stars_price, nowIso(), expires);
   logAudit({ actorType: 'client', actorId: String(req.client.id), action: 'reward_qr_created', entityType: 'reward_qr', entityId: String(result.lastInsertRowid), payload: { reward: reward.name, stars: reward.stars_price, token } });
   const row = getActiveRewardQr(req.client.id, reward.id);
   res.json({ ok: true, reused: false, qr: formatRewardQr(row) });
@@ -1527,7 +1535,79 @@ app.post('/api/1c/products/sync', oneCAuth, (req, res) => {
 });
 
 
+app.post('/api/1c/personal-coupon/validate', oneCAuth, (req, res) => {
+  const code = String(req.body?.code || req.body?.coupon_code || '').trim();
+  if (!code) return res.status(400).json({ ok: false, valid: false, error: 'COUPON_CODE_REQUIRED' });
+  const row = db.prepare(`SELECT pc.*, c.name AS client_name, c.phone, c.card_number
+    FROM personal_coupons pc
+    JOIN clients c ON c.id = pc.client_id
+    WHERE pc.code = ?`).get(code);
+  if (!row) return res.status(404).json({ ok: false, valid: false, error: 'COUPON_NOT_FOUND' });
+  if (row.status !== 'active') return res.status(400).json({ ok: false, valid: false, error: 'COUPON_STATUS_' + row.status.toUpperCase(), status: row.status });
+  if (new Date(row.expires_at).getTime() < Date.now()) {
+    db.prepare("UPDATE personal_coupons SET status = 'expired' WHERE id = ?").run(row.id);
+    return res.status(400).json({ ok: false, valid: false, error: 'COUPON_EXPIRED', status: 'expired' });
+  }
+  res.json({ ok: true, valid: true, coupon: {
+    code: row.code,
+    discount_percent: row.discount_percent,
+    product_external_id: row.product_external_id,
+    product_name: row.product_name,
+    expires_at: row.expires_at,
+    client: { name: row.client_name, phone: row.phone, card_number: row.card_number }
+  } });
+});
+
+app.post('/api/1c/personal-coupon/finalize', oneCAuth, (req, res) => {
+  const code = String(req.body?.code || req.body?.coupon_code || '').trim();
+  const receiptId = String(req.body?.receipt_id || '').trim();
+  if (!code || !receiptId) return res.status(400).json({ ok: false, error: 'CODE_AND_RECEIPT_REQUIRED' });
+  const row = db.prepare('SELECT * FROM personal_coupons WHERE code = ?').get(code);
+  if (!row) return res.status(404).json({ ok: false, error: 'COUPON_NOT_FOUND' });
+  if (row.status !== 'active') return res.status(400).json({ ok: false, error: 'COUPON_STATUS_' + row.status.toUpperCase(), status: row.status });
+  db.prepare("UPDATE personal_coupons SET status = 'used', used_at = ? WHERE id = ?").run(nowIso(), row.id);
+  logAudit({ actorType: '1c', actorId: req.body?.store_id || '1c', action: 'personal_coupon_used', entityType: 'personal_coupon', entityId: String(row.id), payload: { code, receiptId } });
+  res.json({ ok: true, status: 'used', code, receipt_id: receiptId });
+});
+
+
 // ---------------- Admin CRUD for ТЗ v1.1 ----------------
+app.get('/api/admin/stores', adminAuth, (req, res) => {
+  res.json({ ok: true, stores: db.prepare('SELECT * FROM stores ORDER BY name').all() });
+});
+
+app.post('/api/admin/stores', adminAuth, (req, res) => {
+  const b = req.body || {};
+  const id = String(b.id || '').trim();
+  const name = String(b.name || '').trim();
+  if (!id || !name) return res.status(400).json({ ok: false, error: 'STORE_ID_AND_NAME_REQUIRED' });
+  const t = nowIso();
+  db.prepare(`INSERT INTO stores(id, name, address, work_hours, phone, image_url, is_active, created_at, updated_at)
+    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, address=excluded.address, work_hours=excluded.work_hours, phone=excluded.phone, image_url=excluded.image_url, is_active=excluded.is_active, updated_at=excluded.updated_at`)
+    .run(id, name, b.address || null, b.work_hours || null, b.phone || null, b.image_url || '/assets/star.svg', b.is_active === false ? 0 : 1, t, t);
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'store_saved', entityType: 'store', entityId: id, payload: b });
+  res.json({ ok: true, id });
+});
+
+app.patch('/api/admin/stores/:id', adminAuth, (req, res) => {
+  const existing = db.prepare('SELECT * FROM stores WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'STORE_NOT_FOUND' });
+  const b = req.body || {};
+  db.prepare('UPDATE stores SET name=?, address=?, work_hours=?, phone=?, image_url=?, is_active=?, updated_at=? WHERE id=?')
+    .run(b.name ?? existing.name, b.address ?? existing.address, b.work_hours ?? existing.work_hours, b.phone ?? existing.phone, b.image_url ?? existing.image_url, b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), nowIso(), req.params.id);
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'store_updated', entityType: 'store', entityId: req.params.id, payload: b });
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/stores/:id', adminAuth, (req, res) => {
+  const existing = db.prepare('SELECT * FROM stores WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'STORE_NOT_FOUND' });
+  db.prepare('UPDATE stores SET is_active = 0, updated_at = ? WHERE id = ?').run(nowIso(), req.params.id);
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'store_disabled', entityType: 'store', entityId: req.params.id, payload: {} });
+  res.json({ ok: true });
+});
+
 app.get('/api/admin/catalog/rewards', adminAuth, (req, res) => {
   res.json({ ok: true, items: db.prepare('SELECT * FROM reward_products ORDER BY id DESC').all() });
 });
@@ -1621,7 +1701,7 @@ app.get('/api/admin/catalog/stamps', adminAuth, (req, res) => {
 
 app.post('/api/admin/catalog/stamps', adminAuth, (req, res) => {
   const b = req.body || {};
-  if (!b.name || !b.category || !Number(b.required_qty) || !Number(b.reward_stars)) return res.status(400).json({ ok: false, error: 'STAMP_FIELDS_REQUIRED' });
+  if (!b.name || !b.category || !Number(b.required_qty) || Number.isNaN(Number(b.reward_stars ?? 0))) return res.status(400).json({ ok: false, error: 'STAMP_FIELDS_REQUIRED' });
   const t = nowIso();
   const result = db.prepare('INSERT INTO stamp_programs(code, name, category, required_qty, reward_stars, is_repeatable, is_active, created_at) VALUES(?, ?, ?, ?, ?, ?, 1, ?)')
     .run(b.code || randomToken('stamp_'), b.name, b.category, Number(b.required_qty), Number(b.reward_stars), b.is_repeatable === false ? 0 : 1, t);
@@ -1751,19 +1831,33 @@ app.get('/api/admin/users', ownerAuth, (req, res) => {
 });
 
 app.post('/api/admin/users', ownerAuth, (req, res) => {
-  const telegramId = String(req.body?.telegram_id || '').trim();
-  if (!telegramId) return res.status(400).json({ ok: false, error: 'TELEGRAM_ID_REQUIRED' });
+  const login = String(req.body?.login || '').trim();
+  const password = String(req.body?.password || '');
+  const telegramIdInput = String(req.body?.telegram_id || '').trim();
+  const telegramId = telegramIdInput || (login ? `webadmin:${login}` : '');
+  if (!telegramId) return res.status(400).json({ ok: false, error: 'TELEGRAM_OR_LOGIN_REQUIRED' });
+  if (login && password.length < 6) return res.status(400).json({ ok: false, error: 'PASSWORD_TOO_SHORT' });
   const permissions = Array.isArray(req.body?.permissions) ? [...new Set(req.body.permissions.map(String))] : [];
   if (!permissions.length) return res.status(400).json({ ok: false, error: 'ADMIN_PERMISSIONS_REQUIRED' });
+  if (login) {
+    const existingLogin = db.prepare('SELECT id FROM admin_users WHERE login = ? AND telegram_id != ?').get(login, telegramId);
+    if (existingLogin) return res.status(409).json({ ok: false, error: 'LOGIN_ALREADY_EXISTS' });
+  }
   const now = nowIso();
-  db.prepare(`INSERT INTO admin_users(telegram_id, name, username, role, permissions_json, is_active, created_at, updated_at)
-    VALUES(?, ?, ?, 'admin', ?, 1, ?, ?)
+  const existing = db.prepare('SELECT * FROM admin_users WHERE telegram_id = ?').get(telegramId);
+  const nextHash = login && password ? hashPassword(password) : existing?.password_hash || null;
+  const nextPasswordSetAt = login && password ? now : existing?.password_set_at || null;
+  db.prepare(`INSERT INTO admin_users(telegram_id, name, username, role, permissions_json, login, password_hash, password_set_at, is_active, created_at, updated_at)
+    VALUES(?, ?, ?, 'admin', ?, ?, ?, ?, 1, ?, ?)
     ON CONFLICT(telegram_id) DO UPDATE SET
       name=excluded.name, username=excluded.username, role='admin',
-      permissions_json=excluded.permissions_json, is_active=1, updated_at=excluded.updated_at`)
-    .run(telegramId, req.body?.name || 'Admin', req.body?.username || null, JSON.stringify(permissions), now, now);
+      permissions_json=excluded.permissions_json, login=excluded.login,
+      password_hash=COALESCE(excluded.password_hash, admin_users.password_hash),
+      password_set_at=COALESCE(excluded.password_set_at, admin_users.password_set_at),
+      is_active=1, updated_at=excluded.updated_at`)
+    .run(telegramId, req.body?.name || login || 'Admin', req.body?.username || null, JSON.stringify(permissions), login || null, nextHash, nextPasswordSetAt, now, now);
   const created = db.prepare('SELECT * FROM admin_users WHERE telegram_id = ?').get(telegramId);
-  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'admin_created_or_updated', entityType: 'admin_user', entityId: String(created.id), payload: { telegram_id: telegramId, permissions } });
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'admin_created_or_updated', entityType: 'admin_user', entityId: String(created.id), payload: { telegram_id: telegramId, login, permissions } });
   res.json({ ok: true, user: formatAdmin(created) });
 });
 
@@ -1773,12 +1867,20 @@ app.patch('/api/admin/users/:id', ownerAuth, (req, res) => {
   if (current.role === 'owner') return res.status(400).json({ ok: false, error: 'OWNER_CANNOT_BE_EDITED_HERE' });
   const permissions = Array.isArray(req.body?.permissions) ? [...new Set(req.body.permissions.map(String))] : [];
   if (req.body?.is_active !== false && !permissions.length) return res.status(400).json({ ok: false, error: 'ADMIN_PERMISSIONS_REQUIRED' });
+  const login = String(req.body?.login ?? current.login ?? '').trim();
+  const password = String(req.body?.password || '');
+  if (login) {
+    const existingLogin = db.prepare('SELECT id FROM admin_users WHERE login = ? AND id != ?').get(login, current.id);
+    if (existingLogin) return res.status(409).json({ ok: false, error: 'LOGIN_ALREADY_EXISTS' });
+  }
+  const passwordHash = password ? hashPassword(password) : current.password_hash;
+  const passwordSetAt = password ? nowIso() : current.password_set_at;
   db.prepare(`UPDATE admin_users
-    SET name = ?, username = ?, role = 'admin', permissions_json = ?, is_active = ?, updated_at = ?
+    SET name = ?, username = ?, role = 'admin', permissions_json = ?, login = ?, password_hash = ?, password_set_at = ?, is_active = ?, updated_at = ?
     WHERE id = ?`)
-    .run(req.body?.name || current.name || 'Admin', req.body?.username ?? current.username, JSON.stringify(permissions), req.body?.is_active === false ? 0 : 1, nowIso(), req.params.id);
+    .run(req.body?.name || current.name || login || 'Admin', req.body?.username ?? current.username, JSON.stringify(permissions), login || null, passwordHash, passwordSetAt, req.body?.is_active === false ? 0 : 1, nowIso(), req.params.id);
   const updated = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
-  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'admin_permissions_updated', entityType: 'admin_user', entityId: String(updated.id), payload: { permissions, is_active: Boolean(updated.is_active) } });
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'admin_permissions_updated', entityType: 'admin_user', entityId: String(updated.id), payload: { permissions, is_active: Boolean(updated.is_active), login } });
   res.json({ ok: true, user: formatAdmin(updated) });
 });
 
@@ -1802,6 +1904,43 @@ app.put('/api/admin/settings/:key', adminAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+function receiptWithItems(receipt) {
+  if (!receipt) return null;
+  const items = db.prepare('SELECT * FROM receipt_items WHERE receipt_id = ? ORDER BY id').all(receipt.id);
+  const isRewardPurchase = Number(receipt.stars_spent || 0) > 0;
+  return {
+    ...receipt,
+    total_uah: money(receipt.total_cents),
+    eligible_uah: money(receipt.eligible_cents),
+    is_reward_purchase: isRewardPurchase,
+    display_title: isRewardPurchase ? 'Покупка за зірки' : (receipt.store_id || 'Магазин Star'),
+    display_amount: isRewardPurchase ? `-${receipt.stars_spent} ⭐` : `${money(receipt.total_cents)} грн`,
+    items
+  };
+}
+
+function getClientTopProducts(clientId) {
+  return db.prepare(`SELECT
+      COALESCE(i.external_product_id, i.product_id, i.name) AS product_key,
+      COALESCE(i.external_product_id, i.product_id, '') AS product_external_id,
+      i.name,
+      i.category,
+      SUM(i.qty) AS total_qty,
+      COUNT(DISTINCT r.id) AS receipts_count,
+      SUM(i.line_total_cents) AS total_cents,
+      MAX(r.purchased_at) AS last_purchase_at
+    FROM receipt_items i
+    JOIN receipts r ON r.id = i.receipt_id
+    WHERE r.client_id = ? AND r.is_return = 0
+    GROUP BY product_key, i.name, i.category
+    ORDER BY total_qty DESC, receipts_count DESC, total_cents DESC
+    LIMIT 3`).all(clientId).map((row) => ({ ...row, total_uah: money(row.total_cents) }));
+}
+
+function getClientPersonalCoupons(clientId) {
+  return db.prepare('SELECT * FROM personal_coupons WHERE client_id = ? ORDER BY created_at DESC LIMIT 50').all(clientId);
+}
+
 // ---------------- Admin API ----------------
 app.get('/api/admin/summary', adminAuth, (req, res) => {
   const clients = db.prepare('SELECT COUNT(*) AS c FROM clients').get().c;
@@ -1823,33 +1962,69 @@ app.get('/api/admin/clients', adminAuth, (req, res) => {
 app.get('/api/admin/clients/:id', adminAuth, (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
   if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
-  const ledger = db.prepare('SELECT * FROM star_ledger WHERE client_id = ? ORDER BY created_at DESC LIMIT 100').all(client.id);
-  const receiptRows = db.prepare('SELECT * FROM receipts WHERE client_id = ? ORDER BY purchased_at DESC LIMIT 100').all(client.id);
-  const receiptIds = receiptRows.map((r) => r.id);
-  let itemRows = [];
-  if (receiptIds.length) {
-    const placeholders = receiptIds.map(() => '?').join(',');
-    itemRows = db.prepare(`SELECT * FROM receipt_items WHERE receipt_id IN (${placeholders}) ORDER BY id`).all(...receiptIds);
-  }
-  const itemsByReceipt = new Map();
-  for (const item of itemRows) {
-    if (!itemsByReceipt.has(item.receipt_id)) itemsByReceipt.set(item.receipt_id, []);
-    itemsByReceipt.get(item.receipt_id).push(item);
-  }
-  const receipts = receiptRows.map((r) => ({ ...r, items: itemsByReceipt.get(r.id) || [] }));
-  const progress = db.prepare(`SELECT p.*, COALESCE(sp.progress, 0) AS progress, COALESCE(sp.completed_count, 0) AS completed_count
+  const ledgerLimit = Math.min(50, Math.max(3, Number(req.query.ledger_limit || 3)));
+  const receiptLimit = Math.min(50, Math.max(3, Number(req.query.receipt_limit || 3)));
+  const ledger = db.prepare('SELECT * FROM star_ledger WHERE client_id = ? ORDER BY created_at DESC LIMIT ?').all(client.id, ledgerLimit);
+  const receipts = db.prepare('SELECT * FROM receipts WHERE client_id = ? ORDER BY purchased_at DESC LIMIT ?').all(client.id, receiptLimit).map(receiptWithItems);
+  const ledgerCount = db.prepare('SELECT COUNT(*) AS c FROM star_ledger WHERE client_id = ?').get(client.id).c;
+  const receiptsCount = db.prepare('SELECT COUNT(*) AS c FROM receipts WHERE client_id = ?').get(client.id).c;
+  const progress = db.prepare(`SELECT p.name, p.code, COALESCE(sp.progress, 0) AS progress, p.required_qty, p.reward_stars, COALESCE(sp.completed_count, 0) AS completed_count
     FROM stamp_programs p
     LEFT JOIN client_stamp_progress sp ON sp.program_id = p.id AND sp.client_id = ?
     WHERE p.is_active = 1 ORDER BY p.id`).all(client.id);
-  const topProducts = db.prepare(`SELECT ri.name, ri.external_product_id, SUM(ri.qty) AS qty_total, COUNT(*) AS times, MAX(r.purchased_at) AS last_purchase_at
-    FROM receipt_items ri
-    JOIN receipts r ON r.id = ri.receipt_id
-    WHERE r.client_id = ? AND r.is_return = 0
-    GROUP BY ri.name, ri.external_product_id
-    ORDER BY qty_total DESC, times DESC
-    LIMIT 3`).all(client.id);
-  const coupons = db.prepare('SELECT * FROM personal_coupons WHERE client_id = ? ORDER BY created_at DESC LIMIT 20').all(client.id);
-  res.json({ ok: true, client: formatClient(client), ledger, receipts, progress, top_products: topProducts, coupons });
+  res.json({
+    ok: true,
+    client: formatClient(client),
+    ledger,
+    receipts,
+    progress,
+    analytics: { top_products: getClientTopProducts(client.id) },
+    personal_coupons: getClientPersonalCoupons(client.id),
+    counts: { ledger: ledgerCount, receipts: receiptsCount }
+  });
+});
+
+app.get('/api/admin/clients/:id/ledger', adminAuth, (req, res) => {
+  const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(req.params.id);
+  if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
+  const offset = Math.max(0, Number(req.query.offset || 0));
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit || 10)));
+  const items = db.prepare('SELECT * FROM star_ledger WHERE client_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?').all(client.id, limit, offset);
+  const total = db.prepare('SELECT COUNT(*) AS c FROM star_ledger WHERE client_id = ?').get(client.id).c;
+  res.json({ ok: true, items, total, offset, limit });
+});
+
+app.get('/api/admin/clients/:id/receipts', adminAuth, (req, res) => {
+  const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(req.params.id);
+  if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
+  const offset = Math.max(0, Number(req.query.offset || 0));
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit || 10)));
+  const receipts = db.prepare('SELECT * FROM receipts WHERE client_id = ? ORDER BY purchased_at DESC LIMIT ? OFFSET ?').all(client.id, limit, offset).map(receiptWithItems);
+  const total = db.prepare('SELECT COUNT(*) AS c FROM receipts WHERE client_id = ?').get(client.id).c;
+  res.json({ ok: true, receipts, total, offset, limit });
+});
+
+app.post('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
+  if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
+  const productExternalId = String(req.body?.product_external_id || '').trim();
+  const productName = String(req.body?.product_name || req.body?.name || '').trim();
+  const discountPercent = Math.min(99, Math.max(1, Math.round(Number(req.body?.discount_percent || 10))));
+  if (!productExternalId && !productName) return res.status(400).json({ ok: false, error: 'PRODUCT_REQUIRED' });
+  const code = getUniqueCouponCode();
+  const days = Math.min(90, Math.max(1, Number(req.body?.valid_days || 7)));
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * days).toISOString();
+  const r = db.prepare(`INSERT INTO personal_coupons(client_id, code, product_external_id, product_name, discount_percent, status, expires_at, created_at, created_by_admin_id)
+    VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?)`).run(client.id, code, productExternalId || null, productName || null, discountPercent, expiresAt, nowIso(), req.admin?.id || null);
+  const coupon = db.prepare('SELECT * FROM personal_coupons WHERE id = ?').get(r.lastInsertRowid);
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'personal_coupon_created', entityType: 'personal_coupon', entityId: String(coupon.id), payload: { client_id: client.id, code, productExternalId, productName, discountPercent } });
+  res.json({ ok: true, coupon });
+});
+
+app.get('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {
+  const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(req.params.id);
+  if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
+  res.json({ ok: true, coupons: getClientPersonalCoupons(client.id) });
 });
 
 app.post('/api/admin/clients/:id/block', adminAuth, (req, res) => {
@@ -1866,42 +2041,6 @@ app.post('/api/admin/clients/:id/adjust-stars', adminAuth, (req, res) => {
   res.json({ ok: true, balance });
 });
 
-
-app.post('/api/admin/clients/:id/personal-offer', adminAuth, (req, res) => {
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
-  if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
-  const productName = String(req.body?.product_name || 'Персональна пропозиція').trim();
-  const externalId = String(req.body?.external_product_id || '').trim() || null;
-  const discountPercent = Math.max(1, Math.min(99, Number(req.body?.discount_percent || 10)));
-  const t = nowIso();
-  const result = db.prepare(`INSERT INTO offers(type, name, description, image_url, product_external_id, category, club_price_cents, old_price_cents, stars_multiplier, tiers_json, store_id, audience, active_from, active_to, created_at, updated_at)
-    VALUES('club', ?, ?, '/assets/star.svg', ?, NULL, NULL, NULL, NULL, NULL, 'all', ?, ?, NULL, ?, ?)`)
-    .run(`-${discountPercent}% персонально: ${productName}`, `Персональна знижка для ${client.name || client.phone || client.card_number}`, externalId, `client:${client.id}`, t, t, t);
-  logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'personal_offer_created', entityType: 'offer', entityId: String(result.lastInsertRowid), payload: { client_id: client.id, productName, externalId, discountPercent } });
-  res.json({ ok: true, offer_id: result.lastInsertRowid });
-});
-
-app.post('/api/admin/clients/:id/discount-qr', adminAuth, (req, res) => {
-  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
-  if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
-  const productName = String(req.body?.product_name || 'Персональна знижка').trim();
-  const externalId = String(req.body?.external_product_id || '').trim() || null;
-  const discountPercent = Math.max(1, Math.min(99, Number(req.body?.discount_percent || 10)));
-  const validDays = Math.max(1, Math.round(Number(req.body?.valid_days || 7)));
-  let token = 'DISC-' + makeRewardManualCode().replace(/^SC-/, '');
-  for (let i = 0; i < 10; i += 1) {
-    if (!db.prepare('SELECT id FROM personal_coupons WHERE token = ?').get(token)) break;
-    token = 'DISC-' + makeRewardManualCode().replace(/^SC-/, '');
-  }
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * validDays).toISOString();
-  const r = db.prepare(`INSERT INTO personal_coupons(client_id, token, product_external_id, product_name, discount_percent, discount_cents, status, created_by_admin_id, created_at, expires_at)
-    VALUES(?, ?, ?, ?, ?, NULL, 'active', ?, ?, ?)`)
-    .run(client.id, token, externalId, productName, discountPercent, req.admin?.id || null, nowIso(), expiresAt);
-  logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'personal_discount_qr_created', entityType: 'personal_coupon', entityId: String(r.lastInsertRowid), payload: { client_id: client.id, productName, externalId, discountPercent, token, expiresAt } });
-  res.json({ ok: true, coupon: { id: r.lastInsertRowid, token, product_external_id: externalId, product_name: productName, discount_percent: discountPercent, status: 'active', expires_at: expiresAt } });
-});
-
-
 app.get('/api/admin/reward-qrs', adminAuth, (req, res) => {
   const rows = db.prepare(`SELECT q.*, c.name AS client_name, c.phone, r.name AS reward_name FROM reward_qrs q JOIN clients c ON c.id = q.client_id JOIN reward_products r ON r.id = q.reward_product_id ORDER BY q.created_at DESC LIMIT 200`).all();
   res.json({ ok: true, qrs: rows });
@@ -1911,14 +2050,15 @@ app.get('/api/admin/audit', adminAuth, (req, res) => {
   res.json({ ok: true, logs: db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200').all() });
 });
 
-app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'admin.html')));
 app.get('/admin-desktop', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'admin-desktop.html')));
+app.get('/admin-pc', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'admin-desktop.html')));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'admin.html')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'index.html')));
 
 const server = app.listen(port, async () => {
   console.log(`Star Club prototype is running on http://localhost:${port}`);
 
-  if (process.env.RUN_BOT === 'true') {
+  if (String(process.env.RUN_BOT || 'true') !== 'false') {
     try {
       const bot = await startStarClubBot();
       const stop = (signal) => {

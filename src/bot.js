@@ -21,6 +21,12 @@ export function createStarClubBot() {
 
   const bot = new Telegraf(token);
 
+  bot.telegram.setMyCommands([
+    { command: 'start', description: 'Відкрити Star Club' },
+    { command: 'club', description: 'Клієнтський застосунок' },
+    { command: 'admin', description: 'Адмін-панель' }
+  ]).catch((error) => console.warn('Cannot set bot commands:', error.message || error));
+
   bot.start(async (ctx) => {
     await ctx.reply(
       'Вітаємо у Star Club ⭐\n\nВідкрийте застосунок, отримайте цифрову картку, накопичуйте зірки та користуйтеся клубними пропозиціями.',
@@ -40,7 +46,10 @@ export function createStarClubBot() {
   bot.command('admin', async (ctx) => {
     await ctx.reply(
       'Адмін-панель Star Club\n\nДоступ буде надано лише Telegram ID, зазначеним як Owner або Admin.',
-      Markup.inlineKeyboard([[Markup.button.webApp('Відкрити адмін-панель', adminUrl)]])
+      Markup.inlineKeyboard([
+        [Markup.button.webApp('Відкрити мобільну адмін-панель', adminUrl)],
+        [Markup.button.url('Адмінка для ПК у браузері', adminDesktopUrl)]
+      ])
     );
   });
 
@@ -53,7 +62,6 @@ export function createStarClubBot() {
 
 export async function startStarClubBot() {
   const bot = createStarClubBot();
-  try { await bot.telegram.deleteWebhook({ drop_pending_updates: true }); } catch {}
   await bot.launch();
   console.log('Star Club Telegram bot launched');
   return bot;

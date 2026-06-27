@@ -14,10 +14,10 @@ try {
 let tab = 'dashboard';
 let admin = null;
 let adminToken = localStorage.getItem('starclub_admin_session') || '';
-keyInput.value = localStorage.getItem('starclub_admin_key') || '';
+if (keyInput) keyInput.value = localStorage.getItem('starclub_admin_key') || '';
 if ($('#mobileApiKey')) $('#mobileApiKey').value = keyInput.value;
 
-function key(){ return localStorage.getItem('starclub_admin_key') || keyInput.value || ''; }
+function key(){ return localStorage.getItem('starclub_admin_key') || keyInput?.value || ''; }
 function showLogin(){ loginOverlay?.classList.remove('hidden'); }
 function hideLogin(){ loginOverlay?.classList.add('hidden'); }
 async function api(path, options={}){
@@ -43,6 +43,42 @@ function centsToUah(v){return v ? Number(v)/100 : '';}
 function activeText(v){return Number(v) ? 'активний' : 'вимкнений';}
 function btn(label, attrs=''){ return `<button type="button" ${attrs}>${label}</button>`; }
 
+const liveState = { signature: '', busy: false, interval: null };
+const clientListState = { q: '' };
+let clientDetailState = null;
+function hasFocusedEditor(){ return Boolean(document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]')); }
+function routeCanAutoRefresh(){ return ['dashboard','clients','qrs','support','audit'].includes(tab) || Boolean(clientDetailState?.id); }
+function compactClient(c){
+  return `<div class="client-card-main"><div><b>${esc(c.name||'Без імені')}</b><p class="small">${esc(c.phone||'Телефон не вказано')}</p></div><button type="button" data-client="${c.id}">Детально</button></div>`;
+}
+function receiptItemsHtml(receipt){
+  const items = receipt.items || [];
+  if(!items.length) return '<div class="small">Товари у цьому чеку не передані з 1С.</div>';
+  return `<div class="receipt-items">${items.map(i=>`<div><span>${esc(i.name||i.product_external_id||'Товар')}</span><b>${num(i.qty||1)} × ${num((i.line_total_cents||0)/100)} грн</b></div>`).join('')}</div>`;
+}
+function receiptCard(r){
+  return `<article class="receipt-admin-card"><div class="receipt-head"><div><b>Чек #${esc(r.id)}</b><p class="small">${dt(r.purchased_at)} · ${esc(r.store_id||'магазин не вказано')}</p></div><span class="pill">${num((r.total_cents||0)/100)} грн</span></div>${receiptItemsHtml(r)}<div class="small">Нараховано: ${num(r.stars_accrued||0)} ★</div></article>`;
+}
+function ledgerRow(l){ return `<tr><td>${dt(l.created_at)}</td><td>${esc(l.description||l.type)}</td><td>${l.amount>0?'+':''}${num(l.amount)} ★</td></tr>`; }
+function couponCard(c){ return `<article class="coupon-card"><div><b>${esc(c.code)}</b><p class="small">${esc(c.product_name||c.product_external_id||'товар')} · ${num(c.discount_percent)}% · до ${dt(c.expires_at)}</p></div><span class="pill">${esc(c.status)}</span></article>`; }
+async function refreshIfChanged(){
+  if(liveState.busy || !adminToken && !key() || !routeCanAutoRefresh() || hasFocusedEditor()) return;
+  liveState.busy = true;
+  try{
+    const current = JSON.stringify({tab, detail: clientDetailState?.id || null, q: clientListState.q});
+    const probe = await api(tab === 'dashboard' ? '/api/admin/summary' : tab === 'support' ? '/api/admin/support/tickets' : tab === 'qrs' ? '/api/admin/reward-qrs' : tab === 'audit' ? '/api/admin/audit' : clientDetailState?.id ? `/api/admin/clients/${clientDetailState.id}` : `/api/admin/clients?q=${encodeURIComponent(clientListState.q||'')}`);
+    const sig = JSON.stringify([current, probe]);
+    if(liveState.signature && liveState.signature !== sig) await render();
+    liveState.signature = sig;
+  } catch {}
+  finally { liveState.busy = false; }
+}
+function startAdminLiveRefresh(){
+  if(liveState.interval) clearInterval(liveState.interval);
+  liveState.interval = setInterval(refreshIfChanged, 10000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshIfChanged(); });
+}
+
 async function adminAction(action, successText='Готово'){
   try { await action(); if(successText) console.info(successText); }
   catch(error){ alert(error.message || 'Не вдалося виконати дію'); throw error; }
@@ -64,73 +100,59 @@ async function dashboard(){
   </div>`;
 }
 
-async function clients(q = ''){
+async function clients(){
+  clientDetailState = null;
   title.textContent='Клієнти';
-  const search = String(q || '').trim();
-  const {clients: clientItems}=await api('/api/admin/clients' + (search ? `?q=${encodeURIComponent(search)}` : ''));
-  content.innerHTML=`<div class="card">
-    <div class="form-grid" style="grid-template-columns:1fr auto;align-items:end">
-      <label class="admin-field"><span>Пошук клієнта</span><input id="clientSearch" value="${esc(search)}" placeholder="Імʼя або номер телефону"></label>
-      <button id="clientSearchBtn" type="button">Пошук</button>
+  const q = clientListState.q || '';
+  const {clients: clientItems}=await api(`/api/admin/clients${q?`?q=${encodeURIComponent(q)}`:''}`);
+  content.innerHTML=`<div class="card client-search-card">
+      <form id="clientSearchForm" class="client-search-form">
+        <input name="q" placeholder="Пошук за імʼям, телефоном або номером картки" value="${esc(q)}">
+        <button class="primary">Знайти</button>
+        ${q?'<button type="button" id="clearClientSearch">Скинути</button>':''}
+      </form>
+      <p class="small">У списку показуємо тільки імʼя та номер. Баланс, картка, чеки, історія та аналітика відкриваються кнопкою «Детально».</p>
     </div>
-  </div>
-  <div class="card"><table><thead><tr><th>Імʼя</th><th>Номер телефону</th><th></th></tr></thead><tbody>
-    ${clientItems.map(c=>`<tr><td><b>${esc(c.name||'—')}</b><div class="small">${esc(c.card_number||'')}</div></td><td>${esc(c.phone||'—')}</td><td><div class="actions"><button data-client="${c.id}">Детально</button></div></td></tr>`).join('') || '<tr><td colspan="3">Клієнтів не знайдено</td></tr>'}
-  </tbody></table></div>`;
-  const input=$('#clientSearch');
-  $('#clientSearchBtn').onclick=()=>clients(input.value);
-  input.onkeydown=(ev)=>{if(ev.key==='Enter') clients(input.value);};
+    <div class="client-list-grid">
+      ${clientItems.map(compactClient).join('') || '<div class="card">Клієнтів не знайдено</div>'}
+    </div>`;
+  $('#clientSearchForm').onsubmit=async e=>{e.preventDefault();clientListState.q=String(new FormData(e.currentTarget).get('q')||'').trim();await clients();};
+  $('#clearClientSearch')?.addEventListener('click',async()=>{clientListState.q='';await clients();});
   $$('[data-client]').forEach(b=>b.onclick=()=>clientDetails(b.dataset.client));
 }
-
-function renderClientReceiptRows(receipts, limit){
-  const shown = receipts.slice(0, limit);
-  return shown.map((r, idx)=>`<tr>
-    <td>${esc(r.id)}</td><td>${dt(r.purchased_at)}</td><td>${num(Number(r.total_cents||0)/100)} грн</td><td>${num(r.stars_accrued)} ★</td>
-    <td><button type="button" data-toggle-receipt-items="${idx}">Товари</button></td>
-  </tr><tr class="hidden" data-receipt-items-row="${idx}"><td colspan="5">
-    ${(r.items||[]).length ? `<table><tbody>${(r.items||[]).map(i=>`<tr><td>${esc(i.name)}</td><td>${num(i.qty)}</td><td>${num(Number(i.line_total_cents||0)/100)} грн</td></tr>`).join('')}</tbody></table>` : '<span class="small">Товарів у цьому чеку не передано</span>'}
-  </td></tr>`).join('') || '<tr><td colspan="5">Поки немає чеків</td></tr>';
-}
-
-function renderClientLedgerRows(ledger, limit){
-  return ledger.slice(0, limit).map(l=>`<tr><td>${dt(l.created_at)}</td><td>${esc(l.description||l.type)}</td><td>${l.amount>0?'+':''}${num(l.amount)} ★</td></tr>`).join('') || '<tr><td colspan="3">Поки немає операцій</td></tr>';
-}
-
-async function clientDetails(id, receiptLimit=3, ledgerLimit=3){
+async function clientDetails(id, opts={}){
+  const reset = opts.reset !== false;
   const data=await api(`/api/admin/clients/${id}`);
   const c=data.client;
-  const receipts=data.receipts||[];
-  const ledger=data.ledger||[];
-  const top=data.top_products||[];
-  const coupons=data.coupons||[];
-  content.innerHTML=`<div class="card"><h2>${esc(c.name||'Клієнт')} · ${num(c.stars_balance)} ★</h2>
-    <p class="small">${esc(c.phone||'')} · ${esc(c.card_number)} · Telegram: ${esc(c.telegram_id||'—')}</p>
-    <div class="grid">
-      <div><b>Email</b><p class="small">${esc(c.email||'—')}</p></div>
-      <div><b>Улюблений магазин</b><p class="small">${esc(c.favorite_store||'—')}</p></div>
-      <div><b>Профіль</b><p class="small">${c.profile_progress?.percent||0}%</p></div>
-      <div><b>Доступно</b><p class="small">${num(c.available_stars)} ★</p></div>
-    </div>
-    <div class="actions"><button id="plus100">+100 ★</button><button id="minus100">-100 ★</button><button id="backClients">Назад</button></div></div>
-
-    <div class="card"><h3>Топ-3 товари клієнта</h3>
-      ${top.length ? `<table><thead><tr><th>Товар</th><th>К-сть</th><th>Покупок</th><th>Дії</th></tr></thead><tbody>${top.map((p,i)=>`<tr><td>${esc(p.name)}</td><td>${num(p.qty_total)}</td><td>${num(p.times)}</td><td class="actions"><button data-personal-offer="${i}">Знижка</button><button data-discount-qr="${i}">QR знижка</button></td></tr>`).join('')}</tbody></table>` : '<p class="small">Аналітика зʼявиться після чеків із товарами.</p>'}
-      ${coupons.length ? `<h4>Останні QR-знижки</h4><table><tbody>${coupons.map(cp=>`<tr><td><b>${esc(cp.token)}</b></td><td>${esc(cp.product_name||'—')}</td><td>-${num(cp.discount_percent)}%</td><td>${esc(cp.status)}</td></tr>`).join('')}</tbody></table>` : ''}
-    </div>
-
-    <div class="card"><h3>Історія зірок</h3><table><tbody>${renderClientLedgerRows(ledger, ledgerLimit)}</tbody></table><div class="actions">${ledger.length>ledgerLimit?`<button id="moreLedger">Показати ще 10</button>`:''}${ledgerLimit>3?`<button id="hideLedger">Приховати</button>`:''}</div></div>
-    <div class="card"><h3>Чеки</h3><table><thead><tr><th>ID</th><th>Дата</th><th>Сума</th><th>Зірки</th><th></th></tr></thead><tbody>${renderClientReceiptRows(receipts, receiptLimit)}</tbody></table><div class="actions">${receipts.length>receiptLimit?`<button id="moreReceipts">Детальніше +10</button>`:''}${receiptLimit>3?`<button id="hideReceipts">Приховати</button>`:''}</div></div>`;
+  clientDetailState = {
+    id,
+    ledger: reset ? data.ledger : (clientDetailState?.ledger || data.ledger),
+    receipts: reset ? data.receipts : (clientDetailState?.receipts || data.receipts),
+    ledgerTotal: data.counts?.ledger || data.ledger.length,
+    receiptTotal: data.counts?.receipts || data.receipts.length
+  };
+  const topProducts = data.analytics?.top_products || [];
+  content.innerHTML=`<div class="card client-profile-card">
+    <div class="client-profile-head"><div><h2>${esc(c.name||'Клієнт')} · ${num(c.stars_balance)} ★</h2><p class="small">${esc(c.phone||'')} · картка ${esc(c.card_number)} · профіль ${c.profile_progress?.percent||0}%</p></div><button id="backClients">Назад</button></div>
+    <div class="actions"><button id="plus100">+100 ★</button><button id="minus100">-100 ★</button></div>
+  </div>
+  <div class="card">
+    <h3>Аналітика клієнта</h3>
+    <p class="small">Топ-3 товари, які цей клієнт купує найчастіше. По кожному можна одразу створити персональний штрих/QR-код на знижку.</p>
+    <div class="top-products-grid">${topProducts.map(p=>`<article class="top-product-card"><b>${esc(p.name||p.product_key)}</b><p class="small">${num(p.total_qty)} шт · ${num(p.receipts_count)} чеків · ${num(p.total_uah)} грн</p><form class="couponForm" data-product-id="${esc(p.product_external_id||p.product_key||'')}" data-product-name="${esc(p.name||'')}"><input name="discount_percent" type="number" min="1" max="99" value="10"><input name="valid_days" type="number" min="1" max="90" value="7"><button class="primary">Дати знижку</button></form></article>`).join('')||'<div class="muted-box">Покупок ще недостатньо для аналітики.</div>'}</div>
+  </div>
+  <div class="card"><h3>Персональні коди на знижку</h3><div id="couponList" class="coupon-list">${(data.personal_coupons||[]).map(couponCard).join('')||'<div class="small">Кодів ще немає.</div>'}</div></div>
+  <div class="card"><div class="section-head"><h3>Історія зірок</h3><span class="small">Показано <b id="ledgerShown">${clientDetailState.ledger.length}</b> з ${num(clientDetailState.ledgerTotal)}</span></div><table><tbody id="ledgerRows">${clientDetailState.ledger.map(ledgerRow).join('') || '<tr><td colspan="3">Поки немає операцій</td></tr>'}</tbody></table><div class="actions detail-actions"><button id="moreLedger" ${clientDetailState.ledger.length>=clientDetailState.ledgerTotal?'disabled':''}>Детальніше +10</button><button id="hideLedger">Приховати</button></div></div>
+  <div class="card"><div class="section-head"><h3>Чеки з товарами</h3><span class="small">Показано <b id="receiptsShown">${clientDetailState.receipts.length}</b> з ${num(clientDetailState.receiptTotal)}</span></div><div id="receiptRows" class="receipt-list">${clientDetailState.receipts.map(receiptCard).join('') || '<div class="small">Поки немає чеків</div>'}</div><div class="actions detail-actions"><button id="moreReceipts" ${clientDetailState.receipts.length>=clientDetailState.receiptTotal?'disabled':''}>Детальніше +10</button><button id="hideReceipts">Приховати</button></div></div>
+  <div class="card"><h3>Накопичувальні програми</h3><table><tbody>${(data.progress||[]).map(p=>`<tr><td>${esc(p.name)}</td><td>${num(p.progress)} / ${num(p.required_qty)}</td><td>${num(p.completed_count)} отримано</td></tr>`).join('') || '<tr><td colspan="3">Активних програм немає</td></tr>'}</tbody></table></div>`;
   $('#backClients').onclick=clients;
-  $('#plus100').onclick=async()=>{await api(`/api/admin/clients/${id}/adjust-stars`,{method:'POST',body:JSON.stringify({amount:100,description:'Ручне коригування +100 ★'})});clientDetails(id, receiptLimit, ledgerLimit)};
-  $('#minus100').onclick=async()=>{await api(`/api/admin/clients/${id}/adjust-stars`,{method:'POST',body:JSON.stringify({amount:-100,description:'Ручне коригування -100 ★'})});clientDetails(id, receiptLimit, ledgerLimit)};
-  $('#moreReceipts')?.addEventListener('click',()=>clientDetails(id, receiptLimit+10, ledgerLimit));
-  $('#hideReceipts')?.addEventListener('click',()=>clientDetails(id, 3, ledgerLimit));
-  $('#moreLedger')?.addEventListener('click',()=>clientDetails(id, receiptLimit, ledgerLimit+10));
-  $('#hideLedger')?.addEventListener('click',()=>clientDetails(id, receiptLimit, 3));
-  $$('[data-toggle-receipt-items]').forEach(b=>b.onclick=()=>document.querySelector(`[data-receipt-items-row="${b.dataset.toggleReceiptItems}"]`)?.classList.toggle('hidden'));
-  $$('[data-personal-offer]').forEach(b=>b.onclick=async()=>{const p=top[Number(b.dataset.personalOffer)];const discount=Number(prompt('Знижка у %, наприклад 10', '10')||0);if(!discount)return;await api(`/api/admin/clients/${id}/personal-offer`,{method:'POST',body:JSON.stringify({product_name:p.name,external_product_id:p.external_product_id,discount_percent:discount})});alert('Персональну знижку створено');clientDetails(id,receiptLimit,ledgerLimit);});
-  $$('[data-discount-qr]').forEach(b=>b.onclick=async()=>{const p=top[Number(b.dataset.discountQr)];const discount=Number(prompt('Знижка у %, наприклад 10', '10')||0);if(!discount)return;const res=await api(`/api/admin/clients/${id}/discount-qr`,{method:'POST',body:JSON.stringify({product_name:p.name,external_product_id:p.external_product_id,discount_percent:discount,valid_days:7})});alert(`QR-код знижки: ${res.coupon.token}`);clientDetails(id,receiptLimit,ledgerLimit);});
+  $('#plus100').onclick=async()=>{await api(`/api/admin/clients/${id}/adjust-stars`,{method:'POST',body:JSON.stringify({amount:100,description:'Ручне коригування +100 ★'})});clientDetails(id)};
+  $('#minus100').onclick=async()=>{await api(`/api/admin/clients/${id}/adjust-stars`,{method:'POST',body:JSON.stringify({amount:-100,description:'Ручне коригування -100 ★'})});clientDetails(id)};
+  $('#moreLedger').onclick=async()=>{const d=await api(`/api/admin/clients/${id}/ledger?offset=${clientDetailState.ledger.length}&limit=10`);clientDetailState.ledger.push(...d.items);clientDetailState.ledgerTotal=d.total;$('#ledgerRows').innerHTML=clientDetailState.ledger.map(ledgerRow).join('');$('#ledgerShown').textContent=clientDetailState.ledger.length;$('#moreLedger').disabled=clientDetailState.ledger.length>=clientDetailState.ledgerTotal;};
+  $('#hideLedger').onclick=()=>{clientDetailState.ledger=clientDetailState.ledger.slice(0,3);$('#ledgerRows').innerHTML=clientDetailState.ledger.map(ledgerRow).join('');$('#ledgerShown').textContent=clientDetailState.ledger.length;$('#moreLedger').disabled=clientDetailState.ledger.length>=clientDetailState.ledgerTotal;};
+  $('#moreReceipts').onclick=async()=>{const d=await api(`/api/admin/clients/${id}/receipts?offset=${clientDetailState.receipts.length}&limit=10`);clientDetailState.receipts.push(...d.receipts);clientDetailState.receiptTotal=d.total;$('#receiptRows').innerHTML=clientDetailState.receipts.map(receiptCard).join('');$('#receiptsShown').textContent=clientDetailState.receipts.length;$('#moreReceipts').disabled=clientDetailState.receipts.length>=clientDetailState.receiptTotal;};
+  $('#hideReceipts').onclick=()=>{clientDetailState.receipts=clientDetailState.receipts.slice(0,3);$('#receiptRows').innerHTML=clientDetailState.receipts.map(receiptCard).join('');$('#receiptsShown').textContent=clientDetailState.receipts.length;$('#moreReceipts').disabled=clientDetailState.receipts.length>=clientDetailState.receiptTotal;};
+  $$('.couponForm').forEach(form=>form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form);const coupon=await api(`/api/admin/clients/${id}/personal-coupons`,{method:'POST',body:JSON.stringify({product_external_id:form.dataset.productId,product_name:form.dataset.productName,discount_percent:Number(fd.get('discount_percent')),valid_days:Number(fd.get('valid_days'))})});alert(`Код створено: ${coupon.coupon.code}`);clientDetails(id);});
 }
 
 function rewardForm(r={}){
@@ -348,13 +370,13 @@ async function stamps(editId=null){
   content.innerHTML=`
     <div class="card editor-card ${edit?'edit-panel':''}">
       <h3>${edit?'Редагувати програму':'Створити програму'}</h3>
-      <p class="small">Вкажіть код одного товару або код/назву папки з 1С. Система сама визначить тип. Для папки враховуються всі вкладені підпапки.</p>
+      <p class="small">Накопичувальна програма більше не видає зірки. Після потрібної кількості покупок система автоматично створює безкоштовний QR/код на відповідний товар. Код діє 7 днів.</p>
       <form id="stampForm" class="form-grid">
-        <label class="admin-field"><span>Назва програми</span><input name="name" placeholder="Наприклад: 10-та покупка випічки" value="${esc(edit?.name||'')}" required></label>
-        <label class="admin-field"><span>Код товару або групи з 1С</span><input name="category" placeholder="Наприклад: ЦБ000001210" value="${esc(edit?.category||'')}" required></label>
-        <label class="admin-field"><span>Скільки товарів потрібно купити</span><input name="required_qty" type="number" min="1" placeholder="10" value="${esc(edit?.required_qty||10)}" required></label>
-        <label class="admin-field"><span>Бонус після виконання, ★</span><input name="reward_stars" type="number" min="1" placeholder="1000" value="${esc(edit?.reward_stars||1000)}" required></label>
-        <label class="checkline"><input type="checkbox" name="is_repeatable" ${edit?(Number(edit.is_repeatable)?'checked':''):'checked'}> Повторювати програму після отримання бонусу</label>
+        <label class="admin-field"><span>Назва програми</span><input name="name" placeholder="Наприклад: 10-та кава безкоштовно" value="${esc(edit?.name||'')}" required></label>
+        <label class="admin-field"><span>Код товару або групи з 1С</span><input name="category" placeholder="Наприклад: coffee або код 1С" value="${esc(edit?.category||'')}" required></label>
+        <label class="admin-field"><span>Скільки покупок до коду</span><input name="required_qty" type="number" min="1" placeholder="9" value="${esc(edit?.required_qty||9)}" required></label>
+        <label class="admin-field"><span>Винагорода</span><input value="QR/код на безкоштовний товар, діє 7 днів" readonly></label>
+        <label class="checkline"><input type="checkbox" name="is_repeatable" ${edit?(Number(edit.is_repeatable)?'checked':''):'checked'}> Повторювати після видачі коду</label>
         <label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label>
         ${edit?`<div class="technical-code">Технічний код: <b>${esc(edit.code)}</b></div>`:''}
         <div class="form-actions"><button class="primary">${edit?'Зберегти':'Створити'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</div>
@@ -365,8 +387,8 @@ async function stamps(editId=null){
         <div class="offer-card-head"><div><span class="pill">Накопичувальна</span><h3>${esc(p.name)}</h3></div><span>${activeText(p.is_active)}</span></div>
         <dl>
           <div><dt>Товар або група 1С</dt><dd>${esc(p.category)}</dd></div>
-          <div><dt>Потрібно товарів</dt><dd>${num(p.required_qty)}</dd></div>
-          <div><dt>Бонус</dt><dd>${num(p.reward_stars)} ★</dd></div>
+          <div><dt>Потрібно покупок</dt><dd>${num(p.required_qty)}</dd></div>
+          <div><dt>Винагорода</dt><dd>Безкоштовний QR/код на 7 днів</dd></div>
           <div><dt>Повторювана</dt><dd>${Number(p.is_repeatable)?'так':'ні'}</dd></div>
         </dl>
         <div class="actions">${btn('Редагувати',`data-edit-stamp="${p.id}"`)}${btn('Видалити',`data-delete-stamp="${p.id}"`)}</div>
@@ -379,7 +401,7 @@ async function stamps(editId=null){
       name:val(form,'name'),
       category:val(form,'category'),
       required_qty:Number(val(form,'required_qty')),
-      reward_stars:Number(val(form,'reward_stars')),
+      reward_stars:0,
       is_repeatable:check(form,'is_repeatable'),
       is_active:check(form,'is_active')
     };
@@ -443,7 +465,7 @@ async function admins(){
   const {users}=await api('/api/admin/users');
   const permissionLabels={
     dashboard:'Аналітика',clients:'Клієнти',stores:'Магазини',rewards:'Товари за зірки',offers:'Пропозиції',
-    challenges:'Челенджі',stamps:'Накопичувальні',news:'Новини',qrs:'QR-коди',
+    challenges:'Челенджі',stamps:'Накопичувальні',news:'Новини',qrs:'QR-коди',coupons:'Знижки клієнтам',
     support:'Підтримка',settings:'Налаштування',audit:'Журнал дій'
   };
   const perms=Object.keys(permissionLabels);
@@ -451,9 +473,11 @@ async function admins(){
   content.innerHTML=`
     <div class="card">
       <h2>Призначити адміністратора</h2>
-      <p class="small">Owner вказує Telegram ID та сам обирає, до яких розділів матиме доступ Admin.</p>
+      <p class="small">Для Telegram-адмінки можна вказати Telegram ID. Для ПК-адмінки обовʼязково задайте логін і пароль. Якщо Telegram ID не вказаний, система створить веб-адміна тільки для входу з браузера.</p>
       <form id="adminForm" class="form-grid">
-        <input name="telegram_id" placeholder="Telegram ID" inputmode="numeric" required>
+        <input name="telegram_id" placeholder="Telegram ID, якщо потрібен вхід через /admin" inputmode="numeric">
+        <input name="login" placeholder="Логін для ПК-адмінки">
+        <input name="password" type="password" placeholder="Пароль для ПК-адмінки">
         <input name="name" placeholder="Імʼя адміністратора">
         <input name="username" placeholder="Telegram username без @">
         <div class="permission-grid">${checks(perms.filter(p=>!['settings','audit'].includes(p)))}</div>
@@ -462,12 +486,14 @@ async function admins(){
     </div>
     <div class="admin-user-grid">
       ${users.map(u=>`<article class="card admin-user-card" data-admin-id="${u.id}">
-        <div class="support-head"><div><h3>${esc(u.name||'—')}</h3><p class="small">Telegram ID: ${esc(u.telegram_id)}${u.username?` · @${esc(u.username)}`:''}</p></div><span class="pill">${u.role==='owner'?'Owner':'Admin'}</span></div>
+        <div class="support-head"><div><h3>${esc(u.name||'—')}</h3><p class="small">Telegram ID: ${esc(u.telegram_id||'—')}${u.login?` · логін: ${esc(u.login)}`:''}${u.username?` · @${esc(u.username)}`:''}</p></div><span class="pill">${u.role==='owner'?'Owner':'Admin'}</span></div>
         ${u.role==='owner'
-          ? `<p class="small">Owner має повний доступ. Основний Owner визначається через OWNER_TELEGRAM_IDS.</p>`
+          ? `<p class="small">Owner має повний доступ. У браузері може входити логіном і паролем, якщо вони задані.</p>`
           : `<form class="adminEditForm">
               <input name="name" value="${esc(u.name||'')}" placeholder="Імʼя">
               <input name="username" value="${esc(u.username||'')}" placeholder="Telegram username">
+              <input name="login" value="${esc(u.login||'')}" placeholder="Логін для ПК">
+              <input name="password" type="password" placeholder="Новий пароль, якщо треба змінити">
               <div class="permission-grid">${checks(u.permissions||[])}</div>
               <label class="checkline"><input type="checkbox" name="is_active" ${u.is_active?'checked':''}> Доступ активний</label>
               <div class="actions"><button class="primary">Зберегти права</button><button type="button" class="danger" data-delete-admin="${u.id}">Видалити Admin</button></div>
@@ -479,7 +505,7 @@ async function admins(){
     const fd=new FormData(e.currentTarget);
     const permissions=fd.getAll('permissions');
     if(!permissions.length) return alert('Оберіть хоча б один доступний розділ.');
-    await api('/api/admin/users',{method:'POST',body:JSON.stringify({telegram_id:fd.get('telegram_id'),name:fd.get('name'),username:fd.get('username'),permissions})});
+    await api('/api/admin/users',{method:'POST',body:JSON.stringify({telegram_id:String(fd.get('telegram_id')||'').trim(),login:String(fd.get('login')||'').trim(),password:String(fd.get('password')||''),name:fd.get('name'),username:fd.get('username'),permissions})});
     admins();
   };
   $$('.adminEditForm').forEach(form=>form.onsubmit=async e=>{
@@ -489,7 +515,7 @@ async function admins(){
     const permissions=fd.getAll('permissions');
     const is_active=fd.has('is_active');
     if(is_active&&!permissions.length) return alert('Для активного Admin оберіть хоча б один розділ.');
-    await api(`/api/admin/users/${card.dataset.adminId}`,{method:'PATCH',body:JSON.stringify({name:fd.get('name'),username:fd.get('username'),permissions,is_active})});
+    await api(`/api/admin/users/${card.dataset.adminId}`,{method:'PATCH',body:JSON.stringify({name:fd.get('name'),username:fd.get('username'),login:String(fd.get('login')||'').trim(),password:String(fd.get('password')||''),permissions,is_active})});
     admins();
   });
   $$('[data-delete-admin]').forEach(btn=>btn.onclick=async()=>{
@@ -498,10 +524,11 @@ async function admins(){
     admins();
   });
 }
+
 async function qrs(){
   title.textContent='QR за зірки';
   const {qrs: qrItems}=await api('/api/admin/reward-qrs');
-  content.innerHTML=`<div class="card"><table><thead><tr><th>Дата</th><th>Клієнт</th><th>Товар</th><th>Код</th><th>Зірки</th><th>Статус</th><th>Діє до</th></tr></thead><tbody>${qrItems.map(q=>`<tr><td>${dt(q.created_at)}</td><td>${esc(q.client_name||q.phone)}</td><td>${esc(q.reward_name)}</td><td><b>${esc(q.token)}</b></td><td>${num(q.stars_reserved)} ★</td><td><span class="pill">${esc(q.status)}</span></td><td>${dt(q.expires_at)}</td></tr>`).join('') || '<tr><td colspan="7">Поки QR не створювались</td></tr>'}</tbody></table></div>`;
+  content.innerHTML=`<div class="card"><table><thead><tr><th>Дата</th><th>Клієнт</th><th>Товар</th><th>Код</th><th>Зірки</th><th>Тип</th><th>Статус</th><th>Діє до</th></tr></thead><tbody>${qrItems.map(q=>`<tr><td>${dt(q.created_at)}</td><td>${esc(q.client_name||q.phone)}</td><td>${esc(q.reward_name)}</td><td><b>${esc(q.token)}</b></td><td>${num(q.stars_reserved)} ★</td><td>${q.source_type==='stamp_program'?'накопичувальна':'за зірки'}</td><td><span class="pill">${esc(q.status)}</span></td><td>${dt(q.expires_at)}</td></tr>`).join('') || '<tr><td colspan="8">Поки QR не створювались</td></tr>'}</tbody></table></div>`;
 }
 async function audit(){
   title.textContent='Журнал дій';
@@ -526,10 +553,11 @@ const mobileTableObserver=new MutationObserver(()=>requestAnimationFrame(()=>enh
 mobileTableObserver.observe(content,{childList:true,subtree:true});
 function closeMobileMenu(){ $('#mobileMenuOverlay')?.classList.add('hidden'); }
 async function render(){
+  liveState.signature='';
   syncActiveNavigation();
   try{
     if(tab==='dashboard') await dashboard();
-    if(tab==='clients') await clients();
+    if(tab==='clients') { if(clientDetailState?.id) await clientDetails(clientDetailState.id); else await clients(); }
     if(tab==='stores') await stores();
     if(tab==='rewards') await rewards();
     if(tab==='offers') await offers();
@@ -550,10 +578,10 @@ $('#mobileMenuButton')?.addEventListener('click',()=>$('#mobileMenuOverlay')?.cl
 $('#mobileMoreButton')?.addEventListener('click',()=>$('#mobileMenuOverlay')?.classList.remove('hidden'));
 $('#mobileMenuClose')?.addEventListener('click',closeMobileMenu);
 $('#mobileMenuBackdrop')?.addEventListener('click',closeMobileMenu);
-$('#mobileSaveKey')?.addEventListener('click',()=>{const v=$('#mobileApiKey')?.value||'';localStorage.setItem('starclub_admin_key',v);keyInput.value=v;adminToken='';localStorage.removeItem('starclub_admin_session');closeMobileMenu();bootstrapAdmin();});
-$('#saveKey').onclick=()=>{localStorage.setItem('starclub_admin_key',keyInput.value);adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();};
-$('#keyAdminLogin').onclick=()=>{const v=$('#loginApiKey').value.trim();if(!v)return;localStorage.setItem('starclub_admin_key',v);keyInput.value=v;adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();};
-$('#telegramAdminLogin').onclick=async()=>{
+$('#mobileSaveKey')?.addEventListener('click',()=>{const v=$('#mobileApiKey')?.value||'';localStorage.setItem('starclub_admin_key',v);if(keyInput)keyInput.value=v;adminToken='';localStorage.removeItem('starclub_admin_session');closeMobileMenu();bootstrapAdmin();});
+$('#saveKey')?.addEventListener('click',()=>{localStorage.setItem('starclub_admin_key',keyInput?.value||'');adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();});
+$('#keyAdminLogin')?.addEventListener('click',()=>{const v=$('#loginApiKey')?.value.trim();if(!v)return;localStorage.setItem('starclub_admin_key',v);if(keyInput)keyInput.value=v;adminToken='';localStorage.removeItem('starclub_admin_session');hideLogin();bootstrapAdmin();});
+$('#telegramAdminLogin')?.addEventListener('click',async()=>{
   try {
     const initData = tg?.initData || '';
     const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
@@ -583,7 +611,7 @@ $('#telegramAdminLogin').onclick=async()=>{
     adminToken = data.session.token;
     localStorage.setItem('starclub_admin_session', adminToken);
     localStorage.removeItem('starclub_admin_key');
-    keyInput.value = '';
+    if(keyInput) keyInput.value = '';
     admin = data.admin;
     hideLogin();
     applyAdminVisibility();
@@ -591,7 +619,22 @@ $('#telegramAdminLogin').onclick=async()=>{
   } catch (e) {
     alert(e.message);
   }
-};
+});
+$('#passwordAdminLogin')?.addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  try{
+    const fd=new FormData(e.currentTarget);
+    const data=await fetch('/api/admin/auth/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login:fd.get('login'),password:fd.get('password')})}).then(async r=>{const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'LOGIN_FAILED'); return d;});
+    adminToken=data.session.token;
+    localStorage.setItem('starclub_admin_session',adminToken);
+    localStorage.removeItem('starclub_admin_key');
+    if(keyInput) keyInput.value='';
+    admin=data.admin;
+    hideLogin();
+    applyAdminVisibility();
+    render();
+  }catch(error){ alert(error.message||'Не вдалося увійти'); }
+});
 function applyAdminVisibility(){
   const owner = admin?.role === 'owner' || Boolean(key());
   const permissions = new Set(admin?.permissions || []);
@@ -618,4 +661,5 @@ function setupAdminMobileKeyboard(){
   });
 }
 setupAdminMobileKeyboard();
+startAdminLiveRefresh();
 bootstrapAdmin();

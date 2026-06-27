@@ -15,7 +15,9 @@ const state = {
   client: null,
   route: localStorage.getItem('starclub_route') || 'home',
   stores: [],
-  data: {}
+  data: {},
+  liveSignature: '',
+  liveBusy: false
 };
 
 const icons = {
@@ -99,7 +101,6 @@ async function bootstrap() {
     state.stores = [];
   }
   render();
-  startLiveRefresh();
 }
 
 function header(title, back = false) {
@@ -267,7 +268,7 @@ function homeScreen() {
         <div class="progress-row">
           <div>
             <b>${stamp?.name || 'Накопичувальна програма'}</b>
-            <p class="small">${stamp ? `Ще ${stampLeft} до бонусу ${fmtStars(stamp.reward_stars)} ★` : 'Прогрес зʼявиться після чеків із 1С'}</p>
+            <p class="small">${stamp ? `Ще ${stampLeft} до безкоштовного коду` : 'Прогрес зʼявиться після чеків із 1С'}</p>
           </div>
           <div class="progress-ring">${stampText}</div>
         </div>
@@ -325,47 +326,49 @@ async function loadSupport() {
   state.data.supportTickets = (await api('/api/client/support/tickets')).tickets || [];
 }
 
-let liveRefreshTimer = null;
-let liveRefreshBusy = false;
-
-function shouldLiveRender() {
+function hasFocusedEditor() {
   const active = document.activeElement;
-  if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) return false;
-  return ['home', 'stars', 'history', 'rewards', 'rewardCodes', 'progress', 'support'].includes(state.route);
+  return Boolean(active && active.matches?.('input, textarea, select'));
 }
 
-async function refreshLiveData({ silent = true, forceRender = false } = {}) {
-  if (!state.token || !state.client?.registered || liveRefreshBusy) return;
-  liveRefreshBusy = true;
+function routeNeedsLiveRender(route = state.route) {
+  return ['home', 'card', 'rewards', 'rewardCodes', 'history', 'stars', 'progress', 'support'].includes(route);
+}
+
+async function refreshVisibleData({ forceRender = false } = {}) {
+  if (!state.token || state.liveBusy || document.hidden) return;
+  if (!forceRender && hasFocusedEditor()) return;
+  state.liveBusy = true;
   try {
-    const me = await api('/api/client/me');
-    state.client = me.client;
-    const tasks = [];
-    tasks.push(api('/api/client/progress').then((data) => { state.data.progress = data; }).catch(() => {}));
-    tasks.push(api('/api/client/reward-qrs').then((data) => { state.data.rewardQrs = data.qrs || []; }).catch(() => {}));
-    tasks.push(api('/api/client/support/tickets').then((data) => { state.data.supportTickets = data.tickets || []; }).catch(() => {}));
-    if (['history', 'stars', 'home'].includes(state.route)) {
-      tasks.push(api('/api/client/star-history').then((data) => { state.data.ledger = data.items || []; }).catch(() => {}));
-      tasks.push(api('/api/client/receipts').then((data) => { state.data.receipts = data.receipts || []; }).catch(() => {}));
-    }
-    await Promise.all(tasks);
-    renderNav();
-    if (forceRender || shouldLiveRender()) render();
+    await refreshClient();
+    if (state.route === 'home') await loadProgress();
+    if (state.route === 'rewards') await loadRewards();
+    if (state.route === 'rewardCodes') await loadRewardQrs();
+    if (state.route === 'history' || state.route === 'stars') await loadHistory();
+    if (state.route === 'progress') await loadProgress();
+    if (state.route === 'support') await loadSupport();
+    const signature = JSON.stringify({
+      route: state.route,
+      client: state.client,
+      routeData: state.data[state.route === 'rewardCodes' ? 'rewardQrs' : state.route === 'support' ? 'supportTickets' : state.route]
+    });
+    const changed = signature !== state.liveSignature;
+    state.liveSignature = signature;
+    if ((forceRender || changed) && routeNeedsLiveRender()) render();
   } catch (error) {
-    if (!silent) toast(error.message || 'Не вдалося оновити дані');
+    console.warn('Live refresh failed:', error.message || error);
   } finally {
-    liveRefreshBusy = false;
+    state.liveBusy = false;
   }
 }
 
 function startLiveRefresh() {
-  if (liveRefreshTimer) clearInterval(liveRefreshTimer);
-  liveRefreshTimer = setInterval(() => refreshLiveData({ silent: true }), 7000);
+  window.clearInterval(state.liveTimer);
+  state.liveTimer = window.setInterval(() => refreshVisibleData(), 8000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshVisibleData({ forceRender: true });
+  });
 }
-
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refreshLiveData({ silent: true, forceRender: true });
-});
 
 async function cardScreen() {
   const data = await api('/api/client/card');
@@ -504,10 +507,10 @@ function progressScreen() {
           <p class="small">Залишилось ${Math.max(0, c.required_visits - c.progress)} відвідування до бонусу ${fmtStars(c.reward_stars)} ★</p>
         </section>
       `).join('')}
-      <section class="card gold-border spark"><b>10-та кава / багет</b><p class="small">Бонус нараховується автоматично після досягнення 10 позицій.</p></section>
+      <section class="card gold-border spark"><b>Накопичувальні програми</b><p class="small">Після потрібної кількості покупок автоматично зʼявляється безкоштовний код на 7 днів.</p></section>
       ${p.stamps.map((s) => `
         <section class="card">
-          <div class="progress-row"><div><b>${s.name}</b><p class="small">Ще ${Math.max(0, s.required_qty - s.progress)} до бонусу ${fmtStars(s.reward_stars)} ★</p></div><b>${s.progress}/${s.required_qty}</b></div>
+          <div class="progress-row"><div><b>${s.name}</b><p class="small">Ще ${Math.max(0, s.required_qty - s.progress)} до безкоштовного коду</p></div><b>${s.progress}/${s.required_qty}</b></div>
           <div class="progressbar"><span style="width:${Math.min(100, s.progress / s.required_qty * 100)}%"></span></div>
         </section>
       `).join('')}
@@ -677,10 +680,7 @@ function showCashierModal(cardNumber) {
       <div class="modal-actions"><button class="btn" type="button" data-close-modal>Готово</button></div>
     </div>`;
   document.body.appendChild(wrap);
-  wrap.querySelector('[data-close-modal]').onclick = async () => {
-    wrap.remove();
-    await refreshLiveData({ silent: true, forceRender: true });
-  };
+  wrap.querySelector('[data-close-modal]').onclick = () => wrap.remove();
 }
 
 function showRewardModal(qr) {
@@ -689,15 +689,15 @@ function showRewardModal(qr) {
   const manualCode = qr.manual_code || qr.token;
   wrap.innerHTML = `
     <div class="modal">
-      <h2>Код товару за зірки</h2>
-      <p class="small">${qr.reward.name} · ${fmtStars(qr.reward.stars_price)} ★</p>
+      <h2>${qr.is_free_stamp_reward ? 'Безкоштовний код' : 'Код товару за зірки'}</h2>
+      <p class="small">${qr.reward.name} · ${qr.is_free_stamp_reward ? 'накопичувальна програма' : `${fmtStars(qr.reward.stars_price)} ★`}</p>
       <div class="qrbox"><img src="/api/svg/qr?text=${encodeURIComponent(qr.token)}" alt="QR"></div>
       <div class="manual-code">
         <span>Ручний код для касира</span>
         <b>${manualCode}</b>
         <button type="button" class="mini-copy" data-copy-code="${manualCode}">Скопіювати</button>
       </div>
-      <p class="small">Код діє до ${fmtTime(qr.expires_at)}. Його можна використати тільки один раз.</p>
+      <p class="small">Код діє до ${fmtTime(qr.expires_at)} ${fmtDate(qr.expires_at)}. Його можна використати тільки один раз.</p>
       <div class="modal-actions">
         <button class="btn secondary" type="button" data-cancel-reward-code="${manualCode}">Скасувати код</button>
         <button class="btn" type="button" data-close-modal>Готово</button>
@@ -707,7 +707,7 @@ function showRewardModal(qr) {
   document.body.appendChild(wrap);
   wrap.querySelector('[data-close-modal]').onclick = async () => {
     wrap.remove();
-    await refreshLiveData({ silent: true, forceRender: true });
+    await refreshVisibleData({ forceRender: true });
   };
   wrap.querySelector('[data-copy-code]').onclick = async () => { try { await navigator.clipboard.writeText(manualCode); toast('Код скопійовано'); } catch { toast(manualCode); } };
   wrap.querySelector('[data-cancel-reward-code]').onclick = async () => {
@@ -824,29 +824,8 @@ function bindEvents() {
     try {
       await api(`/api/client/support/tickets/${form.dataset.ticketId}/messages`, { method: 'POST', body: JSON.stringify({ message: fd.get('message') }) });
       await loadSupport();
-      
-function setupMobileKeyboardUX() {
-  const editableSelector = 'input, textarea, select';
-  document.addEventListener('focusin', (event) => {
-    if (!event.target.matches(editableSelector)) return;
-    document.body.classList.add('keyboard-open');
-    setTimeout(() => event.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 180);
-  });
-  document.addEventListener('focusout', () => {
-    setTimeout(() => {
-      if (!document.activeElement?.matches?.(editableSelector)) document.body.classList.remove('keyboard-open');
-    }, 80);
-  });
-  document.addEventListener('pointerdown', (event) => {
-    if (!document.body.classList.contains('keyboard-open')) return;
-    if (event.target.closest(editableSelector) || event.target.closest('button')) return;
-    const active = document.activeElement;
-    if (active?.matches?.(editableSelector)) active.blur();
-  });
-  window.Telegram?.WebApp?.expand?.();
-}
-setupMobileKeyboardUX();
-render();
+      toast('Повідомлення надіслано');
+      render();
     } catch (e) { toast(e.message); }
   });
 
@@ -859,10 +838,16 @@ render();
 
   document.querySelectorAll('[data-create-reward]').forEach((el) => el.onclick = async () => {
     try {
+      el.disabled = true;
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });
       showRewardModal(data.qr);
-      await refreshLiveData({ silent: true, forceRender: false });
-    } catch (e) { toast(e.message); }
+      await refreshClient();
+      await loadRewards();
+      if (state.route === 'rewards') render();
+    } catch (e) {
+      el.disabled = false;
+      toast(e.message);
+    }
   });
 
   document.querySelectorAll('[data-auth-telegram]').forEach((el) => el.onclick = async () => {
@@ -965,4 +950,28 @@ render();
   }
 }
 
+
+function setupMobileKeyboardUX() {
+  const editableSelector = 'input, textarea, select';
+  document.addEventListener('focusin', (event) => {
+    if (!event.target.matches(editableSelector)) return;
+    document.body.classList.add('keyboard-open');
+    setTimeout(() => event.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 180);
+  });
+  document.addEventListener('focusout', () => {
+    setTimeout(() => {
+      if (!document.activeElement?.matches?.(editableSelector)) document.body.classList.remove('keyboard-open');
+    }, 80);
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (!document.body.classList.contains('keyboard-open')) return;
+    if (event.target.closest(editableSelector) || event.target.closest('button')) return;
+    const active = document.activeElement;
+    if (active?.matches?.(editableSelector)) active.blur();
+  });
+  window.Telegram?.WebApp?.expand?.();
+}
+
+setupMobileKeyboardUX();
+startLiveRefresh();
 bootstrap();

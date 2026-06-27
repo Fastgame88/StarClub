@@ -331,6 +331,8 @@ export function migrate() {
       token TEXT UNIQUE NOT NULL,
       status TEXT NOT NULL,
       stars_reserved INTEGER NOT NULL,
+      source_type TEXT DEFAULT 'stars',
+      program_id INTEGER,
       receipt_id TEXT,
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
@@ -366,8 +368,6 @@ export function migrate() {
       category TEXT,
       required_qty INTEGER NOT NULL,
       reward_stars INTEGER NOT NULL,
-      reward_product_id INTEGER REFERENCES reward_products(id) ON DELETE SET NULL,
-      reward_valid_days INTEGER DEFAULT 7,
       is_repeatable INTEGER DEFAULT 1,
       is_active INTEGER DEFAULT 1,
       created_at TEXT NOT NULL
@@ -432,10 +432,11 @@ export function migrate() {
       telegram_id TEXT UNIQUE NOT NULL,
       name TEXT,
       username TEXT,
-      login TEXT UNIQUE,
-      password_hash TEXT,
       role TEXT NOT NULL DEFAULT 'admin',
       permissions_json TEXT,
+      login TEXT UNIQUE,
+      password_hash TEXT,
+      password_set_at TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -471,16 +472,15 @@ export function migrate() {
     CREATE TABLE IF NOT EXISTS personal_coupons (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-      token TEXT UNIQUE NOT NULL,
+      code TEXT UNIQUE NOT NULL,
       product_external_id TEXT,
       product_name TEXT,
-      discount_percent REAL,
-      discount_cents INTEGER,
+      discount_percent INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
-      created_by_admin_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
+      expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      expires_at TEXT,
-      used_at TEXT
+      used_at TEXT,
+      created_by_admin_id INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -512,27 +512,13 @@ export function migrate() {
   const adminColumns = new Set((adminInfo?.[0]?.values || []).map((row) => row[1]));
   if (!adminColumns.has('login')) innerDb.run('ALTER TABLE admin_users ADD COLUMN login TEXT');
   if (!adminColumns.has('password_hash')) innerDb.run('ALTER TABLE admin_users ADD COLUMN password_hash TEXT');
-  innerDb.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_users_login ON admin_users(login) WHERE login IS NOT NULL');
+  if (!adminColumns.has('password_set_at')) innerDb.run('ALTER TABLE admin_users ADD COLUMN password_set_at TEXT');
 
-  const stampInfo = innerDb.exec('PRAGMA table_info(stamp_programs)');
-  const stampColumns = new Set((stampInfo?.[0]?.values || []).map((row) => row[1]));
-  if (!stampColumns.has('reward_product_id')) innerDb.run('ALTER TABLE stamp_programs ADD COLUMN reward_product_id INTEGER REFERENCES reward_products(id) ON DELETE SET NULL');
-  if (!stampColumns.has('reward_valid_days')) innerDb.run('ALTER TABLE stamp_programs ADD COLUMN reward_valid_days INTEGER DEFAULT 7');
-
-  innerDb.run(`CREATE TABLE IF NOT EXISTS personal_coupons (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    token TEXT UNIQUE NOT NULL,
-    product_external_id TEXT,
-    product_name TEXT,
-    discount_percent REAL,
-    discount_cents INTEGER,
-    status TEXT NOT NULL DEFAULT 'active',
-    created_by_admin_id INTEGER REFERENCES admin_users(id) ON DELETE SET NULL,
-    created_at TEXT NOT NULL,
-    expires_at TEXT,
-    used_at TEXT
-  )`);
+  const rewardQrInfo = innerDb.exec('PRAGMA table_info(reward_qrs)');
+  const rewardQrColumns = new Set((rewardQrInfo?.[0]?.values || []).map((row) => row[1]));
+  if (!rewardQrColumns.has('source_type')) innerDb.run("ALTER TABLE reward_qrs ADD COLUMN source_type TEXT DEFAULT 'stars'");
+  if (!rewardQrColumns.has('program_id')) innerDb.run('ALTER TABLE reward_qrs ADD COLUMN program_id INTEGER');
+  innerDb.run("UPDATE reward_qrs SET source_type = 'stars' WHERE source_type IS NULL");
 }
 
 
@@ -552,6 +538,19 @@ export function seed() {
     accrual: '1 UAH = 1 star',
     showMoneyEquivalentToClient: false
   });
+
+  // Default browser Owner for the desktop admin panel.
+  // Login: owner / Password: StarClub2026!
+  // Change it from the Owner section after the first launch.
+  const ownerLogin = process.env.DEFAULT_OWNER_LOGIN || 'owner';
+  const ownerPassword = process.env.DEFAULT_OWNER_PASSWORD || 'StarClub2026!';
+  const existingOwnerLogin = db.prepare('SELECT id FROM admin_users WHERE login = ?').get(ownerLogin);
+  const existingOwnerRole = db.prepare("SELECT id FROM admin_users WHERE role = 'owner' AND login IS NOT NULL LIMIT 1").get();
+  if (!existingOwnerLogin && !existingOwnerRole) {
+    db.prepare(`INSERT INTO admin_users(telegram_id, name, username, role, permissions_json, login, password_hash, password_set_at, is_active, created_at, updated_at)
+      VALUES(?, ?, ?, 'owner', '[]', ?, ?, ?, 1, ?, ?)`)
+      .run('owner-web', 'Owner', null, ownerLogin, hashPassword(ownerPassword), t, t, t);
+  }
 
   const stores = [
     ['star-center', 'Star Центр', 'вул. Центральна, 10', '08:00–22:00', '+380000000001'],
@@ -595,12 +594,12 @@ export function seed() {
 
   const stampCount = db.prepare('SELECT COUNT(*) AS c FROM stamp_programs').get().c;
   if (!stampCount) {
-    const coffeeReward = db.prepare("SELECT id FROM reward_products WHERE lower(name) LIKE '%кава%' ORDER BY id LIMIT 1").get();
-    const bakeryReward = db.prepare("SELECT id FROM reward_products WHERE lower(name) LIKE '%багет%' OR lower(name) LIKE '%круасан%' ORDER BY id LIMIT 1").get();
-    const insert = db.prepare('INSERT INTO stamp_programs(code, name, category, required_qty, reward_stars, reward_product_id, reward_valid_days, is_repeatable, is_active, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    insert.run('coffee-10', '10-та кава', 'coffee', 10, 0, coffeeReward?.id || null, 7, 1, 1, t);
-    insert.run('baguette-10', '10-й багет', 'bakery', 10, 0, bakeryReward?.id || null, 7, 1, 1, t);
+    const insert = db.prepare('INSERT INTO stamp_programs(code, name, category, required_qty, reward_stars, is_repeatable, is_active, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)');
+    insert.run('coffee-10', '10-та кава', 'coffee', 9, 0, 1, 1, t);
+    insert.run('baguette-10', '10-й багет', 'bakery', 9, 0, 1, 1, t);
   }
+
+  db.prepare("UPDATE stamp_programs SET required_qty = 9, reward_stars = 0 WHERE code IN ('coffee-10', 'baguette-10') AND required_qty = 10").run();
 
   const challengeCount = db.prepare('SELECT COUNT(*) AS c FROM challenges').get().c;
   if (!challengeCount) {
