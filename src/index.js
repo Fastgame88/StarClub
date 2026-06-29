@@ -431,11 +431,10 @@ function addChallengeVisit(clientId, receiptId, purchasedAt, totalCents, eligibl
 function updateStampProgress(clientId, receiptId, items = []) {
   const programs = db.prepare('SELECT * FROM stamp_programs WHERE is_active = 1').all();
   for (const program of programs) {
-    const count = items.reduce((sum, item) => {
-      if (!stampProgramMatchesItem(program, item)) return sum;
-      return sum + Math.ceil(Number(item.qty || 1));
-    }, 0);
+    const matchedItems = items.filter((item) => stampProgramMatchesItem(program, item));
+    const count = matchedItems.reduce((sum, item) => sum + Math.ceil(Number(item.qty || 1)), 0);
     if (!count) continue;
+    const rewardItem = matchedItems[0] || null;
     const existing = db.prepare('SELECT * FROM client_stamp_progress WHERE client_id = ? AND program_id = ?').get(clientId, program.id);
     if (!existing) {
       db.prepare('INSERT INTO client_stamp_progress(client_id, program_id, progress, completed_count, updated_at) VALUES(?, ?, 0, 0, ?)').run(clientId, program.id, nowIso());
@@ -449,7 +448,7 @@ function updateStampProgress(clientId, receiptId, items = []) {
     while (next >= requiredQty) {
       next -= requiredQty;
       completed += 1;
-      const qr = createStampRewardQr(clientId, program, receiptId);
+      const qr = createStampRewardQr(clientId, program, receiptId, rewardItem);
       if (qr) createdCodes.push(qr.token);
       if (!program.is_repeatable) {
         next = requiredQty;
@@ -461,7 +460,7 @@ function updateStampProgress(clientId, receiptId, items = []) {
       .run(next, completed, nowIso(), clientId, program.id);
 
     if (createdCodes.length) {
-      logAudit({ actorType: 'system', action: 'stamp_program_completed', entityType: 'client', entityId: String(clientId), payload: { program: program.code, receiptId, codes: createdCodes } });
+      logAudit({ actorType: 'system', action: 'stamp_program_completed', entityType: 'client', entityId: String(clientId), payload: { program: program.code, receiptId, codes: createdCodes, rewardItem } });
     }
   }
 }
@@ -525,9 +524,32 @@ function stampProgramMatchesItem(program, item = {}) {
   return values.some((v) => v === wanted || v.includes(wanted) || wanted.includes(v));
 }
 
-function findRewardProductForStamp(program) {
+function findRewardProductForStamp(program, rewardItem = null) {
   const wanted = normalizeMatchValue(program.category);
+  const rewardItemExternalId = String(rewardItem?.external_product_id || rewardItem?.product_id || '').trim();
   let rows = db.prepare('SELECT * FROM reward_products WHERE is_active = 1 ORDER BY stars_price ASC, id ASC').all();
+
+  if (rewardItemExternalId) {
+    const directItem = rows.find((r) => normalizeMatchValue(r.product_external_id) === normalizeMatchValue(rewardItemExternalId));
+    if (directItem) return directItem;
+
+    const existingInactive = db.prepare('SELECT * FROM reward_products WHERE product_external_id = ? ORDER BY id ASC LIMIT 1').get(rewardItemExternalId);
+    if (existingInactive) return existingInactive;
+
+    const t = nowIso();
+    const created = db.prepare(`INSERT INTO reward_products(product_external_id, name, image_url, stars_price, store_id, active_from, active_to, total_limit, per_client_limit, conditions, created_at, updated_at)
+      VALUES(?, ?, ?, 0, 'all', ?, NULL, NULL, NULL, ?, ?, ?)`).run(
+        rewardItemExternalId,
+        String(rewardItem?.name || program.name || 'Безкоштовний товар'),
+        '/assets/star.svg',
+        t,
+        `Безкоштовний код за накопичувальною програмою «${program.name}»`,
+        t,
+        t
+      );
+    return db.prepare('SELECT * FROM reward_products WHERE id = ?').get(created.lastInsertRowid);
+  }
+
   if (!rows.length) return null;
   const direct = rows.find((r) => normalizeMatchValue(r.product_external_id) === wanted);
   if (direct) return direct;
@@ -545,14 +567,16 @@ function findRewardProductForStamp(program) {
   return rows[0];
 }
 
-function createStampRewardQr(clientId, program, receiptId = null) {
-  const active = db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions
+function createStampRewardQr(clientId, program, receiptId = null, rewardItem = null) {
+  const active = db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions,
+      sp.category AS program_category, sp.name AS program_name
     FROM reward_qrs q
     JOIN reward_products r ON r.id = q.reward_product_id
+    LEFT JOIN stamp_programs sp ON sp.id = q.program_id
     WHERE q.client_id = ? AND q.program_id = ? AND q.source_type = 'stamp_program' AND q.status = 'reserved' AND q.expires_at > ?
     ORDER BY q.created_at DESC LIMIT 1`).get(clientId, program.id, nowIso());
   if (active) return active;
-  const reward = findRewardProductForStamp(program);
+  const reward = findRewardProductForStamp(program, rewardItem);
   if (!reward) return null;
   const token = getUniqueRewardToken();
   const createdAt = nowIso();
@@ -561,9 +585,11 @@ function createStampRewardQr(clientId, program, receiptId = null) {
     VALUES(?, ?, ?, 'reserved', 0, 'stamp_program', ?, ?, ?, ?)`)
     .run(clientId, reward.id, token, program.id, receiptId, createdAt, expiresAt);
   logAudit({ actorType: 'system', action: 'stamp_reward_qr_created', entityType: 'reward_qr', entityId: String(r.lastInsertRowid), payload: { clientId, program: program.code, reward: reward.name, token, expiresAt } });
-  return db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions
+  return db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions,
+      sp.category AS program_category, sp.name AS program_name
     FROM reward_qrs q
     JOIN reward_products r ON r.id = q.reward_product_id
+    LEFT JOIN stamp_programs sp ON sp.id = q.program_id
     WHERE q.id = ?`).get(r.lastInsertRowid);
 }
 
@@ -587,6 +613,11 @@ function getActiveRewardQr(clientId, rewardProductId) {
 
 function formatRewardQr(row) {
   if (!row) return null;
+  const sourceType = row.source_type || 'stars';
+  const stampProductExternalId = sourceType === 'stamp_program' ? String(row.product_external_id || row.program_category || '').trim() : String(row.product_external_id || '').trim();
+  const stampRewardName = sourceType === 'stamp_program'
+    ? (row.product_1c_name || row.program_name || row.name)
+    : row.name;
   return {
     id: row.id,
     token: row.token,
@@ -597,15 +628,15 @@ function formatRewardQr(row) {
     used_at: row.used_at,
     canceled_at: row.canceled_at,
     stars_reserved: row.stars_reserved,
-    source_type: row.source_type || 'stars',
+    source_type: sourceType,
     program_id: row.program_id || null,
-    is_free_stamp_reward: (row.source_type === 'stamp_program') || Number(row.stars_reserved || 0) === 0,
+    is_free_stamp_reward: (sourceType === 'stamp_program') || Number(row.stars_reserved || 0) === 0,
     reward: {
       id: row.reward_product_id,
-      name: row.name,
+      name: stampRewardName,
       image_url: row.image_url,
       stars_price: row.stars_price,
-      product_external_id: row.product_external_id,
+      product_external_id: stampProductExternalId || null,
       conditions: row.conditions
     }
   };
@@ -1021,9 +1052,13 @@ app.post('/api/client/reward-qr/cancel', clientAuth, (req, res) => {
 
 app.get('/api/client/reward-qrs', clientAuth, (req, res) => {
   expireReservedRewardQrs(req.client.id);
-  const rows = db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions
+  const rows = db.prepare(`SELECT q.*, r.name, r.image_url, r.stars_price, r.product_external_id, r.conditions,
+      sp.category AS program_category, sp.name AS program_name,
+      prod.name AS product_1c_name
     FROM reward_qrs q
     JOIN reward_products r ON r.id = q.reward_product_id
+    LEFT JOIN stamp_programs sp ON sp.id = q.program_id
+    LEFT JOIN products prod ON prod.external_id = COALESCE(NULLIF(r.product_external_id, ''), NULLIF(sp.category, '')) OR prod.id = COALESCE(NULLIF(r.product_external_id, ''), NULLIF(sp.category, ''))
     WHERE q.client_id = ?
     ORDER BY q.created_at DESC
     LIMIT 100`).all(req.client.id);
@@ -1338,13 +1373,16 @@ app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
   expireReservedRewardQrs();
 
   const row = db.prepare(`SELECT q.*, r.name, r.stars_price, r.product_external_id, r.store_id, r.conditions,
+      sp.category AS program_category,
+      sp.name AS program_name,
       COALESCE(p.price_cents, 0) AS product_price_cents,
       p.name AS product_1c_name,
       c.card_number, c.phone, c.name AS client_name, c.stars_balance
     FROM reward_qrs q
     JOIN reward_products r ON r.id = q.reward_product_id
     JOIN clients c ON c.id = q.client_id
-    LEFT JOIN products p ON p.external_id = r.product_external_id OR p.id = r.product_external_id
+    LEFT JOIN stamp_programs sp ON sp.id = q.program_id
+    LEFT JOIN products p ON p.external_id = COALESCE(NULLIF(r.product_external_id, ''), NULLIF(sp.category, '')) OR p.id = COALESCE(NULLIF(r.product_external_id, ''), NULLIF(sp.category, ''))
     WHERE q.token = ?`).get(token);
 
   if (!row) return res.status(404).json({ ok: false, valid: false, error: 'QR_NOT_FOUND' });
@@ -1354,22 +1392,28 @@ app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
     return res.status(400).json({ ok: false, valid: false, status: 'expired', error: 'QR_EXPIRED' });
   }
 
+  const productExternalId = String(row.product_external_id || (row.source_type === 'stamp_program' ? row.program_category : '') || '').trim();
+  const productName = row.product_1c_name || (row.source_type === 'stamp_program' ? row.program_name : '') || row.name;
+  const productPriceCents = Number(row.product_price_cents || 0);
+
   res.json({ ok: true, valid: true, status: 'reserved', qr: {
     id: row.id,
     token: row.token,
     manual_code: row.token,
-    product_name: row.name,
-    product_external_id: row.product_external_id,
-    product_1c_name: row.product_1c_name || row.name,
+    product_name: productName,
+    product_external_id: productExternalId,
+    product_id: productExternalId,
+    product_1c_name: row.product_1c_name || productName,
     qty: 1,
-    price_cents: Number(row.product_price_cents || 0),
-    price_uah: money(row.product_price_cents || 0),
-    line_total_cents: Number(row.product_price_cents || 0),
+    price_cents: productPriceCents,
+    price_uah: money(productPriceCents),
+    line_total_cents: productPriceCents,
     technical_price_cents: Math.max(1, Math.round(Number(process.env.REWARD_TECHNICAL_PRICE_CENTS || 10))),
     stars_to_spend: row.stars_reserved,
     expires_at: row.expires_at,
     conditions: row.conditions,
     store_id: row.store_id,
+    source_type: row.source_type || 'stars',
     client: { card_number: row.card_number, phone: row.phone, name: row.client_name, balance: row.stars_balance }
   } });
 });

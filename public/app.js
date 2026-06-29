@@ -17,7 +17,11 @@ const state = {
   stores: [],
   data: {},
   liveSignature: '',
-  liveBusy: false
+  liveBusy: false,
+  activitySnapshot: null,
+  activityReady: false,
+  activityBusy: false,
+  lastNotifyAt: 0
 };
 
 const icons = {
@@ -30,6 +34,35 @@ function toast(text) {
   $toast.textContent = text;
   $toast.classList.add('show');
   setTimeout(() => $toast.classList.remove('show'), 2600);
+}
+
+function playAppNotificationSound() {
+  try { tg?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.2);
+    setTimeout(() => ctx.close?.(), 450);
+  } catch {}
+}
+
+function notifyInApp(text, route = null) {
+  const now = Date.now();
+  if (now - state.lastNotifyAt > 700) playAppNotificationSound();
+  state.lastNotifyAt = now;
+  toast(text);
+  if (route) setRoute(route);
 }
 
 async function api(path, options = {}) {
@@ -56,6 +89,7 @@ function setRoute(route) {
   state.route = route;
   localStorage.setItem('starclub_route', route);
   render();
+  if (state.token && state.client?.registered) checkClientActivity({ initialize: true });
 }
 
 function fmtStars(n) {
@@ -326,6 +360,97 @@ async function loadSupport() {
   state.data.supportTickets = (await api('/api/client/support/tickets')).tickets || [];
 }
 
+function activityStorageKey() {
+  return `starclub_activity_${state.client?.id || state.client?.card_number || 'guest'}`;
+}
+
+function getLatestReceiptKey(receipts = []) {
+  const r = [...receipts].sort((a, b) => new Date(b.purchased_at || b.created_at || 0) - new Date(a.purchased_at || a.created_at || 0))[0];
+  return r ? `${r.id || ''}|${r.purchased_at || r.created_at || ''}` : '';
+}
+
+function getLatestReservedQrKey(qrs = []) {
+  const active = qrs.filter((q) => q.status === 'reserved');
+  const q = active.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0];
+  return q ? `${q.token || q.manual_code || q.id}|${q.created_at || ''}` : '';
+}
+
+function getLatestAdminSupportKey(tickets = []) {
+  const adminMessages = [];
+  tickets.forEach((ticket) => (ticket.messages || []).forEach((m) => {
+    if (m.sender_type === 'admin') adminMessages.push(m);
+  }));
+  const m = adminMessages.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0];
+  return m ? `${m.id || m.created_at}|${m.created_at || ''}` : '';
+}
+
+async function getClientActivitySnapshot() {
+  const [qrsData, receiptsData, supportData, meData] = await Promise.all([
+    api('/api/client/reward-qrs'),
+    api('/api/client/receipts'),
+    api('/api/client/support/tickets'),
+    api('/api/client/me')
+  ]);
+  state.client = meData.client;
+  renderNav();
+  const qrs = qrsData.qrs || [];
+  const receipts = receiptsData.receipts || [];
+  const tickets = supportData.tickets || [];
+  return {
+    latestQr: getLatestReservedQrKey(qrs),
+    latestReceipt: getLatestReceiptKey(receipts),
+    latestSupport: getLatestAdminSupportKey(tickets),
+    balance: state.client?.stars_balance ?? null,
+    qrsCount: qrs.length,
+    receiptsCount: receipts.length,
+    supportCount: tickets.reduce((sum, t) => sum + (t.messages || []).length, 0)
+  };
+}
+
+function loadStoredActivitySnapshot() {
+  try { return JSON.parse(localStorage.getItem(activityStorageKey()) || 'null'); } catch { return null; }
+}
+
+function saveActivitySnapshot(snapshot) {
+  state.activitySnapshot = snapshot;
+  try { localStorage.setItem(activityStorageKey(), JSON.stringify(snapshot)); } catch {}
+}
+
+async function checkClientActivity({ initialize = false } = {}) {
+  if (!state.token || !state.client?.registered || state.activityBusy || document.hidden) return;
+  state.activityBusy = true;
+  try {
+    const previous = state.activitySnapshot || loadStoredActivitySnapshot();
+    const next = await getClientActivitySnapshot();
+    if (initialize || !previous || !state.activityReady) {
+      saveActivitySnapshot(next);
+      state.activityReady = true;
+      return;
+    }
+
+    let message = '';
+    let route = '';
+    if (next.latestQr && next.latestQr !== previous.latestQr) {
+      message = 'Новий QR-код уже доступний у розділі «Мої QR-коди»';
+      route = 'rewardCodes';
+    } else if (next.latestSupport && next.latestSupport !== previous.latestSupport) {
+      message = 'Підтримка відповіла на ваше звернення';
+      route = 'support';
+    } else if (next.latestReceipt && next.latestReceipt !== previous.latestReceipt) {
+      message = 'Покупку додано в історію';
+      route = 'history';
+    }
+
+    saveActivitySnapshot(next);
+    state.activityReady = true;
+    if (message) notifyInApp(message, route);
+  } catch (error) {
+    console.warn('Activity check failed:', error.message || error);
+  } finally {
+    state.activityBusy = false;
+  }
+}
+
 function hasFocusedEditor() {
   const active = document.activeElement;
   return Boolean(active && active.matches?.('input, textarea, select'));
@@ -364,9 +489,15 @@ async function refreshVisibleData({ forceRender = false } = {}) {
 
 function startLiveRefresh() {
   window.clearInterval(state.liveTimer);
-  state.liveTimer = window.setInterval(() => refreshVisibleData(), 8000);
+  state.liveTimer = window.setInterval(() => {
+    refreshVisibleData();
+    checkClientActivity();
+  }, 6000);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshVisibleData({ forceRender: true });
+    if (!document.hidden) {
+      refreshVisibleData({ forceRender: true });
+      checkClientActivity();
+    }
   });
 }
 
@@ -708,6 +839,8 @@ function showRewardModal(qr) {
   wrap.querySelector('[data-close-modal]').onclick = async () => {
     wrap.remove();
     await refreshVisibleData({ forceRender: true });
+    await checkClientActivity({ initialize: true });
+    setRoute('rewardCodes');
   };
   wrap.querySelector('[data-copy-code]').onclick = async () => { try { await navigator.clipboard.writeText(manualCode); toast('Код скопійовано'); } catch { toast(manualCode); } };
   wrap.querySelector('[data-cancel-reward-code]').onclick = async () => {
@@ -717,6 +850,7 @@ function showRewardModal(qr) {
       wrap.remove();
       await refreshClient();
       await loadRewards();
+      await checkClientActivity({ initialize: true });
       if (state.route === 'rewards' || state.route === 'rewardCodes') render();
     } catch (e) { toast(e.message); }
   };
@@ -802,6 +936,7 @@ function bindEvents() {
       const me = await api('/api/client/me');
       state.client = me.client;
       renderNav();
+      await checkClientActivity({ initialize: true });
       if (state.route === 'rewards' || state.route === 'rewardCodes') render();
     } catch (e) { toast(e.message); }
   });
@@ -841,8 +976,10 @@ function bindEvents() {
       el.disabled = true;
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });
       showRewardModal(data.qr);
+      notifyInApp('QR-код створено. Після натискання «Готово» відкриються ваші QR-коди.');
       await refreshClient();
       await loadRewards();
+      await checkClientActivity({ initialize: true });
       if (state.route === 'rewards') render();
     } catch (e) {
       el.disabled = false;
