@@ -21,7 +21,10 @@ const state = {
   activitySnapshot: null,
   activityReady: false,
   activityBusy: false,
-  lastNotifyAt: 0
+  lastNotifyAt: 0,
+  notifications: [],
+  notificationsLoadedFor: '',
+  notificationPanelOpen: false
 };
 
 const icons = {
@@ -57,12 +60,104 @@ function playAppNotificationSound() {
   } catch {}
 }
 
-function notifyInApp(text, route = null) {
+function notificationStorageKey() {
+  return `starclub_notifications_${state.client?.id || state.client?.card_number || 'guest'}`;
+}
+
+function ensureNotificationsLoaded() {
+  const key = notificationStorageKey();
+  if (state.notificationsLoadedFor === key) return;
+  state.notificationsLoadedFor = key;
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) || '[]');
+    state.notifications = Array.isArray(stored) ? stored.slice(0, 30) : [];
+  } catch {
+    state.notifications = [];
+  }
+}
+
+function saveNotifications() {
+  ensureNotificationsLoaded();
+  try { localStorage.setItem(notificationStorageKey(), JSON.stringify(state.notifications.slice(0, 30))); } catch {}
+}
+
+function notificationTitle(route) {
+  if (route === 'rewardCodes') return 'Новий QR-код';
+  if (route === 'history') return 'Нова покупка';
+  if (route === 'support') return 'Відповідь підтримки';
+  return 'Повідомлення';
+}
+
+function addInboxNotification(text, route = null, options = {}) {
+  ensureNotificationsLoaded();
+  const dedupeKey = options.dedupeKey || `${route || 'info'}:${text}`;
+  if (state.notifications.some((n) => n.dedupeKey === dedupeKey)) return;
+  const item = {
+    id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    title: options.title || notificationTitle(route),
+    text,
+    route,
+    dedupeKey,
+    read: false,
+    created_at: new Date().toISOString()
+  };
+  state.notifications = [item, ...state.notifications].slice(0, 30);
+  saveNotifications();
   const now = Date.now();
   if (now - state.lastNotifyAt > 700) playAppNotificationSound();
   state.lastNotifyAt = now;
-  toast(text);
-  if (route) setRoute(route);
+  renderNotificationBadgeOnly();
+}
+
+function notifyInApp(text, route = null, options = {}) {
+  addInboxNotification(text, route, options);
+}
+
+function unreadNotificationsCount() {
+  ensureNotificationsLoaded();
+  return state.notifications.filter((n) => !n.read).length;
+}
+
+function renderNotificationPanel() {
+  ensureNotificationsLoaded();
+  const list = state.notifications.slice(0, 12);
+  return `
+    <div class="notification-panel">
+      <div class="notification-head">
+        <b>Повідомлення</b>
+        ${list.length ? '<button type="button" data-clear-notifications>Очистити</button>' : ''}
+      </div>
+      <div class="notification-list">
+        ${list.length ? list.map((n) => `
+          <button type="button" class="notification-item ${n.read ? '' : 'unread'}" data-open-notification="${n.id}">
+            <span>${n.title || 'Повідомлення'}</span>
+            <p>${n.text || ''}</p>
+            <small>${fmtTime(n.created_at)} ${fmtDate(n.created_at)}</small>
+          </button>
+        `).join('') : '<div class="notification-empty">Нових повідомлень поки немає</div>'}
+      </div>
+    </div>
+  `;
+}
+
+function notificationButton() {
+  if (!state.client?.registered) return '<span class="topbar-spacer"></span>';
+  const unread = unreadNotificationsCount();
+  return `
+    <div class="notification-wrap">
+      <button type="button" class="icon-btn notification-btn ${unread ? 'has-unread' : ''}" data-toggle-notifications aria-label="Повідомлення">
+        🔔${unread ? `<span class="notification-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
+      </button>
+      ${state.notificationPanelOpen ? renderNotificationPanel() : ''}
+    </div>
+  `;
+}
+
+function renderNotificationBadgeOnly() {
+  const existing = document.querySelector('.notification-wrap');
+  if (!existing || !state.client?.registered) return;
+  existing.outerHTML = notificationButton();
+  bindNotificationEvents();
 }
 
 async function api(path, options = {}) {
@@ -86,6 +181,7 @@ async function api(path, options = {}) {
 }
 
 function setRoute(route) {
+  state.notificationPanelOpen = false;
   state.route = route;
   localStorage.setItem('starclub_route', route);
   render();
@@ -142,7 +238,7 @@ function header(title, back = false) {
     <div class="topbar">
       <button class="icon-btn" data-back="${back ? 1 : 0}">${back ? '‹' : '<span class="gold">★</span>'}</button>
       <h2>${title}</h2>
-      <span class="topbar-spacer"></span>
+      ${notificationButton()}
     </div>
   `;
 }
@@ -270,7 +366,7 @@ function homeScreen() {
   return `
     <div class="topbar">
       <h1>Вітаємо, ${c.name || 'друже'}! 👋</h1>
-      <span class="topbar-spacer"></span>
+      ${notificationButton()}
     </div>
     <div class="stack">
       <section class="card balance-card spark">
@@ -443,7 +539,7 @@ async function checkClientActivity({ initialize = false } = {}) {
 
     saveActivitySnapshot(next);
     state.activityReady = true;
-    if (message) notifyInApp(message, route);
+    if (message) notifyInApp(message, route, { dedupeKey: `${route}:${next.latestQr || next.latestSupport || next.latestReceipt}` });
   } catch (error) {
     console.warn('Activity check failed:', error.message || error);
   } finally {
@@ -840,7 +936,6 @@ function showRewardModal(qr) {
     wrap.remove();
     await refreshVisibleData({ forceRender: true });
     await checkClientActivity({ initialize: true });
-    setRoute('rewardCodes');
   };
   wrap.querySelector('[data-copy-code]').onclick = async () => { try { await navigator.clipboard.writeText(manualCode); toast('Код скопійовано'); } catch { toast(manualCode); } };
   wrap.querySelector('[data-cancel-reward-code]').onclick = async () => {
@@ -919,7 +1014,34 @@ function validateRegisterForm(form) {
   return null;
 }
 
+function bindNotificationEvents() {
+  document.querySelectorAll('[data-toggle-notifications]').forEach((el) => el.onclick = (event) => {
+    event.stopPropagation();
+    state.notificationPanelOpen = !state.notificationPanelOpen;
+    render();
+  });
+  document.querySelectorAll('[data-open-notification]').forEach((el) => el.onclick = (event) => {
+    event.stopPropagation();
+    ensureNotificationsLoaded();
+    const n = state.notifications.find((item) => item.id === el.dataset.openNotification);
+    if (!n) return;
+    n.read = true;
+    saveNotifications();
+    state.notificationPanelOpen = false;
+    if (n.route) setRoute(n.route);
+    else render();
+  });
+  document.querySelectorAll('[data-clear-notifications]').forEach((el) => el.onclick = (event) => {
+    event.stopPropagation();
+    state.notifications = [];
+    saveNotifications();
+    state.notificationPanelOpen = false;
+    render();
+  });
+}
+
 function bindEvents() {
+  bindNotificationEvents();
   document.querySelectorAll('[data-route]').forEach((el) => el.onclick = () => setRoute(el.dataset.route));
   document.querySelectorAll('[data-back="1"]').forEach((el) => el.onclick = () => setRoute(state.client?.registered ? 'home' : 'start'));
   document.querySelectorAll('[data-offer-tab]').forEach((el) => el.onclick = () => { state.data.offerTab = el.dataset.offerTab; render(); });
@@ -976,7 +1098,7 @@ function bindEvents() {
       el.disabled = true;
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });
       showRewardModal(data.qr);
-      notifyInApp('QR-код створено. Після натискання «Готово» відкриються ваші QR-коди.');
+      notifyInApp('QR-код створено. Відкрийте його через дзвіночок або розділ «Мої QR-коди».', 'rewardCodes', { dedupeKey: `created-qr:${data.qr?.token || data.qr?.manual_code || Date.now()}` });
       await refreshClient();
       await loadRewards();
       await checkClientActivity({ initialize: true });

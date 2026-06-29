@@ -305,3 +305,25 @@ input.input,select.input{font-size:16px}
 }
 
 .store-image{width:100%;height:140px;object-fit:cover;border-radius:16px;margin-bottom:12px;background:#11151d}
+
+/* v15 notification center: no auto screen jumps, no stuck bottom navigation */
+.notification-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center;z-index:40;flex:0 0 auto}
+.notification-btn{position:relative;font-size:18px;line-height:1;background:rgba(255,255,255,.055)}
+.notification-btn.has-unread{border-color:rgba(246,211,123,.55);box-shadow:0 0 0 3px rgba(228,183,95,.09)}
+.notification-badge{position:absolute;right:-5px;top:-5px;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#ff5d5d;color:#fff;border:2px solid #07090d;font-size:10px;line-height:14px;font-weight:900;display:grid;place-items:center}
+.notification-panel{position:absolute;right:0;top:48px;width:min(340px,calc(100vw - 30px));max-height:min(70vh,520px);overflow:hidden;border:1px solid var(--line);border-radius:22px;background:linear-gradient(165deg,rgba(24,28,36,.98),rgba(8,10,14,.98));box-shadow:0 24px 70px rgba(0,0,0,.62);z-index:120;text-align:left;backdrop-filter:blur(18px)}
+.notification-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;border-bottom:1px solid var(--line-soft)}
+.notification-head b{font-size:15px;color:var(--text)}
+.notification-head button{background:rgba(255,255,255,.055);border:1px solid var(--line-soft);border-radius:999px;color:var(--gold2);font-size:12px;font-weight:800;padding:7px 10px}
+.notification-list{display:grid;gap:7px;max-height:460px;overflow:auto;padding:10px}
+.notification-item{width:100%;display:grid;gap:4px;text-align:left;color:var(--text);border:1px solid var(--line-soft);border-radius:16px;background:rgba(255,255,255,.045);padding:11px 12px}
+.notification-item.unread{border-color:rgba(246,211,123,.5);background:rgba(228,183,95,.1)}
+.notification-item span{font-weight:900;color:var(--gold2);font-size:13px}
+.notification-item p{margin:0;color:var(--text);font-size:13px;line-height:1.35}
+.notification-item small{color:var(--muted);font-size:10px}
+.notification-empty{padding:18px 10px;text-align:center;color:var(--muted);font-size:13px}
+.topbar{overflow:visible!important}
+.app-shell{overflow-x:hidden;overflow-y:visible}
+.bottom-nav{z-index:30;will-change:transform}
+body:not(.keyboard-open) .bottom-nav{transform:translateX(-50%)!important;opacity:1!important;pointer-events:auto!important}
+.modal-backdrop{z-index:100}
