@@ -46,6 +46,7 @@ function btn(label, attrs=''){ return `<button type="button" ${attrs}>${label}</
 const liveState = { signature: '', busy: false, interval: null };
 const clientListState = { q: '' };
 let clientDetailState = null;
+let offerAdminSection = 'promo';
 function hasFocusedEditor(){ return Boolean(document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]')); }
 function routeCanAutoRefresh(){ return ['dashboard','clients','qrs','support','audit'].includes(tab) || Boolean(clientDetailState?.id); }
 function compactClient(c){
@@ -227,105 +228,190 @@ async function rewards(editId=null){
   $$('[data-delete-reward]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити товар за зірки?')){await api(`/api/admin/catalog/rewards/${b.dataset.deleteReward}`,{method:'DELETE'});rewards();}});
 }
 
-function offerCondition(o){
-  if(o.type==='wholesale' && o.tiers_json) return JSON.parse(o.tiers_json).map(t=>`від ${t.qty} шт — ${t.price} грн`).join('; ');
-  if(o.stars_multiplier) return `x${o.stars_multiplier} зірок`;
-  if(o.club_price_cents) return `${num(o.club_price_cents/100)} грн`;
-  return '—';
+function normalizeAdminOneCCode(value){
+  return String(value||'').normalize('NFKC').trim().toUpperCase().replace(/\s+/g,'');
 }
-function offerForm(o={}){
-  let tiers=[];
-  try{tiers=o.tiers_json?JSON.parse(o.tiers_json):(Array.isArray(o.tiers)?o.tiers:[])}catch{}
-  const tierRows=(tiers.length?tiers:[{qty:'',price:''}]).map((t)=>`
-    <div class="tier-row" data-tier-row>
-      <label class="admin-field"><span>Від кількості, шт</span><input data-tier-qty type="number" min="1" step="1" inputmode="numeric" value="${esc(t.qty??'')}"></label>
-      <label class="admin-field"><span>Ціна за 1 шт, грн</span><input data-tier-price type="number" min="0" step="0.01" inputmode="decimal" value="${esc(t.price??'')}"></label>
-      <button type="button" class="tier-remove" data-remove-tier>Видалити</button>
-    </div>`).join('');
-  return `<form id="offerForm" class="form-grid offer-editor">
-    <label class="admin-field"><span>Тип пропозиції</span><select name="type" id="offerType"><option value="club" ${o.type==='club'?'selected':''}>Клубна ціна</option><option value="stars_multiplier" ${o.type==='stars_multiplier'?'selected':''}>Множник зірок</option><option value="wholesale" ${o.type==='wholesale'?'selected':''}>Оптова ціна</option></select></label>
-    <label class="admin-field"><span>Назва для клієнта</span><input name="name" placeholder="Наприклад: Подвійні зірки на випічку" value="${esc(o.name||'')}" required></label>
-    <label class="admin-field"><span>Опис</span><input name="description" placeholder="Коротко поясніть умову" value="${esc(o.description||'')}"></label>
-    <label class="admin-field"><span>Фото</span><input name="image_url" placeholder="Фото URL" value="${esc(o.image_url||'/assets/star.svg')}"></label>
-    <label class="admin-field"><span>Код товару або групи з 1С</span><input name="target_ref" placeholder="Наприклад: ЦБ000008652 або ЦБ000001210" value="${esc(o.product_external_id||o.category||'')}" required></label>
-    <div class="admin-help">Введіть один код. Система сама визначить: це конкретний товар чи папка/група товарів. Для групи враховуються всі вкладені підгрупи.</div>
-    <div class="offer-type-fields" data-offer-field="club">
-      <label class="admin-field"><span>Клубна ціна, грн</span><input name="club_price_uah" type="number" min="0" step="0.01" inputmode="decimal" placeholder="42" value="${esc(centsToUah(o.club_price_cents))}"></label>
-      <label class="admin-field"><span>Звичайна ціна, грн</span><input name="old_price_uah" type="number" min="0" step="0.01" inputmode="decimal" placeholder="55" value="${esc(centsToUah(o.old_price_cents))}"></label>
-    </div>
-    <div class="offer-type-fields" data-offer-field="stars_multiplier">
-      <label class="admin-field"><span>Множник зірок</span><input name="stars_multiplier" type="number" min="1" step="0.1" inputmode="decimal" placeholder="2" value="${esc(o.stars_multiplier||'')}"></label>
-    </div>
-    <div class="offer-type-fields wholesale-builder" data-offer-field="wholesale">
-      <div class="wholesale-head"><div><b>Рівні оптових цін</b><div class="small">Додавайте скільки завгодно рівнів.</div></div><button type="button" id="addWholesaleTier" class="secondary">+ Додати рівень</button></div>
-      <div id="wholesaleTiers" class="tier-list">${tierRows}</div>
-    </div>
-    <label class="admin-field"><span>Магазин</span><input name="store_id" placeholder="all або ID магазину" value="${esc(o.store_id||'all')}"></label>
-    <label class="checkline"><input type="checkbox" name="is_active" ${o.id?(Number(o.is_active)?'checked':''):'checked'}> Активна</label>
-    <div class="form-actions"><button class="primary">${o.id?'Зберегти':'Створити'}</button>${o.id?'<button type="button" id="cancelEdit">Скасувати</button>':''}</div>
-  </form>`;
+function previewImageUrl(value){
+  const raw=String(value||'').trim();
+  if(!raw)return '/assets/star.svg';
+  if(raw.startsWith('/'))return raw;
+  try{
+    const url=new URL(raw);
+    if(url.hostname==='drive.google.com'){
+      const match=url.pathname.match(/\/file\/d\/([^/]+)/);
+      const id=match?.[1]||url.searchParams.get('id');
+      if(id)return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w1600`;
+    }
+    if(url.hostname.endsWith('dropbox.com')){url.searchParams.delete('dl');url.searchParams.set('raw','1');return url.toString();}
+    return url.toString();
+  }catch{return '/assets/star.svg';}
+}
+function offerAdminTabs(){
+  return `<div class="offer-admin-tabs">
+    <button type="button" data-offer-section="promo" class="${offerAdminSection==='promo'?'active':''}">Вітрина клубних/оптових</button>
+    <button type="button" data-offer-section="pricing" class="${offerAdminSection==='pricing'?'active':''}">Цінові правила</button>
+    <button type="button" data-offer-section="multiplier" class="${offerAdminSection==='multiplier'?'active':''}">Множник зірок</button>
+  </div>`;
+}
+function bindOfferAdminTabs(){
+  $$('[data-offer-section]').forEach(btn=>btn.onclick=()=>offers(null,btn.dataset.offerSection));
 }
 
-async function offers(editId=null){
-  title.textContent='Пропозиції';
-  const {offers: offerItems}=await api('/api/admin/catalog/offers');
-  const edit=editId?offerItems.find(x=>String(x.id)===String(editId)):null;
-  content.innerHTML=`<div class="card editor-card ${edit?'edit-panel':''}"><h3>${edit?'Редагувати пропозицію':'Створити пропозицію'}</h3>${offerForm(edit||{})}</div>
-  <div class="offer-list">${offerItems.map(o=>`<article class="offer-mobile-card">
-    <div class="offer-card-head"><div><span class="pill">${esc(o.type)}</span><h3>${esc(o.name)}</h3></div><span>${activeText(o.is_active)}</span></div>
-    <dl><div><dt>Умова</dt><dd>${esc(offerCondition(o))}</dd></div><div><dt>Товар або група</dt><dd>${esc(o.product_external_id||o.category||'усі')}</dd></div><div><dt>Магазин</dt><dd>${esc(o.store_id||'all')}</dd></div></dl>
-    <div class="actions">${btn('Редагувати',`data-edit-offer="${o.id}"`)}${btn('Видалити',`data-delete-offer="${o.id}"`)}</div>
-  </article>`).join('')||'<div class="card">Пропозицій поки немає</div>'}</div>`;
-  const form=$('#offerForm');
-  const typeSelect=$('#offerType');
-  const syncOfferFields=()=>{
-    const current=typeSelect.value;
-    $$('[data-offer-field]').forEach(el=>el.classList.toggle('hidden',el.dataset.offerField!==current));
-  };
-  const bindTierButtons=()=>{
-    $$('[data-remove-tier]').forEach(btn=>btn.onclick=()=>{
-      const rows=$$('[data-tier-row]');
-      if(rows.length===1){ rows[0].querySelector('[data-tier-qty]').value=''; rows[0].querySelector('[data-tier-price]').value=''; return; }
-      btn.closest('[data-tier-row]')?.remove();
-    });
-  };
-  $('#addWholesaleTier')?.addEventListener('click',()=>{
-    $('#wholesaleTiers').insertAdjacentHTML('beforeend',`<div class="tier-row" data-tier-row>
-      <label class="admin-field"><span>Від кількості, шт</span><input data-tier-qty type="number" min="1" step="1" inputmode="numeric"></label>
-      <label class="admin-field"><span>Ціна за 1 шт, грн</span><input data-tier-price type="number" min="0" step="0.01" inputmode="decimal"></label>
-      <button type="button" class="tier-remove" data-remove-tier>Видалити</button>
-    </div>`);
-    bindTierButtons();
-  });
-  typeSelect.addEventListener('change',syncOfferFields);
-  syncOfferFields();
-  bindTierButtons();
+function promoOfferForm(o={}){
+  return `<form id="promoOfferForm" class="form-grid promo-offer-editor">
+    <label class="admin-field"><span>Тип картки</span><select name="type"><option value="club" ${o.type==='club'||!o.type?'selected':''}>Клубна пропозиція</option><option value="wholesale" ${o.type==='wholesale'?'selected':''}>Оптова пропозиція</option></select></label>
+    <label class="admin-field"><span>Назва</span><input name="name" value="${esc(o.name||'')}" placeholder="Наприклад: Яйця за клубною ціною" required></label>
+    <label class="admin-field promo-description-field"><span>Опис</span><textarea name="description" placeholder="Короткий рекламний опис">${esc(o.description||'')}</textarea></label>
+    <label class="admin-field"><span>Нова ціна, грн</span><input name="current_price_uah" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(centsToUah(o.current_price_cents))}" placeholder="45.90" required></label>
+    <label class="admin-field"><span>Стара ціна, грн</span><input name="old_price_uah" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(centsToUah(o.old_price_cents))}" placeholder="53.00"></label>
+    <label class="admin-field"><span>Плашка</span><input name="badge" value="${esc(o.badge||'')}" placeholder="КЛУБНА ЦІНА"></label>
+    <label class="admin-field promo-image-field"><span>Картинка: локальна або URL</span><input id="promoImageUrl" name="image_url" value="${esc(o.image_url||'/assets/star.svg')}" placeholder="/assets/item.jpg або https://... або Google Drive"></label>
+    <div class="promo-image-preview"><img id="promoImagePreview" src="${esc(previewImageUrl(o.image_url||'/assets/star.svg'))}" alt="Попередній перегляд"><div><b>Попередній перегляд</b><p class="small">Підтримуються локальні шляхи, прямі HTTPS-посилання, Google Drive та Dropbox.</p></div></div>
+    <label class="admin-field"><span>Магазин</span><input name="store_id" value="${esc(o.store_id||'all')}" placeholder="all або ID магазину"></label>
+    <label class="checkline"><input type="checkbox" name="is_active" ${o.id?(Number(o.is_active)?'checked':''):'checked'}> Активна</label>
+    <div class="form-actions"><button class="primary">${o.id?'Зберегти':'Створити картку'}</button>${o.id?'<button type="button" id="cancelPromoEdit">Скасувати</button>':''}</div>
+  </form>`;
+}
+async function promoOffers(editId=null){
+  offerAdminSection='promo';
+  title.textContent='Пропозиції та ціни';
+  const {items=[]}=await api('/api/admin/catalog/promo-offers');
+  const edit=editId?items.find(x=>String(x.id)===String(editId)):null;
+  content.innerHTML=`${offerAdminTabs()}
+    <div class="card editor-card ${edit?'edit-panel':''}"><div class="section-title-row"><div><h3>${edit?'Редагувати рекламну картку':'Створити статичну пропозицію'}</h3><p class="small">Це лише вітрина в Mini App. Вона не змінює ціну в 1С.</p></div><span class="pill">Реклама</span></div>${promoOfferForm(edit||{})}</div>
+    <div class="promo-admin-grid">${items.map(o=>`<article class="promo-admin-card"><img src="${esc(previewImageUrl(o.image_url))}" alt="${esc(o.name)}"><div class="promo-admin-card-body"><div class="offer-card-head"><div><span class="pill">${o.type==='wholesale'?'Оптова':'Клубна'}</span><h3>${esc(o.name)}</h3></div><span>${activeText(o.is_active)}</span></div><p class="small">${esc(o.description||'')}</p><div class="promo-price-line"><b>${num((o.current_price_cents||0)/100)} грн</b>${o.old_price_cents?`<s>${num(o.old_price_cents/100)} грн</s>`:''}</div><div class="actions">${btn('Редагувати',`data-edit-promo="${o.id}"`)}${btn('Видалити',`data-delete-promo="${o.id}" class="danger"`)}</div></div></article>`).join('')||'<div class="card">Статичних пропозицій поки немає</div>'}</div>`;
+  bindOfferAdminTabs();
+  const form=$('#promoOfferForm');
+  const imageInput=$('#promoImageUrl');
+  imageInput?.addEventListener('input',()=>{$('#promoImagePreview').src=previewImageUrl(imageInput.value);});
   form.onsubmit=async ev=>{
     ev.preventDefault();
-    const type=val(form,'type');
-    const tiers=$$('[data-tier-row]').map(row=>({
-      qty:Number(row.querySelector('[data-tier-qty]').value),
-      price:Number(row.querySelector('[data-tier-price]').value)
-    })).filter(t=>t.qty>0&&t.price>=0).sort((a,b)=>a.qty-b.qty);
-    if(type==='wholesale'&&!tiers.length){alert('Додайте хоча б один рівень оптової ціни');return;}
-    const targetRef=String(val(form,'target_ref')||'').trim();
-    if(!targetRef){alert('Вкажіть код товару або групи з 1С');return;}
-    if(type==='stars_multiplier'&&Number(val(form,'stars_multiplier'))<=1){alert('Вкажіть множник більше 1, наприклад 2');return;}
-    const body={type,name:val(form,'name'),description:val(form,'description'),image_url:val(form,'image_url')||'/assets/star.svg',target_ref:targetRef,club_price_cents:type==='club'?uahToCents(val(form,'club_price_uah')):null,old_price_cents:type==='club'?uahToCents(val(form,'old_price_uah')):null,stars_multiplier:type==='stars_multiplier'&&val(form,'stars_multiplier')?Number(val(form,'stars_multiplier')):null,store_id:val(form,'store_id')||'all',tiers:type==='wholesale'?tiers:[],is_active:check(form,'is_active')};
-    const submitButton=form.querySelector('button.primary');
-    if(submitButton){submitButton.disabled=true;submitButton.textContent='Збереження…';}
-    try{
-      await api(edit?`/api/admin/catalog/offers/${edit.id}`:'/api/admin/catalog/offers',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});
-      await offers();
-    }catch(error){
-      alert(`Не вдалося зберегти пропозицію: ${error.message||'невідома помилка'}`);
-      if(submitButton){submitButton.disabled=false;submitButton.textContent=edit?'Зберегти':'Створити';}
-    }
+    const body={type:val(form,'type'),name:val(form,'name'),description:val(form,'description'),current_price_cents:uahToCents(val(form,'current_price_uah')),old_price_cents:uahToCents(val(form,'old_price_uah')),badge:val(form,'badge'),image_url:val(form,'image_url')||'/assets/star.svg',store_id:val(form,'store_id')||'all',is_active:check(form,'is_active')};
+    await api(edit?`/api/admin/catalog/promo-offers/${edit.id}`:'/api/admin/catalog/promo-offers',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});
+    await promoOffers();
   };
-  $('#cancelEdit')?.addEventListener('click',()=>offers());
-  $$('[data-edit-offer]').forEach(b=>b.onclick=async()=>{await offers(b.dataset.editOffer);scrollAdminFormIntoView();});
-  $$('[data-delete-offer]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити пропозицію?')){await api(`/api/admin/catalog/offers/${b.dataset.deleteOffer}`,{method:'DELETE'});offers();}});
+  $('#cancelPromoEdit')?.addEventListener('click',()=>promoOffers());
+  $$('[data-edit-promo]').forEach(b=>b.onclick=async()=>{await promoOffers(b.dataset.editPromo);scrollAdminFormIntoView();});
+  $$('[data-delete-promo]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити рекламну картку?')){await api(`/api/admin/catalog/promo-offers/${b.dataset.deletePromo}`,{method:'DELETE'});await promoOffers();}});
 }
+
+function offerPriceText(mode,value){
+  if(mode==='percent')return `−${num(value)}%`;
+  if(mode==='amount')return `−${num(Number(value||0)/100)} грн`;
+  if(mode==='fixed')return `${num(Number(value||0)/100)} грн`;
+  return '—';
+}
+function offerCondition(o){
+  if(o.type==='wholesale'){
+    const tiers=Array.isArray(o.tiers)?o.tiers:(()=>{try{return o.tiers_json?JSON.parse(o.tiers_json):[]}catch{return []}})();
+    return tiers.map(t=>{const mode=t.mode||'fixed';const value=t.value??t.price??0;const txt=mode==='percent'?`−${num(value)}%`:mode==='amount'?`−${num(value)} грн`:`${num(value)} грн/шт`;return `від ${t.qty} шт — ${txt}`;}).join('; ')||'—';
+  }
+  if(o.type==='stars_multiplier'&&o.stars_multiplier)return `x${o.stars_multiplier} зірок`;
+  if(o.type==='club'){
+    if(o.price_mode)return offerPriceText(o.price_mode,o.price_value);
+    if(o.club_price_cents!==null&&o.club_price_cents!==undefined)return `${num(o.club_price_cents/100)} грн`;
+  }
+  return '—';
+}
+function offerStoredPriceValue(o={}){
+  if(!o.price_mode)return o.club_price_cents!==null&&o.club_price_cents!==undefined?Number(o.club_price_cents)/100:'';
+  if(o.price_mode==='percent')return o.price_value??'';
+  return o.price_value===null||o.price_value===undefined?'':Number(o.price_value)/100;
+}
+function wholesaleTierRows(tiers=[]){
+  const normalized=(tiers.length?tiers:[{qty:'',mode:'fixed',value:''}]);
+  return normalized.map(t=>{const mode=t.mode||'fixed';const value=t.value??t.price??'';return `<div class="tier-row pricing-tier-row" data-tier-row>
+    <label class="admin-field"><span>Від кількості, шт</span><input data-tier-qty type="number" min="1" step="1" inputmode="numeric" value="${esc(t.qty??'')}"></label>
+    <label class="admin-field"><span>Тип</span><select data-tier-mode><option value="fixed" ${mode==='fixed'?'selected':''}>Фіксована ціна</option><option value="percent" ${mode==='percent'?'selected':''}>Знижка %</option><option value="amount" ${mode==='amount'?'selected':''}>Знижка грн</option></select></label>
+    <label class="admin-field"><span>Значення</span><input data-tier-value type="number" min="0" step="0.01" inputmode="decimal" value="${esc(value)}"></label>
+    <button type="button" class="tier-remove" data-remove-tier>Видалити</button>
+  </div>`;}).join('');
+}
+function overrideRows(){
+  return `<div class="pricing-override-row" data-override-row>
+    <label class="admin-field"><span>Код товару 1С</span><input data-override-product placeholder="ЦБ000004323"></label>
+    <label class="admin-field"><span>Назва (необовʼязково)</span><input data-override-name placeholder="Назва товару"></label>
+    <label class="admin-field"><span>Тип</span><select data-override-mode><option value="percent">Знижка %</option><option value="amount">Знижка грн</option><option value="fixed">Фіксована ціна</option></select></label>
+    <label class="admin-field"><span>Значення</span><input data-override-value type="number" min="0" step="0.01" inputmode="decimal"></label>
+    <button type="button" class="tier-remove" data-remove-override>Видалити</button>
+  </div>`;
+}
+function pricingRuleForm(o={}){
+  let tiers=[];try{tiers=Array.isArray(o.tiers)?o.tiers:(o.tiers_json?JSON.parse(o.tiers_json):[])}catch{}
+  const targetType=o.target_type||(o.product_external_id?'product':o.category?'group':'group');
+  const targetValue=o.target_value||o.product_external_id||o.category||'';
+  const priceMode=o.price_mode||(o.club_price_cents!==null&&o.club_price_cents!==undefined?'fixed':'percent');
+  return `<form id="pricingRuleForm" class="form-grid offer-editor pricing-editor">
+    <label class="admin-field"><span>Тип правила</span><select name="type" id="pricingRuleType"><option value="club" ${o.type==='club'||!o.type?'selected':''}>Клубна ціна</option><option value="wholesale" ${o.type==='wholesale'?'selected':''}>Оптова ціна</option></select></label>
+    <label class="admin-field"><span>Назва правила</span><input name="name" value="${esc(o.name||'')}" placeholder="Наприклад: -15% на молочні" required></label>
+    <label class="admin-field"><span>Магазин</span><input name="store_id" value="${esc(o.store_id||'all')}" placeholder="all або ID магазину"></label>
+    <div class="pricing-target-box">
+      <div class="pricing-section-head"><div><b>Товари або групи з 1С</b><div class="small">Коди товарів і груп мають формат на кшталт <code>ЦБ000004323</code>. Тип вибору визначає, що саме означає код.</div></div><span class="pill" id="selectedTargetsCount">0 вибрано</span></div>
+      <label class="admin-field"><span>Тип вибору</span><select name="target_type" id="pricingTargetType"><option value="group" ${targetType==='group'||targetType==='category'?'selected':''}>Групи товарів</option><option value="product" ${targetType==='product'?'selected':''}>Окремі товари</option><option value="all" ${targetType==='all'?'selected':''}>Усі дозволені товари</option></select></label>
+      <label class="admin-field" id="pricingTargetSearchWrap"><span>Пошук</span><input id="pricingTargetSearch" placeholder="Назва або ЦБ000004323"></label>
+      <div id="pricingTargetPicker" class="pricing-target-picker" data-current-target="${esc(targetValue)}"><div class="small">Завантаження…</div></div>
+    </div>
+    <div class="offer-type-fields" data-pricing-field="club">
+      <label class="admin-field"><span>Спосіб ціни</span><select name="price_mode" id="clubPriceMode"><option value="percent" ${priceMode==='percent'?'selected':''}>Знижка у %</option><option value="amount" ${priceMode==='amount'?'selected':''}>Знижка у грн</option><option value="fixed" ${priceMode==='fixed'?'selected':''}>Фіксована клубна ціна</option></select></label>
+      <label class="admin-field"><span id="clubPriceValueLabel">Значення</span><input name="price_value" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(offerStoredPriceValue(o))}"></label>
+      <label class="admin-field"><span>Округлення</span><select name="rounding_mode"><option value="kopeck" ${o.rounding_mode==='kopeck'||!o.rounding_mode?'selected':''}>До копійки</option><option value="10kop" ${o.rounding_mode==='10kop'?'selected':''}>До 10 коп.</option><option value="50kop" ${o.rounding_mode==='50kop'?'selected':''}>До 50 коп.</option><option value="1uah" ${o.rounding_mode==='1uah'?'selected':''}>До 1 грн</option><option value="down_1uah" ${o.rounding_mode==='down_1uah'?'selected':''}>Вниз до цілої грн</option></select></label>
+    </div>
+    <div class="offer-type-fields wholesale-builder" data-pricing-field="wholesale"><div class="wholesale-head"><div><b>Рівні оптових цін</b><div class="small">Кожен рівень може бути %, грн або фіксованою ціною.</div></div><button type="button" id="addWholesaleTier" class="secondary">+ Додати рівень</button></div><div id="wholesaleTiers" class="tier-list">${wholesaleTierRows(tiers)}</div></div>
+    ${o.id?'':`<div class="pricing-overrides-box" data-pricing-field="club"><div class="pricing-section-head"><div><b>Індивідуальні винятки</b><div class="small">Окрема умова на конкретний товар 1С.</div></div><button type="button" id="addPricingOverride" class="secondary">+ Додати товар</button></div><div id="pricingOverrides" class="pricing-overrides"></div></div>`}
+    <label class="checkline"><input type="checkbox" name="is_active" ${o.id?(Number(o.is_active)?'checked':''):'checked'}> Активне правило</label>
+    <div class="form-actions"><button class="primary">${o.id?'Зберегти':'Створити правило'}</button>${o.id?'<button type="button" id="cancelPricingEdit">Скасувати</button>':''}</div>
+  </form>`;
+}
+async function pricingRules(editId=null){
+  offerAdminSection='pricing';title.textContent='Пропозиції та ціни';
+  const {offers:all=[]}=await api('/api/admin/catalog/offers');
+  const rules=all.filter(o=>o.type==='club'||o.type==='wholesale');
+  const edit=editId?rules.find(x=>String(x.id)===String(editId)):null;
+  content.innerHTML=`${offerAdminTabs()}<div class="card editor-card ${edit?'edit-panel':''}"><div class="section-title-row"><div><h3>${edit?'Редагувати цінове правило':'Створити реальне правило ціни'}</h3><p class="small">Ці правила використовує <code>/api/1c/calculate</code>. Вони не створюють рекламну картку автоматично.</p></div><span class="pill">1С</span></div>${pricingRuleForm(edit||{})}</div>
+    <div class="offer-list">${rules.map(o=>`<article class="offer-mobile-card"><div class="offer-card-head"><div><span class="pill">${o.type==='wholesale'?'Оптова':'Клубна'}</span><h3>${esc(o.name)}</h3></div><span>${activeText(o.is_active)}</span></div><dl><div><dt>Умова</dt><dd>${esc(offerCondition(o))}</dd></div><div><dt>Тип цілі</dt><dd>${esc(o.target_type||'—')}</dd></div><div><dt>Код 1С</dt><dd><code>${esc(o.target_value||o.product_external_id||o.category||'all')}</code></dd></div><div><dt>Пріоритет</dt><dd>${num(o.priority||0)}</dd></div></dl><div class="actions">${btn('Редагувати',`data-edit-pricing="${o.id}"`)}${btn('Видалити',`data-delete-pricing="${o.id}" class="danger"`)}</div></article>`).join('')||'<div class="card">Цінових правил поки немає</div>'}</div>`;
+  bindOfferAdminTabs();
+  const form=$('#pricingRuleForm'),typeSelect=$('#pricingRuleType'),targetTypeSelect=$('#pricingTargetType'),targetPicker=$('#pricingTargetPicker'),targetSearch=$('#pricingTargetSearch'),selectedCount=$('#selectedTargetsCount');
+  const currentTarget=targetPicker?.dataset.currentTarget||'';let targetItems=[];let selectedTargets=new Set(currentTarget?[normalizeAdminOneCCode(currentTarget)]:[]);
+  const syncFields=()=>{const current=typeSelect.value;$$('[data-pricing-field]').forEach(el=>el.classList.toggle('hidden',el.dataset.pricingField!==current));};
+  const syncClubLabel=()=>{const mode=$('#clubPriceMode')?.value,label=$('#clubPriceValueLabel');if(label)label.textContent=mode==='percent'?'Відсоток знижки, %':mode==='amount'?'Знижка, грн':'Клубна ціна, грн';};
+  const updateCount=()=>{if(selectedCount)selectedCount.textContent=targetTypeSelect.value==='all'?'усі товари':`${selectedTargets.size} вибрано`;};
+  const renderPicker=()=>{if(!targetPicker)return;const type=targetTypeSelect.value;$('#pricingTargetSearchWrap')?.classList.toggle('hidden',type==='all');if(type==='all'){targetPicker.innerHTML='<div class="small">Правило застосовується до всіх дозволених товарів.</div>';selectedTargets=new Set();updateCount();return;}const q=String(targetSearch?.value||'').trim().toLowerCase();const items=targetItems.filter(i=>!q||String(`${i.name||''} ${i.id||i.external_id||''}`).toLowerCase().includes(q));targetPicker.innerHTML=items.slice(0,500).map(i=>{const id=normalizeAdminOneCCode(i.id||i.external_id||'');const name=i.name||i.external_id||id;const meta=type==='group'?`${num(i.products_count||0)} товарів`:(i.price_cents!==null&&i.price_cents!==undefined?`${num(i.price_cents/100)} грн`:'');return `<label class="pricing-target-item"><input type="checkbox" data-pricing-target value="${esc(id)}" ${selectedTargets.has(id)?'checked':''}><span><b>${esc(name)}</b><small><code>${esc(id)}</code>${meta?' · '+esc(meta):''}</small></span></label>`;}).join('')||'<div class="small">Нічого не знайдено. Спочатку синхронізуйте номенклатуру з 1С.</div>';$$('[data-pricing-target]').forEach(ch=>ch.onchange=()=>{ch.checked?selectedTargets.add(normalizeAdminOneCCode(ch.value)):selectedTargets.delete(normalizeAdminOneCCode(ch.value));updateCount();});updateCount();};
+  const loadTargets=async()=>{const type=targetTypeSelect.value;if(type==='all'){targetItems=[];renderPicker();return;}const data=await api(type==='group'?'/api/admin/catalog/product-groups':'/api/admin/catalog/products');targetItems=type==='group'?(data.groups||[]):(data.products||[]).map(p=>({...p,id:p.external_id}));if(currentTarget&&!targetItems.some(i=>normalizeAdminOneCCode(i.id||i.external_id)===normalizeAdminOneCCode(currentTarget)))targetItems.unshift({id:currentTarget,external_id:currentTarget,name:currentTarget,products_count:0});renderPicker();};
+  const bindTierButtons=()=>{$$('[data-remove-tier]').forEach(btn=>btn.onclick=()=>{const rows=$$('[data-tier-row]');if(rows.length===1){rows[0].querySelector('[data-tier-qty]').value='';rows[0].querySelector('[data-tier-value]').value='';return;}btn.closest('[data-tier-row]')?.remove();});};
+  $('#addWholesaleTier')?.addEventListener('click',()=>{$('#wholesaleTiers').insertAdjacentHTML('beforeend',wholesaleTierRows([{qty:'',mode:'fixed',value:''}]));bindTierButtons();});
+  const bindOverrideButtons=()=>{$$('[data-remove-override]').forEach(btn=>btn.onclick=()=>btn.closest('[data-override-row]')?.remove());};
+  $('#addPricingOverride')?.addEventListener('click',()=>{$('#pricingOverrides').insertAdjacentHTML('beforeend',overrideRows());bindOverrideButtons();});
+  typeSelect.addEventListener('change',syncFields);$('#clubPriceMode')?.addEventListener('change',syncClubLabel);targetTypeSelect.addEventListener('change',async()=>{selectedTargets=new Set();await loadTargets();});targetSearch?.addEventListener('input',renderPicker);syncFields();syncClubLabel();bindTierButtons();bindOverrideButtons();await loadTargets();
+  form.onsubmit=async ev=>{ev.preventDefault();const type=val(form,'type'),targetType=val(form,'target_type'),targets=targetType==='all'?['all']:[...selectedTargets].map(normalizeAdminOneCCode);if(!targets.length){alert('Оберіть хоча б одну групу або товар');return;}const tiers=$$('[data-tier-row]').map(row=>({qty:Number(row.querySelector('[data-tier-qty]').value),mode:row.querySelector('[data-tier-mode]').value,value:Number(row.querySelector('[data-tier-value]').value)})).filter(t=>t.qty>0&&Number.isFinite(t.value)&&t.value>=0).sort((a,b)=>a.qty-b.qty);if(type==='wholesale'&&!tiers.length){alert('Додайте хоча б один рівень оптової ціни');return;}const overrides=$$('[data-override-row]').map(row=>({product_external_id:normalizeAdminOneCCode(row.querySelector('[data-override-product]').value),product_name:String(row.querySelector('[data-override-name]').value||'').trim(),price_mode:row.querySelector('[data-override-mode]').value,price_value:Number(row.querySelector('[data-override-value]').value)})).filter(x=>x.product_external_id&&Number.isFinite(x.price_value)&&x.price_value>=0);const body={type,name:val(form,'name'),description:null,image_url:'/assets/star.svg',target_type:targetType,price_mode:type==='club'?val(form,'price_mode'):null,price_value:type==='club'?Number(val(form,'price_value')):null,rounding_mode:val(form,'rounding_mode')||'kopeck',store_id:val(form,'store_id')||'all',tiers:type==='wholesale'?tiers:[],visible_in_app:false,is_active:check(form,'is_active')};if(edit)await api(`/api/admin/catalog/offers/${edit.id}`,{method:'PATCH',body:JSON.stringify({...body,target_value:targets[0]})});else if(targets.length>1||overrides.length)await api('/api/admin/catalog/pricing/bulk',{method:'POST',body:JSON.stringify({...body,target_values:targets,overrides})});else await api('/api/admin/catalog/offers',{method:'POST',body:JSON.stringify({...body,target_value:targets[0]})});await pricingRules();};
+  $('#cancelPricingEdit')?.addEventListener('click',()=>pricingRules());$$('[data-edit-pricing]').forEach(b=>b.onclick=async()=>{await pricingRules(b.dataset.editPricing);scrollAdminFormIntoView();});$$('[data-delete-pricing]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити цінове правило?')){await api(`/api/admin/catalog/offers/${b.dataset.deletePricing}`,{method:'DELETE'});await pricingRules();}});
+}
+
+function multiplierForm(o={}){
+  return `<form id="multiplierForm" class="form-grid offer-editor">
+    <label class="admin-field"><span>Назва для клієнта</span><input name="name" value="${esc(o.name||'')}" placeholder="Наприклад: Подвійні зірки на випічку" required></label>
+    <label class="admin-field"><span>Опис</span><input name="description" value="${esc(o.description||'')}"></label>
+    <label class="admin-field"><span>Фото</span><input name="image_url" value="${esc(o.image_url||'/assets/star.svg')}" placeholder="Фото URL"></label>
+    <label class="admin-field"><span>Код товару або групи з 1С</span><input name="target_ref" value="${esc(o.target_value||o.product_external_id||o.category||'')}" placeholder="ЦБ000004323" required></label>
+    <label class="admin-field"><span>Множник зірок</span><input name="stars_multiplier" type="number" min="1" step="0.1" inputmode="decimal" value="${esc(o.stars_multiplier||'')}" placeholder="2" required></label>
+    <label class="admin-field"><span>Магазин</span><input name="store_id" value="${esc(o.store_id||'all')}" placeholder="all або ID магазину"></label>
+    <label class="checkline"><input type="checkbox" name="is_active" ${o.id?(Number(o.is_active)?'checked':''):'checked'}> Активний</label>
+    <div class="form-actions"><button class="primary">${o.id?'Зберегти':'Створити множник'}</button>${o.id?'<button type="button" id="cancelMultiplierEdit">Скасувати</button>':''}</div>
+  </form>`;
+}
+async function multipliers(editId=null){
+  offerAdminSection='multiplier';title.textContent='Пропозиції та ціни';
+  const {offers:all=[]}=await api('/api/admin/catalog/offers');const items=all.filter(o=>o.type==='stars_multiplier');const edit=editId?items.find(x=>String(x.id)===String(editId)):null;
+  content.innerHTML=`${offerAdminTabs()}<div class="card editor-card ${edit?'edit-panel':''}"><div class="section-title-row"><div><h3>${edit?'Редагувати множник':'Множник зірок'}</h3><p class="small">Логіку множника залишено окремою та без змін від початкової реалізації.</p></div><span class="pill">★</span></div>${multiplierForm(edit||{})}</div><div class="offer-list">${items.map(o=>`<article class="offer-mobile-card"><div class="offer-card-head"><div><span class="pill">Множник</span><h3>${esc(o.name)}</h3></div><span>${activeText(o.is_active)}</span></div><dl><div><dt>Умова</dt><dd>${esc(offerCondition(o))}</dd></div><div><dt>Код 1С</dt><dd><code>${esc(o.target_value||o.product_external_id||o.category||'—')}</code></dd></div><div><dt>Магазин</dt><dd>${esc(o.store_id||'all')}</dd></div></dl><div class="actions">${btn('Редагувати',`data-edit-multiplier="${o.id}"`)}${btn('Видалити',`data-delete-multiplier="${o.id}" class="danger"`)}</div></article>`).join('')||'<div class="card">Множників поки немає</div>'}</div>`;
+  bindOfferAdminTabs();const form=$('#multiplierForm');form.onsubmit=async ev=>{ev.preventDefault();const multiplier=Number(val(form,'stars_multiplier'));if(multiplier<=1){alert('Вкажіть множник більше 1, наприклад 2');return;}const body={type:'stars_multiplier',name:val(form,'name'),description:val(form,'description'),image_url:val(form,'image_url')||'/assets/star.svg',target_ref:normalizeAdminOneCCode(val(form,'target_ref')),stars_multiplier:multiplier,store_id:val(form,'store_id')||'all',is_active:check(form,'is_active')};await api(edit?`/api/admin/catalog/offers/${edit.id}`:'/api/admin/catalog/offers',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});await multipliers();};$('#cancelMultiplierEdit')?.addEventListener('click',()=>multipliers());$$('[data-edit-multiplier]').forEach(b=>b.onclick=async()=>{await multipliers(b.dataset.editMultiplier);scrollAdminFormIntoView();});$$('[data-delete-multiplier]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити множник?')){await api(`/api/admin/catalog/offers/${b.dataset.deleteMultiplier}`,{method:'DELETE'});await multipliers();}});
+}
+
+async function offers(editId=null,section=null){
+  if(section)offerAdminSection=section;
+  if(offerAdminSection==='pricing')return pricingRules(editId);
+  if(offerAdminSection==='multiplier')return multipliers(editId);
+  return promoOffers(editId);
+}
+
 
 async function challenges(editId=null){
   title.textContent='Челенджі';
@@ -464,7 +550,7 @@ async function admins(){
   title.textContent='Адміністратори';
   const {users}=await api('/api/admin/users');
   const permissionLabels={
-    dashboard:'Аналітика',clients:'Клієнти',stores:'Магазини',rewards:'Товари за зірки',offers:'Пропозиції',
+    dashboard:'Аналітика',clients:'Клієнти',stores:'Магазини',rewards:'Товари за зірки',offers:'Пропозиції та ціни',
     challenges:'Челенджі',stamps:'Накопичувальні',news:'Новини',qrs:'QR-коди',coupons:'Знижки клієнтам',
     support:'Підтримка',settings:'Налаштування',audit:'Журнал дій'
   };

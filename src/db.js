@@ -247,6 +247,9 @@ export function migrate() {
       external_id TEXT UNIQUE,
       name TEXT NOT NULL,
       category TEXT,
+      group_external_id TEXT,
+      group_name TEXT,
+      group_path_json TEXT,
       image_url TEXT,
       price_cents INTEGER DEFAULT 0,
       is_alcohol INTEGER DEFAULT 0,
@@ -348,6 +351,14 @@ export function migrate() {
       image_url TEXT,
       product_external_id TEXT,
       category TEXT,
+      target_type TEXT,
+      target_value TEXT,
+      price_mode TEXT,
+      price_value REAL,
+      priority INTEGER DEFAULT 100,
+      parent_offer_id INTEGER,
+      visible_in_app INTEGER DEFAULT 1,
+      rounding_mode TEXT DEFAULT 'kopeck',
       club_price_cents INTEGER,
       old_price_cents INTEGER,
       stars_multiplier REAL,
@@ -357,6 +368,24 @@ export function migrate() {
       active_from TEXT,
       active_to TEXT,
       is_active INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS promo_offers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      image_url TEXT,
+      current_price_cents INTEGER,
+      old_price_cents INTEGER,
+      badge TEXT,
+      store_id TEXT DEFAULT 'all',
+      active_from TEXT,
+      active_to TEXT,
+      is_active INTEGER DEFAULT 1,
+      source_offer_id INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -519,6 +548,85 @@ export function migrate() {
   if (!rewardQrColumns.has('source_type')) innerDb.run("ALTER TABLE reward_qrs ADD COLUMN source_type TEXT DEFAULT 'stars'");
   if (!rewardQrColumns.has('program_id')) innerDb.run('ALTER TABLE reward_qrs ADD COLUMN program_id INTEGER');
   innerDb.run("UPDATE reward_qrs SET source_type = 'stars' WHERE source_type IS NULL");
+
+
+  const productPricingInfo = innerDb.exec('PRAGMA table_info(products)');
+  const productPricingColumns = new Set((productPricingInfo?.[0]?.values || []).map((row) => row[1]));
+  if (!productPricingColumns.has('group_external_id')) innerDb.run('ALTER TABLE products ADD COLUMN group_external_id TEXT');
+  if (!productPricingColumns.has('group_name')) innerDb.run('ALTER TABLE products ADD COLUMN group_name TEXT');
+  if (!productPricingColumns.has('group_path_json')) innerDb.run('ALTER TABLE products ADD COLUMN group_path_json TEXT');
+
+  const offerPricingInfo = innerDb.exec('PRAGMA table_info(offers)');
+  const offerPricingColumns = new Set((offerPricingInfo?.[0]?.values || []).map((row) => row[1]));
+  if (!offerPricingColumns.has('target_type')) innerDb.run('ALTER TABLE offers ADD COLUMN target_type TEXT');
+  if (!offerPricingColumns.has('target_value')) innerDb.run('ALTER TABLE offers ADD COLUMN target_value TEXT');
+  if (!offerPricingColumns.has('price_mode')) innerDb.run('ALTER TABLE offers ADD COLUMN price_mode TEXT');
+  if (!offerPricingColumns.has('price_value')) innerDb.run('ALTER TABLE offers ADD COLUMN price_value REAL');
+  if (!offerPricingColumns.has('priority')) innerDb.run('ALTER TABLE offers ADD COLUMN priority INTEGER DEFAULT 100');
+  if (!offerPricingColumns.has('parent_offer_id')) innerDb.run('ALTER TABLE offers ADD COLUMN parent_offer_id INTEGER');
+  if (!offerPricingColumns.has('visible_in_app')) innerDb.run('ALTER TABLE offers ADD COLUMN visible_in_app INTEGER DEFAULT 1');
+  if (!offerPricingColumns.has('rounding_mode')) innerDb.run("ALTER TABLE offers ADD COLUMN rounding_mode TEXT DEFAULT 'kopeck'");
+
+  innerDb.run(`
+    UPDATE offers
+    SET target_type = CASE
+      WHEN product_external_id IS NOT NULL AND product_external_id <> '' THEN 'product'
+      WHEN category IS NOT NULL AND category <> '' THEN 'group'
+      ELSE 'none'
+    END
+    WHERE target_type IS NULL OR target_type = ''
+  `);
+  innerDb.run(`
+    UPDATE offers
+    SET target_value = COALESCE(product_external_id, category)
+    WHERE target_value IS NULL
+  `);
+  innerDb.run(`
+    UPDATE offers
+    SET price_mode = 'fixed', price_value = club_price_cents
+    WHERE type = 'club'
+      AND club_price_cents IS NOT NULL
+      AND (price_mode IS NULL OR price_mode = '')
+  `);
+  innerDb.run(`
+    UPDATE offers
+    SET priority = CASE
+      WHEN type = 'wholesale' AND target_type = 'product' THEN 450
+      WHEN type = 'wholesale' THEN 400
+      WHEN type = 'club' AND target_type = 'product' THEN 300
+      WHEN type = 'club' THEN 200
+      ELSE 100
+    END
+    WHERE priority IS NULL OR priority = 100
+  `);
+  innerDb.run('UPDATE offers SET visible_in_app = 1 WHERE visible_in_app IS NULL');
+  innerDb.run("UPDATE offers SET rounding_mode = 'kopeck' WHERE rounding_mode IS NULL OR rounding_mode = ''");
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_products_group_external_id ON products(group_external_id)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_offers_target ON offers(target_type, target_value)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_promo_offers_active ON promo_offers(type, is_active)');
+
+  // Одноразово переносимо старі видимі клубні/оптові картки у нову статичну вітрину.
+  // Реальні правила ціни залишаються в offers і продовжують працювати окремо.
+  innerDb.run(`
+    INSERT INTO promo_offers(
+      type, name, description, image_url, current_price_cents, old_price_cents,
+      badge, store_id, active_from, active_to, is_active, source_offer_id, created_at, updated_at
+    )
+    SELECT
+      o.type, o.name, o.description, o.image_url,
+      CASE
+        WHEN o.type = 'club' AND COALESCE(o.price_mode, '') = 'fixed' THEN CAST(o.price_value AS INTEGER)
+        WHEN o.type = 'club' THEN o.club_price_cents
+        ELSE NULL
+      END,
+      o.old_price_cents,
+      CASE WHEN o.type = 'wholesale' THEN 'ОПТОВА ПРОПОЗИЦІЯ' ELSE 'КЛУБНА ЦІНА' END,
+      COALESCE(o.store_id, 'all'), o.active_from, o.active_to, o.is_active, o.id, o.created_at, o.updated_at
+    FROM offers o
+    WHERE o.type IN ('club', 'wholesale')
+      AND COALESCE(o.visible_in_app, 1) = 1
+      AND NOT EXISTS (SELECT 1 FROM promo_offers p WHERE p.source_offer_id = o.id)
+  `);
 }
 
 

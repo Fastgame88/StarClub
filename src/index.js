@@ -58,7 +58,7 @@ function adminAuth(req, res, next) {
       : path.includes('/clients') ? 'clients'
       : path.includes('/stores') ? 'stores'
       : path.includes('/catalog/rewards') ? 'rewards'
-      : path.includes('/catalog/offers') ? 'offers'
+      : path.includes('/catalog/offers') || path.includes('/catalog/promo-offers') || path.includes('/catalog/pricing') || path.includes('/catalog/products') || path.includes('/catalog/product-groups') ? 'offers'
       : path.includes('/catalog/challenges') ? 'challenges'
       : path.includes('/catalog/stamps') ? 'stamps'
       : path.includes('/catalog/news') ? 'news'
@@ -197,12 +197,96 @@ function normalizeMatchValue(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+// Коди товарів і груп 1С у цій конфігурації мають однаковий формат,
+// наприклад ЦБ000004323. Тип цілі (product/group) передається окремо,
+// а сам код зберігаємо як непрозорий ідентифікатор без припущень про префікс.
+function normalizeOneCCode(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '');
+}
+
+function normalizeImageUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '/assets/star.svg';
+  if (raw.startsWith('/')) return raw;
+
+  try {
+    const url = new URL(raw);
+    if (!['http:', 'https:'].includes(url.protocol)) return '/assets/star.svg';
+
+    if (url.hostname === 'drive.google.com') {
+      const fileMatch = url.pathname.match(/\/file\/d\/([^/]+)/);
+      const id = fileMatch?.[1] || url.searchParams.get('id');
+      if (id) return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w1600`;
+    }
+
+    if (url.hostname.endsWith('dropbox.com')) {
+      url.searchParams.delete('dl');
+      url.searchParams.set('raw', '1');
+      return url.toString();
+    }
+
+    return url.toString();
+  } catch {
+    return '/assets/star.svg';
+  }
+}
+
+function parseItemGroupPath(item) {
+  if (Array.isArray(item.group_path)) {
+    return item.group_path.map(normalizeMatchValue).filter(Boolean);
+  }
+  if (item.group_path_json) {
+    try {
+      const parsed = JSON.parse(item.group_path_json);
+      return Array.isArray(parsed) ? parsed.map(normalizeMatchValue).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function getOfferTargetType(offer) {
+  if (offer?.target_type) return String(offer.target_type);
+  if (offer?.product_external_id) return 'product';
+  if (offer?.category) return 'group';
+  return 'all';
+}
+
+function getOfferTargetValue(offer) {
+  return String(offer?.target_value || offer?.product_external_id || offer?.category || '');
+}
+
 function offerMatchesItem(offer, item) {
-  const externalId = normalizeMatchValue(item.external_product_id || item.product_id);
-  const category = normalizeMatchValue(item.category);
-  if (offer.product_external_id) return externalId === normalizeMatchValue(offer.product_external_id);
-  if (offer.category) return category === normalizeMatchValue(offer.category) || category.includes(normalizeMatchValue(offer.category));
-  return true;
+  const targetType = getOfferTargetType(offer);
+  const rawTarget = getOfferTargetValue(offer);
+  if (targetType === 'all') return String(offer?.target_type || '') === 'all';
+  if (!rawTarget) return false;
+
+  // Для product/group порівнюємо саме коди 1С: ЦБ000004323 тощо.
+  // Однаковий формат коду не є проблемою, бо тип цілі зберігається окремо.
+  const targetCode = normalizeOneCCode(rawTarget);
+  const productCode = normalizeOneCCode(item.external_product_id || item.product_id);
+  const groupCode = normalizeOneCCode(item.group_external_id);
+  const groupPathCodes = (Array.isArray(item.group_path)
+    ? item.group_path
+    : (() => {
+        try { return item.group_path_json ? JSON.parse(item.group_path_json) : []; }
+        catch { return []; }
+      })())
+    .map(normalizeOneCCode)
+    .filter(Boolean);
+
+  if (targetType === 'product') return productCode === targetCode;
+  if (targetType === 'group') return groupCode === targetCode || groupPathCodes.includes(targetCode);
+
+  // Старі текстові категорії залишаємо сумісними.
+  if (targetType === 'category') return normalizeMatchValue(item.category) === normalizeMatchValue(rawTarget);
+  return false;
 }
 
 function getActiveOffers(storeId, purchasedAt) {
@@ -239,19 +323,56 @@ function calculateAccrualWithOffers(items = [], storeId, purchasedAt) {
   return { stars, applied };
 }
 
+function roundPriceCents(value, mode = 'kopeck') {
+  const cents = Math.max(0, Number(value || 0));
+  if (mode === '10kop') return Math.round(cents / 10) * 10;
+  if (mode === '50kop') return Math.round(cents / 50) * 50;
+  if (mode === '1uah') return Math.round(cents / 100) * 100;
+  if (mode === 'down_1uah') return Math.floor(cents / 100) * 100;
+  return Math.round(cents);
+}
+
+function calculatePriceByMode(regularPriceCents, mode, rawValue, roundingMode = 'kopeck') {
+  const regular = Math.max(0, Math.round(Number(regularPriceCents || 0)));
+  const value = Number(rawValue || 0);
+  let result = regular;
+  if (mode === 'percent') result = regular * (1 - value / 100);
+  else if (mode === 'amount') result = regular - value;
+  else if (mode === 'fixed') result = value;
+  else return regular;
+  result = Math.min(regular, result);
+  return roundPriceCents(Math.max(0, result), roundingMode);
+}
 
 function parseWholesaleTiers(offer) {
   if (!offer?.tiers_json) return [];
   try {
     const tiers = JSON.parse(offer.tiers_json);
-    return Array.isArray(tiers)
-      ? tiers.map((tier) => ({ qty: Number(tier.qty || 0), priceCents: Math.round(Number(tier.price || 0) * 100) }))
-          .filter((tier) => tier.qty > 0 && tier.priceCents >= 0)
-          .sort((a, b) => a.qty - b.qty)
-      : [];
+    if (!Array.isArray(tiers)) return [];
+    return tiers.map((tier) => {
+      const qty = Number(tier.qty || 0);
+      if (tier.price !== undefined && tier.price !== null && tier.mode === undefined) {
+        return { qty, mode: 'fixed', value: Math.round(Number(tier.price || 0) * 100) };
+      }
+      const mode = String(tier.mode || 'fixed');
+      let value = Number(tier.value ?? tier.price ?? 0);
+      if (mode === 'amount' || mode === 'fixed') value = Math.round(value * 100);
+      return { qty, mode, value };
+    }).filter((tier) => tier.qty > 0 && Number.isFinite(tier.value) && tier.value >= 0)
+      .sort((a, b) => a.qty - b.qty);
   } catch {
     return [];
   }
+}
+
+function getOfferPriority(offer) {
+  if (offer?.priority !== null && offer?.priority !== undefined && Number.isFinite(Number(offer.priority))) {
+    return Number(offer.priority);
+  }
+  const targetType = getOfferTargetType(offer);
+  if (offer?.type === 'wholesale') return targetType === 'product' ? 450 : 400;
+  if (offer?.type === 'club') return targetType === 'product' ? 300 : 200;
+  return 100;
 }
 
 function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
@@ -265,27 +386,50 @@ function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index] || {};
     const qty = Math.max(0, Number(item.qty || 0));
-    const regularUnitPriceCents = Math.max(0, Math.round(Number(item.price_cents || 0)));
-    const regularLineTotalCents = Math.max(0, Math.round(Number(item.line_total_cents ?? regularUnitPriceCents * qty)));
+    const regularUnitPriceCents = Math.max(0, Math.round(Number(item.regular_price_cents ?? item.price_cents ?? 0)));
+    const regularLineTotalCents = Math.max(0, Math.round(Number(item.regular_line_total_cents ?? regularUnitPriceCents * qty)));
     const flags = item.flags || item;
-    const priceCandidates = [{ priceCents: regularUnitPriceCents, offer: null, source: 'regular' }];
+    const priceCandidates = [{ priceCents: regularUnitPriceCents, offer: null, source: 'regular', priority: 0 }];
 
     for (const offer of offers) {
       if (!offerMatchesItem(offer, item)) continue;
-      if (offer.type === 'club' && (offer.product_external_id || offer.category) && offer.club_price_cents !== null && offer.club_price_cents !== undefined && Number.isFinite(Number(offer.club_price_cents)) && Number(offer.club_price_cents) >= 0) {
-        priceCandidates.push({ priceCents: Math.round(Number(offer.club_price_cents)), offer, source: 'club' });
+
+      if (offer.type === 'club') {
+        let priceMode = offer.price_mode;
+        let priceValue = offer.price_value;
+        if (!priceMode && offer.club_price_cents !== null && offer.club_price_cents !== undefined) {
+          priceMode = 'fixed';
+          priceValue = Number(offer.club_price_cents);
+        }
+        if (priceMode && Number.isFinite(Number(priceValue))) {
+          priceCandidates.push({
+            priceCents: calculatePriceByMode(regularUnitPriceCents, priceMode, priceValue, offer.rounding_mode || 'kopeck'),
+            offer,
+            source: 'club',
+            priority: getOfferPriority(offer)
+          });
+        }
       }
-      if (offer.type === 'wholesale' && (offer.product_external_id || offer.category)) {
-        const tiers = parseWholesaleTiers(offer);
-        const eligibleTiers = tiers.filter((tier) => qty >= tier.qty);
+
+      if (offer.type === 'wholesale') {
+        const eligibleTiers = parseWholesaleTiers(offer).filter((tier) => qty >= tier.qty);
         if (eligibleTiers.length) {
           const tier = eligibleTiers[eligibleTiers.length - 1];
-          priceCandidates.push({ priceCents: tier.priceCents, offer, source: 'wholesale', tierQty: tier.qty });
+          priceCandidates.push({
+            priceCents: calculatePriceByMode(regularUnitPriceCents, tier.mode, tier.value, offer.rounding_mode || 'kopeck'),
+            offer,
+            source: 'wholesale',
+            priority: getOfferPriority(offer),
+            tierQty: tier.qty
+          });
         }
       }
     }
 
-    const bestPrice = priceCandidates.reduce((best, candidate) => candidate.priceCents < best.priceCents ? candidate : best, priceCandidates[0]);
+    const bestPrice = [...priceCandidates].sort((a, b) => {
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      return a.priceCents - b.priceCents;
+    })[0];
     const finalUnitPriceCents = bestPrice.priceCents;
     const finalLineTotalCents = Math.max(0, Math.round(finalUnitPriceCents * qty));
 
@@ -327,6 +471,7 @@ function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
     calculatedItems.push({
       line_no: Number(item.line_no ?? index + 1),
       external_product_id: item.external_product_id || item.product_id || null,
+      group_external_id: item.group_external_id || null,
       name: item.name || 'Товар',
       category: item.category || null,
       qty,
@@ -1066,8 +1211,17 @@ app.get('/api/client/reward-qrs', clientAuth, (req, res) => {
 });
 
 app.get('/api/client/offers', clientAuth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM offers WHERE is_active = 1 ORDER BY id DESC').all();
-  res.json({ ok: true, offers: rows.map((o) => ({ ...o, tiers: o.tiers_json ? JSON.parse(o.tiers_json) : null })) });
+  const now = Date.now();
+  const rows = db.prepare(`SELECT * FROM promo_offers WHERE is_active = 1 ORDER BY id DESC`).all()
+    .filter((offer) => {
+      if (offer.active_from && new Date(offer.active_from).getTime() > now) return false;
+      if (offer.active_to && new Date(offer.active_to).getTime() < now) return false;
+      return true;
+    });
+  res.json({
+    ok: true,
+    offers: rows.map((o) => ({ ...o, image_url: normalizeImageUrl(o.image_url) }))
+  });
 });
 
 app.get('/api/client/progress', clientAuth, (req, res) => {
@@ -1552,19 +1706,41 @@ app.post('/api/1c/returns', oneCAuth, (req, res) => {
 
 app.post('/api/1c/products/sync', oneCAuth, (req, res) => {
   const products = Array.isArray(req.body?.products) ? req.body.products : [];
-  const upsert = db.prepare(`INSERT INTO products(external_id, id, name, category, image_url, price_cents, is_alcohol, is_tobacco, is_min_margin, no_star_accrual, no_redeem, updated_at)
-    VALUES(@external_id, @id, @name, @category, @image_url, @price_cents, @is_alcohol, @is_tobacco, @is_min_margin, @no_star_accrual, @no_redeem, @updated_at)
-    ON CONFLICT(external_id) DO UPDATE SET name = excluded.name, category = excluded.category, image_url = excluded.image_url, price_cents = excluded.price_cents, is_alcohol = excluded.is_alcohol, is_tobacco = excluded.is_tobacco, is_min_margin = excluded.is_min_margin, no_star_accrual = excluded.no_star_accrual, no_redeem = excluded.no_redeem, updated_at = excluded.updated_at`);
+  const upsert = db.prepare(`INSERT INTO products(
+      external_id, id, name, category, group_external_id, group_name, group_path_json,
+      image_url, price_cents, is_alcohol, is_tobacco, is_min_margin, no_star_accrual, no_redeem, updated_at
+    ) VALUES(
+      @external_id, @id, @name, @category, @group_external_id, @group_name, @group_path_json,
+      @image_url, @price_cents, @is_alcohol, @is_tobacco, @is_min_margin, @no_star_accrual, @no_redeem, @updated_at
+    ) ON CONFLICT(external_id) DO UPDATE SET
+      name = excluded.name,
+      category = excluded.category,
+      group_external_id = excluded.group_external_id,
+      group_name = excluded.group_name,
+      group_path_json = excluded.group_path_json,
+      image_url = excluded.image_url,
+      price_cents = excluded.price_cents,
+      is_alcohol = excluded.is_alcohol,
+      is_tobacco = excluded.is_tobacco,
+      is_min_margin = excluded.is_min_margin,
+      no_star_accrual = excluded.no_star_accrual,
+      no_redeem = excluded.no_redeem,
+      updated_at = excluded.updated_at`);
+  let synced = 0;
   const tx = db.transaction(() => {
     for (const p of products) {
+      if (!p?.external_id) continue;
       const flags = p.flags || p;
       upsert.run({
-        external_id: String(p.external_id),
-        id: String(p.external_id),
+        external_id: normalizeOneCCode(p.external_id),
+        id: normalizeOneCCode(p.external_id),
         name: p.name || 'Товар',
-        category: p.category || null,
-        image_url: p.image_url || null,
-        price_cents: Math.round(Number(p.price_cents || 0)),
+        category: p.category || p.group_name || null,
+        group_external_id: p.group_external_id ? normalizeOneCCode(p.group_external_id) : null,
+        group_name: p.group_name || p.category || null,
+        group_path_json: Array.isArray(p.group_path) ? JSON.stringify(p.group_path.map(normalizeOneCCode).filter(Boolean)) : null,
+        image_url: p.image_url ? normalizeImageUrl(p.image_url) : null,
+        price_cents: Math.max(0, Math.round(Number(p.price_cents || 0))),
         is_alcohol: flags.is_alcohol ? 1 : 0,
         is_tobacco: flags.is_tobacco ? 1 : 0,
         is_min_margin: flags.is_min_margin ? 1 : 0,
@@ -1572,10 +1748,11 @@ app.post('/api/1c/products/sync', oneCAuth, (req, res) => {
         no_redeem: flags.no_redeem ? 1 : 0,
         updated_at: nowIso()
       });
+      synced += 1;
     }
   });
   tx();
-  res.json({ ok: true, synced: products.length });
+  res.json({ ok: true, synced });
 });
 
 
@@ -1690,8 +1867,129 @@ app.patch('/api/admin/catalog/rewards/:id', adminAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+function parseJsonArraySafe(value) {
+  if (!value) return null;
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolvePricingTarget(targetRef, explicitType = null) {
+  const rawRef = String(targetRef || '').trim();
+  const type = explicitType ? String(explicitType) : null;
+  if (type === 'all' || !rawRef) return { target_type: type || 'all', target_value: null };
+
+  const ref = normalizeOneCCode(rawRef);
+  if (type === 'product' || type === 'group') {
+    return { target_type: type, target_value: ref };
+  }
+  if (type === 'category') return { target_type: 'category', target_value: rawRef };
+
+  // Коди товарів і груп мають однаковий вигляд ЦБ000004323,
+  // тому без explicitType спочатку використовуємо вже синхронізовані дані.
+  const product = db.prepare('SELECT external_id FROM products WHERE external_id = ? LIMIT 1').get(ref);
+  if (product) return { target_type: 'product', target_value: normalizeOneCCode(product.external_id) };
+
+  const group = db.prepare(`SELECT group_external_id FROM products
+    WHERE group_external_id = ? LIMIT 1`).get(ref);
+  if (group?.group_external_id) {
+    return { target_type: 'group', target_value: normalizeOneCCode(group.group_external_id) };
+  }
+
+  // Старі виклики без типу лишаємо сумісними, але нова адмінка завжди передає type.
+  return { target_type: 'group', target_value: ref };
+}
+
+function normalizeOfferPriceInput(body, existing = null) {
+  const mode = body.price_mode !== undefined ? (body.price_mode || null) : (existing?.price_mode || null);
+  if (!mode) {
+    if (body.club_price_cents !== undefined && body.club_price_cents !== null && body.club_price_cents !== '') {
+      return { price_mode: 'fixed', price_value: Math.round(Number(body.club_price_cents)), club_price_cents: Math.round(Number(body.club_price_cents)) };
+    }
+    return { price_mode: null, price_value: null, club_price_cents: null };
+  }
+
+  let priceValue;
+  if (body.price_value === undefined) priceValue = existing?.price_value ?? null;
+  else if (mode === 'percent') priceValue = Number(body.price_value || 0);
+  else priceValue = Math.round(Number(body.price_value || 0) * 100);
+
+  if (body.price_value_cents !== undefined && mode !== 'percent') {
+    priceValue = Math.round(Number(body.price_value_cents || 0));
+  }
+
+  return {
+    price_mode: mode,
+    price_value: priceValue,
+    club_price_cents: mode === 'fixed' ? priceValue : null
+  };
+}
+
+function defaultOfferPriority(type, targetType) {
+  if (type === 'wholesale') return targetType === 'product' ? 450 : 400;
+  if (type === 'club') return targetType === 'product' ? 300 : 200;
+  return 100;
+}
+
+function normalizeOfferTiers(body, existing = null) {
+  if (Array.isArray(body.tiers)) return JSON.stringify(body.tiers);
+  if (body.tiers_json !== undefined) return body.tiers_json || null;
+  return existing?.tiers_json || null;
+}
+
+app.get('/api/admin/catalog/product-groups', adminAuth, (req, res) => {
+  const rows = db.prepare(`SELECT external_id, group_external_id, group_name, category, group_path_json FROM products`).all();
+  const groups = new Map();
+  const touch = (id, name, externalId) => {
+    const key = normalizeOneCCode(id);
+    if (!key) return;
+    const current = groups.get(key) || { id: key, name: String(name || key), products: new Set() };
+    if ((!current.name || current.name === current.id) && name) current.name = String(name);
+    if (externalId) current.products.add(String(externalId));
+    groups.set(key, current);
+  };
+  for (const row of rows) {
+    touch(row.group_external_id, row.group_name || row.category, row.external_id);
+    const path = parseJsonArraySafe(row.group_path_json) || [];
+    for (const groupId of path) touch(groupId, groupId, row.external_id);
+  }
+  const result = [...groups.values()]
+    .map((g) => ({ id: g.id, name: g.name, products_count: g.products.size }))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'uk'));
+  res.json({ ok: true, groups: result });
+});
+
+app.get('/api/admin/catalog/products', adminAuth, (req, res) => {
+  const q = String(req.query.q || '').trim();
+  const groupId = normalizeOneCCode(req.query.group_id);
+  const clauses = [];
+  const args = [];
+  if (q) {
+    const mask = `%${q}%`;
+    clauses.push('(name LIKE ? OR external_id LIKE ? OR group_name LIKE ? OR category LIKE ?)');
+    args.push(mask, mask, mask, mask);
+  }
+  if (groupId) {
+    clauses.push('(group_external_id = ? OR group_path_json LIKE ?)');
+    args.push(groupId, `%"${groupId.replaceAll('"', '')}"%`);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const products = db.prepare(`SELECT id, external_id, name, category, group_external_id, group_name, price_cents, image_url
+    FROM products ${where} ORDER BY name LIMIT 500`).all(...args);
+  res.json({ ok: true, products });
+});
+
 app.get('/api/admin/catalog/offers', adminAuth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM offers ORDER BY id DESC').all().map(o => ({ ...o, tiers: o.tiers_json ? JSON.parse(o.tiers_json) : null }));
+  const rows = db.prepare('SELECT * FROM offers ORDER BY id DESC').all().map((o) => ({
+    ...o,
+    tiers: parseJsonArraySafe(o.tiers_json),
+    target_type: getOfferTargetType(o),
+    target_value: getOfferTargetValue(o),
+    price_value_uah: (o.price_mode === 'amount' || o.price_mode === 'fixed') ? Number(o.price_value || 0) / 100 : null
+  }));
   res.json({ ok: true, offers: rows });
 });
 
@@ -1699,28 +1997,203 @@ app.post('/api/admin/catalog/offers', adminAuth, (req, res) => {
   const b = req.body || {};
   if (!b.name || !b.type) return res.status(400).json({ ok: false, error: 'TYPE_AND_NAME_REQUIRED' });
   const t = nowIso();
+  const target = resolvePricingTarget(b.target_value || b.target_ref || b.product_external_id || b.category, b.target_type);
+  const price = normalizeOfferPriceInput(b);
   const row = {
-    type: b.type,
+    type: String(b.type),
     name: String(b.name).trim(),
     description: b.description || null,
-    image_url: b.image_url || '/assets/star.svg',
-    product_external_id: b.product_external_id || null,
-    category: b.category || null,
-    club_price_cents: b.club_price_cents ? Math.round(Number(b.club_price_cents)) : null,
-    old_price_cents: b.old_price_cents ? Math.round(Number(b.old_price_cents)) : null,
+    image_url: normalizeImageUrl(b.image_url),
+    product_external_id: target.target_type === 'product' ? target.target_value : null,
+    category: target.target_type === 'group' || target.target_type === 'category' ? target.target_value : null,
+    target_type: target.target_type,
+    target_value: target.target_value,
+    price_mode: price.price_mode,
+    price_value: price.price_value,
+    priority: Number(b.priority ?? defaultOfferPriority(b.type, target.target_type)),
+    parent_offer_id: b.parent_offer_id || null,
+    visible_in_app: b.visible_in_app === false ? 0 : 1,
+    rounding_mode: b.rounding_mode || 'kopeck',
+    club_price_cents: price.club_price_cents,
+    old_price_cents: b.old_price_cents !== undefined && b.old_price_cents !== null && b.old_price_cents !== '' ? Math.round(Number(b.old_price_cents)) : null,
     stars_multiplier: b.stars_multiplier ? Number(b.stars_multiplier) : null,
-    tiers_json: Array.isArray(b.tiers) ? JSON.stringify(b.tiers) : (b.tiers_json || null),
+    tiers_json: normalizeOfferTiers(b),
     store_id: b.store_id || 'all',
     audience: b.audience || 'all',
     active_from: b.active_from || t,
     active_to: b.active_to || null,
+    is_active: b.is_active === false ? 0 : 1,
     created_at: t,
     updated_at: t
   };
-  const result = db.prepare(`INSERT INTO offers(type, name, description, image_url, product_external_id, category, club_price_cents, old_price_cents, stars_multiplier, tiers_json, store_id, audience, active_from, active_to, created_at, updated_at)
-    VALUES(@type, @name, @description, @image_url, @product_external_id, @category, @club_price_cents, @old_price_cents, @stars_multiplier, @tiers_json, @store_id, @audience, @active_from, @active_to, @created_at, @updated_at)`).run(row);
-  logAudit({ actorType: 'admin', actorId: 'admin', action: 'offer_created', entityType: 'offer', entityId: String(result.lastInsertRowid), payload: row });
+  const result = db.prepare(`INSERT INTO offers(
+      type, name, description, image_url, product_external_id, category,
+      target_type, target_value, price_mode, price_value, priority, parent_offer_id, visible_in_app, rounding_mode,
+      club_price_cents, old_price_cents, stars_multiplier, tiers_json, store_id, audience,
+      active_from, active_to, is_active, created_at, updated_at
+    ) VALUES(
+      @type, @name, @description, @image_url, @product_external_id, @category,
+      @target_type, @target_value, @price_mode, @price_value, @priority, @parent_offer_id, @visible_in_app, @rounding_mode,
+      @club_price_cents, @old_price_cents, @stars_multiplier, @tiers_json, @store_id, @audience,
+      @active_from, @active_to, @is_active, @created_at, @updated_at
+    )`).run(row);
+  logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'offer_created', entityType: 'offer', entityId: String(result.lastInsertRowid), payload: row });
   res.json({ ok: true, id: result.lastInsertRowid });
+});
+
+app.post('/api/admin/catalog/pricing/bulk', adminAuth, (req, res) => {
+  const b = req.body || {};
+  const targetType = String(b.target_type || 'group');
+  const targetValues = Array.isArray(b.target_values) ? [...new Set(b.target_values.map((v) => targetType === 'all' ? 'all' : normalizeOneCCode(v)).filter(Boolean))] : [];
+  if (!targetValues.length) return res.status(400).json({ ok: false, error: 'TARGETS_REQUIRED' });
+  if (!b.type || !b.name) return res.status(400).json({ ok: false, error: 'TYPE_AND_NAME_REQUIRED' });
+
+  const createdIds = [];
+  const createdAt = nowIso();
+  const insert = db.prepare(`INSERT INTO offers(
+      type, name, description, image_url, product_external_id, category,
+      target_type, target_value, price_mode, price_value, priority, parent_offer_id, visible_in_app, rounding_mode,
+      club_price_cents, old_price_cents, stars_multiplier, tiers_json, store_id, audience,
+      active_from, active_to, is_active, created_at, updated_at
+    ) VALUES(
+      @type, @name, @description, @image_url, @product_external_id, @category,
+      @target_type, @target_value, @price_mode, @price_value, @priority, @parent_offer_id, @visible_in_app, @rounding_mode,
+      @club_price_cents, @old_price_cents, @stars_multiplier, @tiers_json, @store_id, @audience,
+      @active_from, @active_to, @is_active, @created_at, @updated_at
+    )`);
+
+  const tx = db.transaction(() => {
+    targetValues.forEach((targetValue, index) => {
+      const price = normalizeOfferPriceInput(b);
+      const row = {
+        type: String(b.type), name: String(b.name).trim(), description: b.description || null,
+        image_url: normalizeImageUrl(b.image_url),
+        product_external_id: targetType === 'product' ? targetValue : null,
+        category: targetType === 'group' || targetType === 'category' ? targetValue : null,
+        target_type: targetType, target_value: targetValue,
+        price_mode: price.price_mode, price_value: price.price_value,
+        priority: Number(b.priority ?? defaultOfferPriority(b.type, targetType)),
+        parent_offer_id: null,
+        visible_in_app: index === 0 && b.visible_in_app !== false ? 1 : 0,
+        rounding_mode: b.rounding_mode || 'kopeck',
+        club_price_cents: price.club_price_cents,
+        old_price_cents: b.old_price_cents ? Math.round(Number(b.old_price_cents)) : null,
+        stars_multiplier: b.stars_multiplier ? Number(b.stars_multiplier) : null,
+        tiers_json: normalizeOfferTiers(b), store_id: b.store_id || 'all', audience: b.audience || 'all',
+        active_from: b.active_from || createdAt, active_to: b.active_to || null,
+        is_active: b.is_active === false ? 0 : 1, created_at: createdAt, updated_at: createdAt
+      };
+      const result = insert.run(row);
+      createdIds.push(result.lastInsertRowid);
+    });
+
+    const overrides = Array.isArray(b.overrides) ? b.overrides : [];
+    for (const override of overrides) {
+      const productExternalId = normalizeOneCCode(override.product_external_id);
+      if (!productExternalId) continue;
+      const price = normalizeOfferPriceInput(override);
+      const row = {
+        type: 'club',
+        name: `${String(b.name).trim()} — ${override.product_name || productExternalId}`,
+        description: b.description || null, image_url: normalizeImageUrl(b.image_url),
+        product_external_id: productExternalId, category: null,
+        target_type: 'product', target_value: productExternalId,
+        price_mode: price.price_mode, price_value: price.price_value,
+        priority: Number(override.priority ?? 500), parent_offer_id: createdIds[0] || null,
+        visible_in_app: 0, rounding_mode: override.rounding_mode || b.rounding_mode || 'kopeck',
+        club_price_cents: price.club_price_cents, old_price_cents: null,
+        stars_multiplier: null, tiers_json: Array.isArray(override.tiers) ? JSON.stringify(override.tiers) : null,
+        store_id: b.store_id || 'all', audience: b.audience || 'all',
+        active_from: b.active_from || createdAt, active_to: b.active_to || null,
+        is_active: b.is_active === false ? 0 : 1, created_at: createdAt, updated_at: createdAt
+      };
+      const result = insert.run(row);
+      createdIds.push(result.lastInsertRowid);
+    }
+  });
+  tx();
+  logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'pricing_bulk_created', entityType: 'offer', entityId: String(createdIds[0] || ''), payload: { type: b.type, targetType, targetValues, created: createdIds.length } });
+  res.json({ ok: true, created: createdIds.length, ids: createdIds });
+});
+
+
+app.get('/api/admin/catalog/promo-offers', adminAuth, (req, res) => {
+  const items = db.prepare('SELECT * FROM promo_offers ORDER BY id DESC').all()
+    .map((item) => ({ ...item, image_url: normalizeImageUrl(item.image_url) }));
+  res.json({ ok: true, items });
+});
+
+app.post('/api/admin/catalog/promo-offers', adminAuth, (req, res) => {
+  const b = req.body || {};
+  const type = String(b.type || '').trim();
+  const name = String(b.name || '').trim();
+  if (!['club', 'wholesale'].includes(type)) return res.status(400).json({ ok: false, error: 'PROMO_TYPE_INVALID' });
+  if (!name) return res.status(400).json({ ok: false, error: 'PROMO_NAME_REQUIRED' });
+  const t = nowIso();
+  const row = {
+    type,
+    name,
+    description: b.description || null,
+    image_url: normalizeImageUrl(b.image_url),
+    current_price_cents: b.current_price_cents === null || b.current_price_cents === undefined || b.current_price_cents === '' ? null : Math.max(0, Math.round(Number(b.current_price_cents))),
+    old_price_cents: b.old_price_cents === null || b.old_price_cents === undefined || b.old_price_cents === '' ? null : Math.max(0, Math.round(Number(b.old_price_cents))),
+    badge: b.badge || (type === 'wholesale' ? 'ОПТОВА ПРОПОЗИЦІЯ' : 'КЛУБНА ЦІНА'),
+    store_id: b.store_id || 'all',
+    active_from: b.active_from || t,
+    active_to: b.active_to || null,
+    is_active: b.is_active === false ? 0 : 1,
+    source_offer_id: null,
+    created_at: t,
+    updated_at: t
+  };
+  const result = db.prepare(`INSERT INTO promo_offers(
+    type, name, description, image_url, current_price_cents, old_price_cents,
+    badge, store_id, active_from, active_to, is_active, source_offer_id, created_at, updated_at
+  ) VALUES(
+    @type, @name, @description, @image_url, @current_price_cents, @old_price_cents,
+    @badge, @store_id, @active_from, @active_to, @is_active, @source_offer_id, @created_at, @updated_at
+  )`).run(row);
+  logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'promo_offer_created', entityType: 'promo_offer', entityId: String(result.lastInsertRowid), payload: row });
+  res.json({ ok: true, id: result.lastInsertRowid });
+});
+
+app.patch('/api/admin/catalog/promo-offers/:id', adminAuth, (req, res) => {
+  const b = req.body || {};
+  const existing = db.prepare('SELECT * FROM promo_offers WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'PROMO_OFFER_NOT_FOUND' });
+  const type = b.type ?? existing.type;
+  if (!['club', 'wholesale'].includes(String(type))) return res.status(400).json({ ok: false, error: 'PROMO_TYPE_INVALID' });
+  const row = {
+    id: req.params.id,
+    type: String(type),
+    name: b.name ?? existing.name,
+    description: b.description === undefined ? existing.description : (b.description || null),
+    image_url: b.image_url === undefined ? existing.image_url : normalizeImageUrl(b.image_url),
+    current_price_cents: b.current_price_cents === undefined ? existing.current_price_cents : (b.current_price_cents === null || b.current_price_cents === '' ? null : Math.max(0, Math.round(Number(b.current_price_cents)))),
+    old_price_cents: b.old_price_cents === undefined ? existing.old_price_cents : (b.old_price_cents === null || b.old_price_cents === '' ? null : Math.max(0, Math.round(Number(b.old_price_cents)))),
+    badge: b.badge === undefined ? existing.badge : (b.badge || null),
+    store_id: b.store_id ?? existing.store_id,
+    active_from: b.active_from ?? existing.active_from,
+    active_to: b.active_to === undefined ? existing.active_to : (b.active_to || null),
+    is_active: b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0),
+    updated_at: nowIso()
+  };
+  db.prepare(`UPDATE promo_offers SET
+    type=@type, name=@name, description=@description, image_url=@image_url,
+    current_price_cents=@current_price_cents, old_price_cents=@old_price_cents,
+    badge=@badge, store_id=@store_id, active_from=@active_from, active_to=@active_to,
+    is_active=@is_active, updated_at=@updated_at
+    WHERE id=@id`).run(row);
+  logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'promo_offer_updated', entityType: 'promo_offer', entityId: req.params.id, payload: b });
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/catalog/promo-offers/:id', adminAuth, (req, res) => {
+  const existing = db.prepare('SELECT id FROM promo_offers WHERE id = ?').get(req.params.id);
+  if (!existing) return res.status(404).json({ ok: false, error: 'PROMO_OFFER_NOT_FOUND' });
+  db.prepare('DELETE FROM promo_offers WHERE id = ?').run(req.params.id);
+  logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'promo_offer_deleted', entityType: 'promo_offer', entityId: req.params.id, payload: {} });
+  res.json({ ok: true });
 });
 
 app.get('/api/admin/catalog/challenges', adminAuth, (req, res) => {
@@ -1780,9 +2253,56 @@ app.patch('/api/admin/catalog/offers/:id', adminAuth, (req, res) => {
   const b = req.body || {};
   const existing = db.prepare('SELECT * FROM offers WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ ok: false, error: 'OFFER_NOT_FOUND' });
-  db.prepare(`UPDATE offers SET type=?, name=?, description=?, image_url=?, product_external_id=?, category=?, club_price_cents=?, old_price_cents=?, stars_multiplier=?, tiers_json=?, store_id=?, audience=?, active_from=?, active_to=?, is_active=?, updated_at=? WHERE id=?`)
-    .run(b.type ?? existing.type, b.name ?? existing.name, b.description ?? existing.description, b.image_url ?? existing.image_url, b.product_external_id ?? existing.product_external_id, b.category ?? existing.category, b.club_price_cents === undefined ? existing.club_price_cents : b.club_price_cents, b.old_price_cents === undefined ? existing.old_price_cents : b.old_price_cents, b.stars_multiplier === undefined ? existing.stars_multiplier : b.stars_multiplier, b.tiers ? JSON.stringify(b.tiers) : (b.tiers_json === undefined ? existing.tiers_json : b.tiers_json), b.store_id ?? existing.store_id, b.audience ?? existing.audience, b.active_from ?? existing.active_from, b.active_to ?? existing.active_to, b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), nowIso(), req.params.id);
-  logAudit({ actorType: 'admin', actorId: 'admin', action: 'offer_updated', entityType: 'offer', entityId: req.params.id, payload: b });
+
+  const targetInputProvided = b.target_value !== undefined || b.target_ref !== undefined || b.product_external_id !== undefined || b.category !== undefined || b.target_type !== undefined;
+  const target = targetInputProvided
+    ? resolvePricingTarget(b.target_value || b.target_ref || b.product_external_id || b.category, b.target_type || existing.target_type)
+    : { target_type: getOfferTargetType(existing), target_value: getOfferTargetValue(existing) || null };
+  const price = (b.price_mode !== undefined || b.price_value !== undefined || b.price_value_cents !== undefined || b.club_price_cents !== undefined)
+    ? normalizeOfferPriceInput(b, existing)
+    : { price_mode: existing.price_mode, price_value: existing.price_value, club_price_cents: existing.club_price_cents };
+  const type = b.type ?? existing.type;
+
+  const row = {
+    type,
+    name: b.name ?? existing.name,
+    description: b.description ?? existing.description,
+    image_url: b.image_url === undefined ? existing.image_url : normalizeImageUrl(b.image_url),
+    product_external_id: target.target_type === 'product' ? target.target_value : null,
+    category: target.target_type === 'group' || target.target_type === 'category' ? target.target_value : null,
+    target_type: target.target_type,
+    target_value: target.target_value,
+    price_mode: price.price_mode,
+    price_value: price.price_value,
+    priority: Number(b.priority ?? existing.priority ?? defaultOfferPriority(type, target.target_type)),
+    parent_offer_id: b.parent_offer_id === undefined ? existing.parent_offer_id : b.parent_offer_id,
+    visible_in_app: b.visible_in_app === undefined ? existing.visible_in_app : (b.visible_in_app ? 1 : 0),
+    rounding_mode: b.rounding_mode ?? existing.rounding_mode ?? 'kopeck',
+    club_price_cents: price.club_price_cents,
+    old_price_cents: b.old_price_cents === undefined ? existing.old_price_cents : b.old_price_cents,
+    stars_multiplier: b.stars_multiplier === undefined ? existing.stars_multiplier : b.stars_multiplier,
+    tiers_json: normalizeOfferTiers(b, existing),
+    store_id: b.store_id ?? existing.store_id,
+    audience: b.audience ?? existing.audience,
+    active_from: b.active_from ?? existing.active_from,
+    active_to: b.active_to ?? existing.active_to,
+    is_active: b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0),
+    updated_at: nowIso(),
+    id: req.params.id
+  };
+
+  db.prepare(`UPDATE offers SET
+      type=@type, name=@name, description=@description, image_url=@image_url,
+      product_external_id=@product_external_id, category=@category,
+      target_type=@target_type, target_value=@target_value,
+      price_mode=@price_mode, price_value=@price_value, priority=@priority,
+      parent_offer_id=@parent_offer_id, visible_in_app=@visible_in_app, rounding_mode=@rounding_mode,
+      club_price_cents=@club_price_cents, old_price_cents=@old_price_cents,
+      stars_multiplier=@stars_multiplier, tiers_json=@tiers_json,
+      store_id=@store_id, audience=@audience, active_from=@active_from, active_to=@active_to,
+      is_active=@is_active, updated_at=@updated_at
+    WHERE id=@id`).run(row);
+  logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'offer_updated', entityType: 'offer', entityId: req.params.id, payload: b });
   res.json({ ok: true });
 });
 

@@ -668,6 +668,13 @@ function rewardCodesScreen() {
   `;
 }
 
+function clientOfferPriceLabel(o) {
+  if (o.current_price_cents !== null && o.current_price_cents !== undefined) {
+    return `${Number(o.current_price_cents || 0) / 100} грн`;
+  }
+  return 'Star Club';
+}
+
 function offersScreen() {
   const all = state.data.offers || [];
   const tab = state.data.offerTab || 'club';
@@ -680,30 +687,21 @@ function offersScreen() {
         <button class="${tab === 'wholesale' ? 'active' : ''}" data-offer-tab="wholesale">Оптові</button>
       </div>
       <section class="card gold-border spark">
-        <b>${tab === 'club' ? 'Ексклюзивно для учасників Star Club' : 'Вигідні умови для оптових покупок'}</b>
-        <p class="small">Лише для зареєстрованих клієнтів програми лояльності.</p>
+        <b>${tab === 'club' ? 'Ексклюзивно для учасників Star Club' : 'Вигідні оптові пропозиції'}</b>
+        <p class="small">Актуальна вітрина спеціальних пропозицій програми лояльності.</p>
       </section>
-      ${items.map((o) => tab === 'club' ? `
+      ${items.map((o) => `
         <article class="card offer">
           <div>
+            ${o.badge ? `<span class="pill">${o.badge}</span>` : ''}
             <h3>${o.name}</h3>
             <p class="small">${o.description || ''}</p>
-            ${o.club_price_cents ? `<div class="big-price">${Math.round(o.club_price_cents / 100)} грн</div><p class="small">Замість ${Math.round(o.old_price_cents / 100)} грн</p>` : `<div class="big-price">x${o.stars_multiplier}</div><p class="small">підвищене нарахування зірок</p>`}
-            <p class="offer-scope">${o.product_external_id ? `Товар 1С: <b>${o.product_external_id}</b>` : o.category ? `Категорія 1С: <b>${o.category}</b>` : 'Для всіх дозволених товарів'}</p>
-            <p class="small">Покажіть картку касиру — умова застосовується під час проведення чека в 1С.</p>
+            <div class="big-price">${clientOfferPriceLabel(o)}</div>
+            ${o.old_price_cents ? `<p class="small"><s>${Number(o.old_price_cents) / 100} грн</s></p>` : ''}
           </div>
-          <img src="${o.image_url}" alt="${o.name}">
+          <img src="${o.image_url || '/assets/star.svg'}" alt="${o.name}" onerror="this.onerror=null;this.src='/assets/star.svg'">
         </article>
-      ` : `
-        <article class="card offer">
-          <div>
-            <h3>${o.name}</h3>
-            <p class="small">${o.description || ''}</p>
-            ${(o.tiers || []).map((t) => `<div class="progress-row small"><span>від ${t.qty} шт</span><b class="gold">${t.price} грн/шт</b></div>`).join('')}
-          </div>
-          <img src="${o.image_url}" alt="${o.name}">
-        </article>
-      `).join('')}
+      `).join('') || '<div class="card empty">Активних пропозицій поки немає</div>'}
     </div>
   `;
 }
