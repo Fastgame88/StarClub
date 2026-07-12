@@ -357,6 +357,63 @@ function getActiveOffers(storeId, purchasedAt) {
   });
 }
 
+
+function buildPricingDebug({ items = [], storeId, purchasedAt, calculation }) {
+  const at = new Date(purchasedAt || Date.now()).getTime();
+  const allPricingOffers = db.prepare(`SELECT * FROM offers
+    WHERE type IN ('club', 'wholesale')
+    ORDER BY id DESC
+    LIMIT 50`).all();
+
+  const lines = [];
+  lines.push('STARCLUB PRICING DEBUG');
+  lines.push(`store_id="${String(storeId || '')}" purchased_at="${String(purchasedAt || '')}"`);
+  lines.push(`items=${items.length}; pricing_rules_found=${allPricingOffers.length}`);
+
+  items.forEach((item, index) => {
+    const productCodes = [...itemProductCodes(item)];
+    const groupCodes = [...itemGroupCodes(item)];
+    const resultItem = calculation?.items?.[index] || {};
+    const catalogProduct = productCodes.map((code) => catalogProductByAnyCode(code)).find(Boolean) || null;
+
+    lines.push('');
+    lines.push(`#${Number(item.line_no ?? index + 1)} ${String(item.name || 'Товар')}`);
+    lines.push(`product_codes=[${productCodes.join(', ') || 'EMPTY'}]`);
+    lines.push(`group_codes=[${groupCodes.join(', ') || 'EMPTY'}]`);
+    lines.push(`catalog_external_id=${catalogProduct?.external_id || 'NOT_FOUND'}; catalog_group=${catalogProduct?.group_external_id || 'EMPTY'}`);
+    lines.push(`price=${Number(item.regular_price_cents ?? item.price_cents ?? 0)} -> final=${Number(resultItem.final_price_cents ?? 0)}`);
+
+    let anyMatched = false;
+    for (const offer of allPricingOffers) {
+      let reason = 'ACTIVE';
+      if (!offer.is_active) reason = 'DISABLED';
+      else if (offer.store_id && offer.store_id !== 'all' && String(offer.store_id) !== String(storeId || '')) {
+        reason = `STORE_MISMATCH(rule=${offer.store_id})`;
+      } else if (offer.active_from && new Date(offer.active_from).getTime() > at) {
+        reason = `NOT_STARTED(${offer.active_from})`;
+      } else if (offer.active_to && new Date(offer.active_to).getTime() < at) {
+        reason = `EXPIRED(${offer.active_to})`;
+      }
+
+      const targetType = getOfferTargetType(offer);
+      const targetValue = getOfferTargetValue(offer) || 'EMPTY';
+      const active = reason === 'ACTIVE';
+      const matches = active && offerMatchesItem(offer, item);
+      if (matches) anyMatched = true;
+
+      lines.push(`${matches ? 'MATCH' : 'NO'} rule#${offer.id} "${offer.name}" type=${offer.type} target=${targetType}:${targetValue} mode=${offer.price_mode || 'EMPTY'} value=${offer.price_value ?? 'EMPTY'} status=${active ? 'ACTIVE_TARGET_' + (matches ? 'OK' : 'MISMATCH') : reason}`);
+    }
+
+    if (!anyMatched) lines.push('RESULT: NO ACTIVE PRICING RULE MATCHED THIS ITEM');
+    else {
+      const applied = Array.isArray(resultItem.applied) ? resultItem.applied : [];
+      lines.push(`RESULT: applied=${applied.map((a) => `#${a.offer_id}:${a.type}`).join(', ') || 'NONE'}`);
+    }
+  });
+
+  return lines.join('\n').slice(0, 30000);
+}
+
 function calculateAccrualWithOffers(items = [], storeId, purchasedAt) {
   const offers = getActiveOffers(storeId, purchasedAt);
   let stars = 0;
@@ -1436,7 +1493,15 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
       stars_balance: client.stars_balance,
       available_stars: getClientAvailableStars(client.id)
     },
-    ...calculation
+    ...calculation,
+    ...(body.debug ? {
+      debug_text: buildPricingDebug({
+        items,
+        storeId: body.store_id,
+        purchasedAt: body.purchased_at || nowIso(),
+        calculation
+      })
+    } : {})
   });
 });
 
