@@ -209,6 +209,10 @@ export function migrate() {
       favorite_store TEXT,
       email TEXT,
       marketing_allowed INTEGER DEFAULT 1,
+      consent_rules_at TEXT,
+      consent_personal_data_at TEXT,
+      consent_phone_at TEXT,
+      consent_version TEXT,
       preferences TEXT,
       card_number TEXT UNIQUE NOT NULL,
       card_token TEXT UNIQUE NOT NULL,
@@ -395,6 +399,9 @@ export function migrate() {
       code TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
       category TEXT,
+      target_type TEXT DEFAULT 'group',
+      target_value TEXT,
+      target_name TEXT,
       required_qty INTEGER NOT NULL,
       reward_stars INTEGER NOT NULL,
       is_repeatable INTEGER DEFAULT 1,
@@ -536,6 +543,19 @@ export function migrate() {
   if (!storeColumns.has('created_at')) innerDb.run('ALTER TABLE stores ADD COLUMN created_at TEXT');
   if (!storeColumns.has('updated_at')) innerDb.run('ALTER TABLE stores ADD COLUMN updated_at TEXT');
   innerDb.run('UPDATE stores SET is_active = 1 WHERE is_active IS NULL');
+
+  if (!clientColumns.has('consent_rules_at')) innerDb.run('ALTER TABLE clients ADD COLUMN consent_rules_at TEXT');
+  if (!clientColumns.has('consent_personal_data_at')) innerDb.run('ALTER TABLE clients ADD COLUMN consent_personal_data_at TEXT');
+  if (!clientColumns.has('consent_phone_at')) innerDb.run('ALTER TABLE clients ADD COLUMN consent_phone_at TEXT');
+  if (!clientColumns.has('consent_version')) innerDb.run('ALTER TABLE clients ADD COLUMN consent_version TEXT');
+
+  const stampInfo = innerDb.exec('PRAGMA table_info(stamp_programs)');
+  const stampColumns = new Set((stampInfo?.[0]?.values || []).map((row) => row[1]));
+  if (!stampColumns.has('target_type')) innerDb.run("ALTER TABLE stamp_programs ADD COLUMN target_type TEXT DEFAULT 'group'");
+  if (!stampColumns.has('target_value')) innerDb.run('ALTER TABLE stamp_programs ADD COLUMN target_value TEXT');
+  if (!stampColumns.has('target_name')) innerDb.run('ALTER TABLE stamp_programs ADD COLUMN target_name TEXT');
+  innerDb.run("UPDATE stamp_programs SET target_value = category WHERE target_value IS NULL OR target_value = ''");
+  innerDb.run("UPDATE stamp_programs SET target_type = 'group' WHERE target_type IS NULL OR target_type = ''");
 
   const adminInfo = innerDb.exec('PRAGMA table_info(admin_users)');
   const adminColumns = new Set((adminInfo?.[0]?.values || []).map((row) => row[1]));

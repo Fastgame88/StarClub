@@ -327,3 +327,30 @@ input.input,select.input{font-size:16px}
 .bottom-nav{z-index:30;will-change:transform}
 body:not(.keyboard-open) .bottom-nav{transform:translateX(-50%)!important;opacity:1!important;pointer-events:auto!important}
 .modal-backdrop{z-index:100}
+
+/* v20 — stable touch navigation and privacy consent */
+.bottom-nav{
+  pointer-events:auto!important;
+  touch-action:manipulation;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+  isolation:isolate;
+}
+.bottom-nav button{
+  position:relative;
+  z-index:1;
+  pointer-events:auto;
+  touch-action:manipulation;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.bottom-nav button:active{transform:scale(.97)}
+.consent-copy{padding:12px 14px;border:1px solid rgba(228,183,95,.28);border-radius:16px;background:rgba(228,183,95,.075);color:var(--muted);font-size:13px;line-height:1.5}
+.privacy-link{display:inline;padding:0;border:0;background:transparent;color:var(--gold2);font:inherit;font-weight:900;text-decoration:underline;text-underline-offset:3px;cursor:pointer;touch-action:manipulation}
+.privacy-page .card{display:grid;gap:9px}
+.privacy-page h2,.privacy-page h3{margin:0}
+.privacy-page p{margin:0;color:#d6d8dd;line-height:1.58}
+.privacy-page .small{color:var(--muted)}
+label.check span{min-width:0}

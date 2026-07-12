@@ -340,11 +340,72 @@ function registerScreen() {
         <input class="input" name="password" type="password" autocomplete="new-password" placeholder="Пароль мінімум 6 символів" minlength="6" required>
         <input class="input" name="password_confirm" type="password" autocomplete="new-password" placeholder="Повторіть пароль" minlength="6" required>
       ` : ''}
-      <label class="check"><input type="checkbox" name="agree_rules" required>Я погоджуюсь з правилами програми лояльності</label>
-      <label class="check"><input type="checkbox" name="agree_personal_data" required>Я надаю згоду на обробку персональних даних</label>
-      <label class="check"><input type="checkbox" name="marketing_allowed" ${c.marketing_allowed !== false ? 'checked' : ''}>Дозволяю повідомлення про клубні пропозиції</label>
+      <div class="consent-copy">
+        Реєструючись у Star Club, ви підтверджуєте ознайомлення з
+        <button class="privacy-link" type="button" data-route="privacy">Правилами програми та Політикою конфіденційності</button>.
+      </div>
+      <label class="check"><input type="checkbox" name="agree_rules" ${c.consents?.rules ? 'checked' : ''} required><span>Я погоджуюсь із правилами програми лояльності Star Club.</span></label>
+      <label class="check"><input type="checkbox" name="agree_personal_data" ${c.consents?.personal_data ? 'checked' : ''} required><span>Я добровільно надаю згоду на збирання, зберігання, використання та іншу обробку моїх персональних даних для роботи програми лояльності.</span></label>
+      <label class="check"><input type="checkbox" name="agree_phone_processing" ${c.consents?.phone ? 'checked' : ''} required><span>Я надаю згоду на обробку мого мобільного номера, його використання для ідентифікації акаунта, входу, прив’язки картки, історії покупок і сервісних повідомлень.</span></label>
+      <label class="check"><input type="checkbox" name="marketing_allowed" ${c.marketing_allowed !== false ? 'checked' : ''}><span>Дозволяю отримувати повідомлення про клубні, оптові та персональні пропозиції. Цю згоду можна відкликати у профілі.</span></label>
       <button class="btn" type="submit">${c.registered ? 'Зберегти профіль' : 'Завершити реєстрацію'}</button>
     </form>
+  `;
+}
+
+
+function privacyScreen() {
+  return `
+    ${header('Правила і конфіденційність', true)}
+    <div class="stack privacy-page">
+      <section class="card gold-border">
+        <p class="eyebrow">STAR CLUB</p>
+        <h2>Правила програми лояльності та Політика конфіденційності</h2>
+        <p class="small">Редакція від 12 липня 2026 року.</p>
+      </section>
+
+      <section class="card">
+        <h3>1. Загальні положення</h3>
+        <p>Star Club — програма лояльності мережі магазинів «Надія». Реєстрація є добровільною. Учасник створює особистий акаунт, отримує цифрову картку, може накопичувати зірки, користуватися клубними або оптовими цінами, накопичувальними програмами, QR-кодами та персональними пропозиціями.</p>
+        <p>Фактичні умови окремої пропозиції, строк її дії, перелік товарів, магазинів та інші обмеження відображаються у застосунку або визначаються правилами конкретної акції.</p>
+      </section>
+
+      <section class="card">
+        <h3>2. Які дані обробляються</h3>
+        <p>Для роботи Star Club можуть оброблятися: ім’я, мобільний номер, дата народження, електронна пошта за бажанням, улюблений магазин і вподобання; Telegram ID та дані, які Telegram передає застосунку; номер цифрової картки; історія покупок, товари, кількість, суми чеків, нарахування і списання зірок; прогрес накопичувальних програм і челенджів; QR-коди, купони та звернення до підтримки; технічні дані сесії, необхідні для входу, безпеки й роботи застосунку.</p>
+      </section>
+
+      <section class="card">
+        <h3>3. Мета обробки</h3>
+        <p>Дані використовуються для реєстрації та ідентифікації учасника, входу за номером телефону або Telegram, прив’язки цифрової картки, застосування клубних і оптових цін у 1С, ведення балансу зірок та історії чеків, нарахування прогресу, створення і підтвердження QR-кодів, підтримки користувача, запобігання зловживанням і забезпечення технічної безпеки.</p>
+        <p>Маркетингові повідомлення надсилаються лише за окремою згодою. Відмова від них не припиняє участь у програмі.</p>
+      </section>
+
+      <section class="card">
+        <h3>4. Обробка мобільного номера</h3>
+        <p>Мобільний номер використовується як ідентифікатор учасника, для пошуку і прив’язки картки, входу до акаунта, відновлення доступу, об’єднання покупок з профілем, сервісних повідомлень та звернень до підтримки. Номер не повинен використовуватися для сторонньої реклами без окремої згоди учасника.</p>
+      </section>
+
+      <section class="card">
+        <h3>5. Передавання і зберігання</h3>
+        <p>Дані можуть оброблятися постачальниками технічної інфраструктури, Telegram, касовою системою та 1С, а також підрядниками, які забезпечують роботу сервісу, лише в обсязі, необхідному для їхніх функцій. Доступ до адміністративної частини обмежується авторизацією.</p>
+        <p>Дані зберігаються протягом участі у програмі та додаткового строку, необхідного для виконання законних, бухгалтерських, безпекових або технічних вимог. Після припинення участі дані видаляються або знеособлюються, крім відомостей, які мають зберігатися за законом.</p>
+      </section>
+
+      <section class="card">
+        <h3>6. Права учасника</h3>
+        <p>Учасник може отримати інформацію про свої дані, уточнити або виправити їх, відкликати згоду на маркетингові повідомлення, звернутися щодо видалення акаунта чи припинення обробки, коли це допускається законодавством, а також подати звернення через розділ «Підтримка».</p>
+        <p>Відкликання обов’язкової згоди на обробку даних, без яких неможливо ідентифікувати учасника та вести його бонусний рахунок, може призвести до закриття акаунта і припинення участі у програмі.</p>
+      </section>
+
+      <section class="card">
+        <h3>7. Згода під час реєстрації</h3>
+        <p>Позначаючи обов’язкові поля згоди та натискаючи «Завершити реєстрацію», учасник підтверджує, що прочитав ці правила, надає добровільну й поінформовану згоду на обробку персональних даних та окремо погоджується на обробку мобільного номера для цілей Star Club.</p>
+        <p class="small">Для юридичного оформлення перед публічним запуском у цей документ потрібно підставити повне найменування, код ЄДРПОУ, адресу та контакт власника програми/володільця персональних даних.</p>
+      </section>
+
+      <button class="btn" type="button" data-route="register">Повернутися до реєстрації</button>
+    </div>
   `;
 }
 
@@ -668,11 +729,15 @@ function rewardCodesScreen() {
   `;
 }
 
+function formatOfferMoney(cents) {
+  return `${(Number(cents || 0) / 100).toFixed(2).replace('.', ',')} грн`;
+}
+
 function clientOfferPriceLabel(o) {
   if (o.current_price_cents !== null && o.current_price_cents !== undefined) {
-    return `${Number(o.current_price_cents || 0) / 100} грн`;
+    return `${o.price_from ? 'від ' : ''}${formatOfferMoney(o.current_price_cents)}`;
   }
-  return 'Star Club';
+  return o.discount_label || 'Star Club';
 }
 
 function offersScreen() {
@@ -697,7 +762,7 @@ function offersScreen() {
             <h3>${o.name}</h3>
             <p class="small">${o.description || ''}</p>
             <div class="big-price">${clientOfferPriceLabel(o)}</div>
-            ${o.old_price_cents ? `<p class="small"><s>${Number(o.old_price_cents) / 100} грн</s></p>` : ''}
+            ${o.old_price_cents ? `<p class="small">Стара ціна: <s>${o.price_from ? 'від ' : ''}${formatOfferMoney(o.old_price_cents)}</s></p>` : ''}${o.discount_label ? `<p class="offer-scope">${o.discount_label}</p>` : ''}
           </div>
           <img src="${o.image_url || '/assets/star.svg'}" alt="${o.name}" onerror="this.onerror=null;this.src='/assets/star.svg'">
         </article>
@@ -951,7 +1016,7 @@ function showRewardModal(qr) {
 
 async function render() {
   renderNav();
-  if (!state.client?.registered && !['register', 'login', 'telegramPassword'].includes(state.route)) {
+  if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
     $app.innerHTML = startScreen();
     bindEvents();
     return;
@@ -970,6 +1035,7 @@ async function render() {
     else if (state.route === 'profile') $app.innerHTML = profileScreen();
     else if (state.route === 'rewardCodes') { await loadRewardQrs(); $app.innerHTML = rewardCodesScreen(); }
     else if (state.route === 'telegramPassword') $app.innerHTML = telegramPasswordScreen();
+    else if (state.route === 'privacy') $app.innerHTML = privacyScreen();
     else if (state.route === 'register') $app.innerHTML = registerScreen();
     else if (state.route === 'login') $app.innerHTML = loginScreen();
     else { await loadProgress(); $app.innerHTML = homeScreen(); }
@@ -1008,7 +1074,7 @@ function validateRegisterForm(form) {
     if (password.length < 6) return 'Пароль має містити мінімум 6 символів';
     if (password !== confirm) return 'Паролі не співпадають';
   }
-  if (!fd.has('agree_rules') || !fd.has('agree_personal_data')) return 'Потрібно погодитись з правилами та обробкою персональних даних';
+  if (!fd.has('agree_rules') || !fd.has('agree_personal_data') || !fd.has('agree_phone_processing')) return 'Потрібно погодитися з правилами, обробкою персональних даних і мобільного номера';
   return null;
 }
 
@@ -1040,7 +1106,13 @@ function bindNotificationEvents() {
 
 function bindEvents() {
   bindNotificationEvents();
-  document.querySelectorAll('[data-route]').forEach((el) => el.onclick = () => setRoute(el.dataset.route));
+  document.querySelectorAll('[data-route]').forEach((el) => {
+    if ($nav.contains(el)) return;
+    el.onclick = (event) => {
+      event?.preventDefault?.();
+      setRoute(el.dataset.route);
+    };
+  });
   document.querySelectorAll('[data-back="1"]').forEach((el) => el.onclick = () => setRoute(state.client?.registered ? 'home' : 'start'));
   document.querySelectorAll('[data-offer-tab]').forEach((el) => el.onclick = () => { state.data.offerTab = el.dataset.offerTab; render(); });
   document.querySelectorAll('[data-logout]').forEach((el) => el.onclick = () => { localStorage.removeItem('starclub_session'); localStorage.removeItem('starclub_route'); location.reload(); });
@@ -1185,6 +1257,8 @@ function bindEvents() {
       body.name = String(body.name || '').trim();
       body.agree_rules = fd.has('agree_rules');
       body.agree_personal_data = fd.has('agree_personal_data');
+      body.agree_phone_processing = fd.has('agree_phone_processing');
+      body.consent_version = '2026-07-12';
       body.marketing_allowed = fd.has('marketing_allowed');
       try {
         const data = await api('/api/client/register', { method: 'POST', body: JSON.stringify(body) });
@@ -1207,6 +1281,17 @@ function bindEvents() {
   }
 }
 
+
+
+// Делегований обробник не губиться, навіть коли renderNav() перебудовує кнопки.
+$nav.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-route]');
+  if (!button || !$nav.contains(button)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (button.disabled) return;
+  setRoute(button.dataset.route);
+});
 
 function setupMobileKeyboardUX() {
   const editableSelector = 'input, textarea, select';

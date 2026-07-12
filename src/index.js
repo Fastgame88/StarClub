@@ -204,6 +204,12 @@ function formatClient(client) {
     favorite_store: client.favorite_store,
     email: client.email,
     marketing_allowed: Boolean(client.marketing_allowed),
+    consents: {
+      rules: Boolean(client.consent_rules_at),
+      personal_data: Boolean(client.consent_personal_data_at),
+      phone: Boolean(client.consent_phone_at),
+      version: client.consent_version || null
+    },
     preferences: client.preferences ? JSON.parse(client.preferences) : [],
     card_number: client.card_number,
     card_token: client.card_token,
@@ -265,6 +271,7 @@ function normalizeImageUrl(value) {
   const raw = String(value || '').trim();
   if (!raw) return '/assets/star.svg';
   if (raw.startsWith('/')) return raw;
+  if (/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(raw) && raw.length <= 1_500_000) return raw;
 
   try {
     const url = new URL(raw);
@@ -531,6 +538,86 @@ function parseWholesaleTiers(offer) {
   } catch {
     return [];
   }
+}
+
+function productsForOfferShowcase(offer = {}) {
+  const targetType = getOfferTargetType(offer);
+  const targetValue = normalizeOneCCode(getOfferTargetValue(offer));
+
+  if (targetType === 'product') {
+    const product = db.prepare(`SELECT * FROM products
+      WHERE external_id = ? OR id = ?
+      LIMIT 1`).get(targetValue, targetValue);
+    return product ? [product] : [];
+  }
+
+  if (targetType === 'group') {
+    return db.prepare(`SELECT * FROM products
+      WHERE group_external_id = ? OR group_path_json LIKE ?
+      ORDER BY price_cents ASC, name ASC
+      LIMIT 5000`).all(targetValue, `%"${targetValue.replaceAll('"', '')}"%`);
+  }
+
+  if (targetType === 'all') {
+    return db.prepare(`SELECT * FROM products ORDER BY price_cents ASC, name ASC LIMIT 5000`).all();
+  }
+
+  return db.prepare(`SELECT * FROM products
+    WHERE category = ? OR group_name = ?
+    ORDER BY price_cents ASC, name ASC
+    LIMIT 5000`).all(getOfferTargetValue(offer), getOfferTargetValue(offer));
+}
+
+function offerShowcaseView(offer = {}) {
+  const products = productsForOfferShowcase(offer);
+  const pricedProducts = products.filter((p) => Number(p.price_cents || 0) > 0);
+  const representative = pricedProducts[0] || products[0] || null;
+  const targetType = getOfferTargetType(offer);
+  const isFromPrice = targetType === 'group' || targetType === 'all';
+  const regularPriceCents = pricedProducts.length
+    ? Math.min(...pricedProducts.map((p) => Math.max(0, Math.round(Number(p.price_cents || 0)))))
+    : (offer.old_price_cents !== null && offer.old_price_cents !== undefined ? Number(offer.old_price_cents) : null);
+
+  let currentPriceCents = null;
+  let discountLabel = '';
+
+  if (offer.type === 'club') {
+    const mode = offer.price_mode || (offer.club_price_cents !== null && offer.club_price_cents !== undefined ? 'fixed' : null);
+    const value = offer.price_mode ? offer.price_value : offer.club_price_cents;
+    if (mode === 'percent') discountLabel = `−${Number(value || 0)}%`;
+    else if (mode === 'amount') discountLabel = `−${money(value)} грн`;
+    else if (mode === 'fixed') discountLabel = `${money(value)} грн`;
+
+    if (regularPriceCents !== null && mode && Number.isFinite(Number(value))) {
+      currentPriceCents = calculatePriceByMode(regularPriceCents, mode, value, offer.rounding_mode || 'kopeck');
+    }
+  }
+
+  if (offer.type === 'wholesale') {
+    const tier = parseWholesaleTiers(offer)[0] || null;
+    if (tier) {
+      discountLabel = tier.mode === 'percent'
+        ? `від ${tier.qty} шт — −${Number(tier.value || 0)}%`
+        : tier.mode === 'amount'
+          ? `від ${tier.qty} шт — −${money(tier.value)} грн`
+          : `від ${tier.qty} шт — ${money(tier.value)} грн/шт`;
+      if (regularPriceCents !== null) {
+        currentPriceCents = calculatePriceByMode(regularPriceCents, tier.mode, tier.value, offer.rounding_mode || 'kopeck');
+      }
+    }
+  }
+
+  return {
+    ...offer,
+    image_url: normalizeImageUrl(offer.image_url || representative?.image_url),
+    current_price_cents: currentPriceCents,
+    old_price_cents: regularPriceCents,
+    price_from: isFromPrice,
+    discount_label: discountLabel || null,
+    badge: offer.type === 'wholesale' ? 'ОПТОВА ЦІНА' : 'КЛУБНА ЦІНА',
+    target_name: representative?.name || offer.target_value || offer.category || null,
+    products_count: products.length
+  };
 }
 
 function getOfferPriority(offer) {
@@ -1024,22 +1111,81 @@ function getUniqueCouponCode() {
   return `${makeCouponCode()}-${Date.now().toString(36).toUpperCase()}`;
 }
 
-function stampProgramMatchesItem(program, item = {}) {
-  const wanted = normalizeMatchValue(program.category);
-  if (!wanted) return false;
-  const values = [
-    item.external_product_id,
-    item.product_id,
-    item.category,
-    item.name
-  ].map(normalizeMatchValue).filter(Boolean);
-  if (wanted === 'coffee' || wanted.includes('кава')) {
-    return values.some((v) => v.includes('coffee') || v.includes('кава'));
+function getStampProgramTarget(program = {}) {
+  const targetType = String(program.target_type || '').trim().toLowerCase()
+    || (program.category ? 'group' : 'category');
+  const targetValue = String(program.target_value || program.category || '').trim();
+  return { targetType, targetValue };
+}
+
+function getCatalogProductForStampItem(item = {}) {
+  for (const code of itemProductCodes(item)) {
+    const product = db.prepare(`SELECT external_id, id, name, category, group_external_id, group_name, group_path_json
+      FROM products
+      WHERE external_id = ? OR id = ?
+      LIMIT 1`).get(code, code);
+    if (product) return product;
   }
-  if (wanted === 'bakery' || wanted.includes('випіч') || wanted.includes('хліб') || wanted.includes('багет')) {
+  return null;
+}
+
+function stampProgramMatchesItem(program, item = {}) {
+  const { targetType, targetValue } = getStampProgramTarget(program);
+  const wantedCode = normalizeOneCCode(targetValue);
+  const wantedText = normalizeMatchValue(targetValue);
+  if (!wantedCode && !wantedText) return false;
+
+  const productCodes = itemProductCodes(item);
+  const groupCodes = itemGroupCodes(item);
+  const catalogProduct = getCatalogProductForStampItem(item);
+
+  if (targetType === 'product') {
+    return productCodes.has(wantedCode);
+  }
+
+  if (targetType === 'group') {
+    if (groupCodes.has(wantedCode)) return true;
+
+    // Старі програми зберігали один код у полі category без типу цілі.
+    // Якщо там фактично код товару, не втрачаємо його прогрес після міграції.
+    if (productCodes.has(wantedCode)) return true;
+
+    // Backward compatibility for old text-based programs such as coffee/bakery.
+    const textValues = [
+      item.category,
+      item.name,
+      item.group_name,
+      catalogProduct?.category,
+      catalogProduct?.group_name
+    ].map(normalizeMatchValue).filter(Boolean);
+
+    if (wantedText === 'coffee' || wantedText.includes('кава')) {
+      return textValues.some((v) => v.includes('coffee') || v.includes('кава') || v.includes('лате') || v.includes('капуч'));
+    }
+    if (wantedText === 'bakery' || wantedText.includes('випіч') || wantedText.includes('хліб') || wantedText.includes('багет')) {
+      return textValues.some((v) => v.includes('bakery') || v.includes('випіч') || v.includes('хліб') || v.includes('багет') || v.includes('круасан'));
+    }
+    return textValues.some((v) => v === wantedText || v.includes(wantedText) || wantedText.includes(v));
+  }
+
+  const values = [
+    ...productCodes,
+    ...groupCodes,
+    item.category,
+    item.name,
+    item.group_name,
+    catalogProduct?.category,
+    catalogProduct?.group_name
+  ].map(normalizeMatchValue).filter(Boolean);
+
+  if (wantedText === 'coffee' || wantedText.includes('кава')) {
+    return values.some((v) => v.includes('coffee') || v.includes('кава') || v.includes('лате') || v.includes('капуч'));
+  }
+  if (wantedText === 'bakery' || wantedText.includes('випіч') || wantedText.includes('хліб') || wantedText.includes('багет')) {
     return values.some((v) => v.includes('bakery') || v.includes('випіч') || v.includes('хліб') || v.includes('багет') || v.includes('круасан'));
   }
-  return values.some((v) => v === wanted || v.includes(wanted) || wanted.includes(v));
+
+  return values.some((v) => v === wantedText || v.includes(wantedText) || wantedText.includes(v));
 }
 
 function findRewardProductForStamp(program, rewardItem = null) {
@@ -1423,7 +1569,13 @@ app.post('/api/client/set-password', clientAuth, (req, res) => {
 
 app.post('/api/client/register', optionalClientAuth, (req, res) => {
   const body = req.body || {};
-  if (!body.agree_rules || !body.agree_personal_data) return res.status(400).json({ ok: false, error: 'CONSENTS_REQUIRED' });
+  if (!body.agree_rules || !body.agree_personal_data || !body.agree_phone_processing) {
+    return res.status(400).json({
+      ok: false,
+      error: 'CONSENTS_REQUIRED',
+      message: 'Потрібно погодитися з правилами, політикою конфіденційності та обробкою мобільного номера'
+    });
+  }
   if (!req.client?.id) {
     const t = nowIso();
     const webId = `web-${randomToken()}`;
@@ -1467,8 +1619,20 @@ app.post('/api/client/register', optionalClientAuth, (req, res) => {
   const preferences = Array.isArray(body.preferences)
     ? body.preferences.map((v) => String(v).trim()).filter(Boolean)
     : String(body.preferences || '').split(',').map((v) => v.trim()).filter(Boolean);
-  db.prepare(`UPDATE clients SET phone = ?, name = ?, birth_date = ?, favorite_store = ?, email = ?, marketing_allowed = ?, preferences = ?, password_hash = ?, password_set_at = ?, updated_at = ? WHERE id = ?`)
-    .run(phone, name, birthDate, favoriteStore, body.email || null, body.marketing_allowed ? 1 : 0, JSON.stringify(preferences), nextPasswordHash, nextPasswordSetAt, t, req.client.id);
+  const consentVersion = String(body.consent_version || '2026-07-12');
+  db.prepare(`UPDATE clients SET
+      phone = ?, name = ?, birth_date = ?, favorite_store = ?, email = ?, marketing_allowed = ?,
+      consent_rules_at = COALESCE(consent_rules_at, ?),
+      consent_personal_data_at = COALESCE(consent_personal_data_at, ?),
+      consent_phone_at = COALESCE(consent_phone_at, ?),
+      consent_version = ?,
+      preferences = ?, password_hash = ?, password_set_at = ?, updated_at = ?
+    WHERE id = ?`)
+    .run(
+      phone, name, birthDate, favoriteStore, body.email || null, body.marketing_allowed ? 1 : 0,
+      t, t, t, consentVersion,
+      JSON.stringify(preferences), nextPasswordHash, nextPasswordSetAt, t, req.client.id
+    );
 
   let client = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.client.id);
   tryAwardProfileBonus(client.id, 'immediately');
@@ -1610,16 +1774,34 @@ app.get('/api/client/reward-qrs', clientAuth, (req, res) => {
 
 app.get('/api/client/offers', clientAuth, (req, res) => {
   const now = Date.now();
-  const rows = db.prepare(`SELECT * FROM promo_offers WHERE is_active = 1 ORDER BY id DESC`).all()
+  const favoriteStore = String(req.client?.favorite_store || '');
+
+  const rules = db.prepare(`SELECT * FROM offers
+      WHERE is_active = 1
+        AND visible_in_app = 1
+        AND type IN ('club', 'wholesale')
+      ORDER BY priority DESC, id DESC`).all()
     .filter((offer) => {
+      if (offer.store_id && offer.store_id !== 'all' && String(offer.store_id) !== favoriteStore) return false;
       if (offer.active_from && new Date(offer.active_from).getTime() > now) return false;
       if (offer.active_to && new Date(offer.active_to).getTime() < now) return false;
       return true;
-    });
-  res.json({
-    ok: true,
-    offers: rows.map((o) => ({ ...o, image_url: normalizeImageUrl(o.image_url) }))
-  });
+    })
+    .map(offerShowcaseView);
+
+  // Старі рекламні картки залишаються видимими для сумісності,
+  // але всі нові клубні/оптові пропозиції створюються одним ціновим правилом.
+  const existingKeys = new Set(rules.map((o) => `${o.type}:${normalizeMatchValue(o.name)}`));
+  const legacy = db.prepare(`SELECT * FROM promo_offers WHERE is_active = 1 ORDER BY id DESC`).all()
+    .filter((offer) => {
+      if (offer.active_from && new Date(offer.active_from).getTime() > now) return false;
+      if (offer.active_to && new Date(offer.active_to).getTime() < now) return false;
+      if (offer.store_id && offer.store_id !== 'all' && String(offer.store_id) !== favoriteStore) return false;
+      return !existingKeys.has(`${offer.type}:${normalizeMatchValue(offer.name)}`);
+    })
+    .map((o) => ({ ...o, image_url: normalizeImageUrl(o.image_url), legacy_promo: true }));
+
+  res.json({ ok: true, offers: [...rules, ...legacy] });
 });
 
 app.get('/api/client/progress', clientAuth, (req, res) => {
@@ -2352,23 +2534,31 @@ function normalizeOfferTiers(body, existing = null) {
 }
 
 app.get('/api/admin/catalog/product-groups', adminAuth, (req, res) => {
-  const rows = db.prepare(`SELECT external_id, group_external_id, group_name, category, group_path_json FROM products`).all();
+  const rows = db.prepare(`SELECT external_id, group_external_id, group_name, category, group_path_json, price_cents FROM products`).all();
   const groups = new Map();
-  const touch = (id, name, externalId) => {
+  const touch = (id, name, externalId, priceCents) => {
     const key = normalizeOneCCode(id);
     if (!key) return;
-    const current = groups.get(key) || { id: key, name: String(name || key), products: new Set() };
+    const current = groups.get(key) || { id: key, name: String(name || key), products: new Set(), prices: [] };
     if ((!current.name || current.name === current.id) && name) current.name = String(name);
     if (externalId) current.products.add(String(externalId));
+    const price = Math.max(0, Math.round(Number(priceCents || 0)));
+    if (price > 0) current.prices.push(price);
     groups.set(key, current);
   };
   for (const row of rows) {
-    touch(row.group_external_id, row.group_name || row.category, row.external_id);
+    touch(row.group_external_id, row.group_name || row.category, row.external_id, row.price_cents);
     const path = parseJsonArraySafe(row.group_path_json) || [];
-    for (const groupId of path) touch(groupId, groupId, row.external_id);
+    for (const groupId of path) touch(groupId, groupId, row.external_id, row.price_cents);
   }
   const result = [...groups.values()]
-    .map((g) => ({ id: g.id, name: g.name, products_count: g.products.size }))
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      products_count: g.products.size,
+      min_price_cents: g.prices.length ? Math.min(...g.prices) : null,
+      max_price_cents: g.prices.length ? Math.max(...g.prices) : null
+    }))
     .sort((a, b) => String(a.name).localeCompare(String(b.name), 'uk'));
   res.json({ ok: true, groups: result });
 });
@@ -2632,10 +2822,29 @@ app.get('/api/admin/catalog/stamps', adminAuth, (req, res) => {
 
 app.post('/api/admin/catalog/stamps', adminAuth, (req, res) => {
   const b = req.body || {};
-  if (!b.name || !b.category || !Number(b.required_qty) || Number.isNaN(Number(b.reward_stars ?? 0))) return res.status(400).json({ ok: false, error: 'STAMP_FIELDS_REQUIRED' });
+  const targetType = String(b.target_type || 'group').toLowerCase();
+  const targetValue = targetType === 'all' ? 'all' : normalizeOneCCode(b.target_value || b.category);
+  const targetName = String(b.target_name || '').trim() || targetValue;
+  if (!b.name || !targetValue || !Number(b.required_qty) || Number.isNaN(Number(b.reward_stars ?? 0))) {
+    return res.status(400).json({ ok: false, error: 'STAMP_FIELDS_REQUIRED' });
+  }
   const t = nowIso();
-  const result = db.prepare('INSERT INTO stamp_programs(code, name, category, required_qty, reward_stars, is_repeatable, is_active, created_at) VALUES(?, ?, ?, ?, ?, ?, 1, ?)')
-    .run(b.code || randomToken('stamp_'), b.name, b.category, Number(b.required_qty), Number(b.reward_stars), b.is_repeatable === false ? 0 : 1, t);
+  const result = db.prepare(`INSERT INTO stamp_programs(
+      code, name, category, target_type, target_value, target_name,
+      required_qty, reward_stars, is_repeatable, is_active, created_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
+    .run(
+      b.code || randomToken('stamp_'),
+      b.name,
+      targetValue,
+      targetType,
+      targetValue,
+      targetName,
+      Number(b.required_qty),
+      Number(b.reward_stars),
+      b.is_repeatable === false ? 0 : 1,
+      t
+    );
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'stamp_program_created', entityType: 'stamp_program', entityId: String(result.lastInsertRowid), payload: b });
   res.json({ ok: true, id: result.lastInsertRowid });
 });
@@ -2748,8 +2957,28 @@ app.patch('/api/admin/catalog/stamps/:id', adminAuth, (req, res) => {
   const b = req.body || {};
   const existing = db.prepare('SELECT * FROM stamp_programs WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ ok: false, error: 'STAMP_NOT_FOUND' });
-  db.prepare('UPDATE stamp_programs SET name=?, category=?, required_qty=?, reward_stars=?, is_repeatable=?, is_active=? WHERE id=?')
-    .run(b.name ?? existing.name, b.category ?? existing.category, b.required_qty ?? existing.required_qty, b.reward_stars ?? existing.reward_stars, b.is_repeatable === undefined ? existing.is_repeatable : (b.is_repeatable ? 1 : 0), b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), req.params.id);
+
+  const targetType = String(b.target_type ?? existing.target_type ?? 'group').toLowerCase();
+  const rawTargetValue = b.target_value ?? b.category ?? existing.target_value ?? existing.category;
+  const targetValue = targetType === 'all' ? 'all' : normalizeOneCCode(rawTargetValue);
+  const targetName = String(b.target_name ?? existing.target_name ?? targetValue).trim() || targetValue;
+
+  db.prepare(`UPDATE stamp_programs SET
+      name = ?, category = ?, target_type = ?, target_value = ?, target_name = ?,
+      required_qty = ?, reward_stars = ?, is_repeatable = ?, is_active = ?
+    WHERE id = ?`)
+    .run(
+      b.name ?? existing.name,
+      targetValue,
+      targetType,
+      targetValue,
+      targetName,
+      b.required_qty ?? existing.required_qty,
+      b.reward_stars ?? existing.reward_stars,
+      b.is_repeatable === undefined ? existing.is_repeatable : (b.is_repeatable ? 1 : 0),
+      b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0),
+      req.params.id
+    );
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'stamp_program_updated', entityType: 'stamp_program', entityId: req.params.id, payload: b });
   res.json({ ok: true });
 });
