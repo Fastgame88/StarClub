@@ -38,7 +38,42 @@ function getAdminBySession(token) {
     WHERE s.token = ? AND s.expires_at > ? AND a.is_active = 1`).get(token, nowIso()) || null;
 }
 
+function isOpenDesktopAdminRequest(req) {
+  const enabled = String(process.env.ADMIN_DESKTOP_OPEN || '').trim().toLowerCase() === 'true';
+  if (!enabled) return false;
+  if (req.header('x-starclub-admin-desktop') !== '1') return false;
+
+  const requestHost = String(req.get('host') || '').toLowerCase();
+  const origin = req.get('origin');
+  const referer = req.get('referer');
+
+  try {
+    if (origin && new URL(origin).host.toLowerCase() !== requestHost) return false;
+    if (referer && new URL(referer).host.toLowerCase() !== requestHost) return false;
+  } catch {
+    return false;
+  }
+
+  return true;
+}
+
 function adminAuth(req, res, next) {
+  // Optional no-login mode for the same-origin desktop admin panel.
+  // Enable explicitly with ADMIN_DESKTOP_OPEN=true on Railway.
+  if (isOpenDesktopAdminRequest(req)) {
+    req.admin = {
+      id: -1,
+      telegram_id: 'desktop-open',
+      name: 'Desktop Owner',
+      username: null,
+      login: null,
+      role: 'owner',
+      permissions_json: '[]',
+      is_active: 1
+    };
+    return next();
+  }
+
   const expected = process.env.ADMIN_API_KEY || 'change-this-admin-key';
   const key = req.header('x-admin-key') || req.query.admin_key;
   if (key && key === expected) {
@@ -491,7 +526,12 @@ function getOfferPriority(offer) {
 }
 
 function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
-  const offers = getActiveOffers(storeId, purchasedAt);
+  // Вітринні demo-пропозиції не є реальними ціновими правилами 1С.
+  // Реальні правила з нової адмінки мають target_type або visible_in_app = 0.
+  const offers = getActiveOffers(storeId, purchasedAt).filter((offer) => {
+    if (offer.type !== 'club' && offer.type !== 'wholesale') return true;
+    return Boolean(offer.target_type) || Number(offer.visible_in_app) === 0;
+  });
   const calculatedItems = [];
   const appliedConditions = [];
   let regularTotalCents = 0;
@@ -1072,7 +1112,32 @@ app.post('/api/admin/auth/password', (req, res) => {
   res.json({ ok: true, admin: formatAdmin(admin), session });
 });
 
-app.get('/api/admin/me', adminAuth, (req, res) => res.json({ ok: true, admin: formatAdmin(req.admin) }));
+app.get('/api/admin/me', adminAuth, (req, res) => res.json({
+  ok: true,
+  admin: formatAdmin(req.admin),
+  auth_mode: req.admin?.telegram_id === 'desktop-open' ? 'desktop-open' : 'protected'
+}));
+
+app.get('/api/admin/debug/pricing', adminAuth, (req, res) => {
+  const productsCount = Number(db.prepare('SELECT COUNT(*) AS count FROM products').get()?.count || 0);
+  const offersCount = Number(db.prepare('SELECT COUNT(*) AS count FROM offers').get()?.count || 0);
+  const pricingRules = db.prepare(`SELECT id, type, name, target_type, target_value, price_mode, price_value,
+      tiers_json, store_id, active_from, active_to, is_active, created_at, updated_at
+    FROM offers
+    WHERE type IN ('club', 'wholesale')
+    ORDER BY id DESC
+    LIMIT 50`).all();
+
+  res.json({
+    ok: true,
+    auth_mode: req.admin?.telegram_id === 'desktop-open' ? 'desktop-open' : 'protected',
+    database_file: process.env.DATABASE_FILE || process.env.DB_FILE || './data/star-club.sqlite',
+    products_count: productsCount,
+    offers_count: offersCount,
+    pricing_rules_count: pricingRules.length,
+    pricing_rules: pricingRules
+  });
+});
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'star-club', time: nowIso() }));
 
@@ -1477,10 +1542,15 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
   const items = Array.isArray(body.items) ? body.items : [];
   if (!items.length) return res.status(400).json({ ok: false, error: 'ITEMS_REQUIRED' });
 
+  // Для онлайн-розрахунку ціни використовуємо фактичний поточний час сервера.
+  // У старій 1С дата чека часто передається як 00:00:00, через що правило,
+  // створене сьогодні, помилково мало статус NOT_STARTED.
+  const pricingAt = nowIso();
+
   const calculation = calculateDraftWithOffers({
     items,
     storeId: body.store_id,
-    purchasedAt: body.purchased_at || nowIso()
+    purchasedAt: pricingAt
   });
 
   res.json({
@@ -1498,7 +1568,7 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
       debug_text: buildPricingDebug({
         items,
         storeId: body.store_id,
-        purchasedAt: body.purchased_at || nowIso(),
+        purchasedAt: pricingAt,
         calculation
       })
     } : {})
@@ -2169,7 +2239,9 @@ app.post('/api/admin/catalog/offers', adminAuth, (req, res) => {
       @active_from, @active_to, @is_active, @created_at, @updated_at
     )`).run(row);
   logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'offer_created', entityType: 'offer', entityId: String(result.lastInsertRowid), payload: row });
-  res.json({ ok: true, id: result.lastInsertRowid });
+  const saved = db.prepare('SELECT * FROM offers WHERE id = ?').get(result.lastInsertRowid);
+  const pricingRulesCount = Number(db.prepare("SELECT COUNT(*) AS count FROM offers WHERE type IN ('club', 'wholesale')").get()?.count || 0);
+  res.json({ ok: true, id: result.lastInsertRowid, saved, pricing_rules_count: pricingRulesCount });
 });
 
 app.post('/api/admin/catalog/pricing/bulk', adminAuth, (req, res) => {
@@ -2244,7 +2316,8 @@ app.post('/api/admin/catalog/pricing/bulk', adminAuth, (req, res) => {
   });
   tx();
   logAudit({ actorType: 'admin', actorId: String(req.admin?.id || 'admin'), action: 'pricing_bulk_created', entityType: 'offer', entityId: String(createdIds[0] || ''), payload: { type: b.type, targetType, targetValues, created: createdIds.length } });
-  res.json({ ok: true, created: createdIds.length, ids: createdIds });
+  const pricingRulesCount = Number(db.prepare("SELECT COUNT(*) AS count FROM offers WHERE type IN ('club', 'wholesale')").get()?.count || 0);
+  res.json({ ok: true, created: createdIds.length, ids: createdIds, pricing_rules_count: pricingRulesCount });
 });
 
 

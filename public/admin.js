@@ -21,13 +21,26 @@ function key(){ return localStorage.getItem('starclub_admin_key') || keyInput?.v
 function showLogin(){ loginOverlay?.classList.remove('hidden'); }
 function hideLogin(){ loginOverlay?.classList.add('hidden'); }
 async function api(path, options={}){
-  const headers={'Content-Type':'application/json',...(options.headers||{})};
+  const headers={
+    'Content-Type':'application/json',
+    'x-starclub-admin-desktop':'1',
+    ...(options.headers||{})
+  };
   if(adminToken) headers.Authorization=`Bearer ${adminToken}`;
   else if(key()) headers['x-admin-key']=key();
   const res = await fetch(path,{...options,headers});
   const data = await res.json().catch(()=>({}));
   if(!res.ok||data.ok===false){
-    const err=new Error(data.message||data.error||'Admin API error'); err.status=res.status; err.code=data.error; throw err;
+    const message=data.message||data.error||'Admin API error';
+    const err=new Error(message); err.status=res.status; err.code=data.error;
+    console.error('STARCLUB ADMIN API ERROR', {path, status:res.status, data});
+    if(options.silentError!==true) alert(`Star Club API: ${res.status}\n${message}`);
+    throw err;
+  }
+  const method=String(options.method||'GET').toUpperCase();
+  if(['POST','PATCH'].includes(method) && (path==='/api/admin/catalog/offers' || path==='/api/admin/catalog/pricing/bulk' || path.startsWith('/api/admin/catalog/offers/'))){
+    const count=data.pricing_rules_count;
+    alert(`Цінове правило збережено.${count!==undefined?`\nПравил у базі: ${count}`:''}`);
   }
   return data;
 }
@@ -730,7 +743,18 @@ function applyAdminVisibility(){
     el.style.display = permissions.has(el.dataset.tab) ? '' : 'none';
   });
 }
-async function bootstrapAdmin(){try{const data=await api('/api/admin/me');admin=data.admin;hideLogin();applyAdminVisibility();render();}catch(e){showLogin();}}
+async function bootstrapAdmin(){
+  try{
+    const data=await api('/api/admin/me',{silentError:true});
+    admin=data.admin;
+    hideLogin();
+    applyAdminVisibility();
+    render();
+  }catch(e){
+    showLogin();
+    console.error('STARCLUB ADMIN BOOTSTRAP FAILED',e);
+  }
+}
 
 function setupAdminMobileKeyboard(){
   const fields='input,textarea,select';
