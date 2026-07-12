@@ -23,7 +23,6 @@ function hideLogin(){ loginOverlay?.classList.add('hidden'); }
 async function api(path, options={}){
   const headers={
     'Content-Type':'application/json',
-    'x-starclub-admin-desktop':'1',
     ...(options.headers||{})
   };
   if(adminToken) headers.Authorization=`Bearer ${adminToken}`;
@@ -732,7 +731,10 @@ $('#passwordAdminLogin')?.addEventListener('submit',async(e)=>{
     hideLogin();
     applyAdminVisibility();
     render();
-  }catch(error){ alert(error.message||'Не вдалося увійти'); }
+  }catch(error){
+    const message=error.message==='INVALID_CREDENTIALS'?'Невірний логін або пароль.':(error.message||'Не вдалося увійти');
+    alert(message);
+  }
 });
 function applyAdminVisibility(){
   const owner = admin?.role === 'owner' || Boolean(key());
@@ -751,6 +753,10 @@ async function bootstrapAdmin(){
     applyAdminVisibility();
     render();
   }catch(e){
+    if(e.status===401){
+      adminToken='';
+      localStorage.removeItem('starclub_admin_session');
+    }
     showLogin();
     console.error('STARCLUB ADMIN BOOTSTRAP FAILED',e);
   }

@@ -58,21 +58,7 @@ function isOpenDesktopAdminRequest(req) {
 }
 
 function adminAuth(req, res, next) {
-  // Optional no-login mode for the same-origin desktop admin panel.
-  // Enable explicitly with ADMIN_DESKTOP_OPEN=true on Railway.
-  if (isOpenDesktopAdminRequest(req)) {
-    req.admin = {
-      id: -1,
-      telegram_id: 'desktop-open',
-      name: 'Desktop Owner',
-      username: null,
-      login: null,
-      role: 'owner',
-      permissions_json: '[]',
-      is_active: 1
-    };
-    return next();
-  }
+  // Desktop admin is always protected. Password/API-key/Telegram session is required.
 
   const expected = process.env.ADMIN_API_KEY || 'change-this-admin-key';
   const key = req.header('x-admin-key') || req.query.admin_key;
@@ -165,6 +151,38 @@ function createAdminSession(adminId) {
     .run(token, adminId, nowIso(), expiresAt);
   return { token, expires_at: expiresAt };
 }
+
+function ensureDesktopOwnerCredentials() {
+  const login = String(process.env.ADMIN_OWNER_LOGIN || 'owner').trim();
+  const password = String(process.env.ADMIN_OWNER_PASSWORD || 'StarClub2026!');
+  if (!login || password.length < 6) {
+    throw new Error('ADMIN_OWNER_LOGIN/ADMIN_OWNER_PASSWORD are invalid');
+  }
+
+  const now = nowIso();
+  const passwordHash = hashPassword(password);
+  let owner = db.prepare('SELECT * FROM admin_users WHERE login = ?').get(login);
+
+  if (!owner) {
+    owner = db.prepare("SELECT * FROM admin_users WHERE role = 'owner' ORDER BY id LIMIT 1").get();
+  }
+
+  if (owner) {
+    db.prepare(`UPDATE admin_users
+      SET role = 'owner', permissions_json = '[]', login = ?, password_hash = ?,
+          password_set_at = ?, is_active = 1, updated_at = ?
+      WHERE id = ?`)
+      .run(login, passwordHash, now, now, owner.id);
+  } else {
+    db.prepare(`INSERT INTO admin_users(
+      telegram_id, name, username, role, permissions_json, login,
+      password_hash, password_set_at, is_active, created_at, updated_at
+    ) VALUES(?, ?, NULL, 'owner', '[]', ?, ?, ?, 1, ?, ?)`)
+      .run(`webadmin:${login}`, 'Owner', login, passwordHash, now, now, now);
+  }
+}
+
+ensureDesktopOwnerCredentials();
 
 
 function money(cents) {
@@ -1115,7 +1133,7 @@ app.post('/api/admin/auth/password', (req, res) => {
 app.get('/api/admin/me', adminAuth, (req, res) => res.json({
   ok: true,
   admin: formatAdmin(req.admin),
-  auth_mode: req.admin?.telegram_id === 'desktop-open' ? 'desktop-open' : 'protected'
+  auth_mode: 'protected'
 }));
 
 app.get('/api/admin/debug/pricing', adminAuth, (req, res) => {
