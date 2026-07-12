@@ -754,23 +754,6 @@ function addChallengeVisit(clientId, receiptId, purchasedAt, totalCents, eligibl
   }
 }
 
-function ensureStampItemProgressTable() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS client_stamp_item_progress (
-      client_id INTEGER NOT NULL,
-      program_id INTEGER NOT NULL,
-      item_key TEXT NOT NULL,
-      product_external_id TEXT,
-      product_name TEXT NOT NULL,
-      category TEXT,
-      qty INTEGER NOT NULL DEFAULT 0,
-      first_seen_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (client_id, program_id, item_key)
-    );
-  `);
-}
-
 function getStampItemIdentity(item = {}) {
   const productExternalId = String(item.external_product_id || item.product_id || '').trim();
   const productName = String(item.name || 'Товар').trim() || 'Товар';
@@ -800,6 +783,9 @@ function addStampItemUnits(itemCounts, item, units, timestamp = nowIso()) {
   if (existing) {
     existing.qty += qty;
     existing.updatedAt = timestamp;
+    if (String(timestamp || '') < String(existing.firstSeenAt || timestamp)) {
+      existing.firstSeenAt = timestamp;
+    }
     if (!existing.productExternalId && identity.productExternalId) {
       existing.productExternalId = identity.productExternalId;
     }
@@ -823,72 +809,13 @@ function addStampItemUnits(itemCounts, item, units, timestamp = nowIso()) {
   });
 }
 
-function loadStampItemCounts(clientId, programId) {
-  ensureStampItemProgressTable();
-
-  const rows = db.prepare(`
-    SELECT item_key, product_external_id, product_name, category, qty, first_seen_at, updated_at
-    FROM client_stamp_item_progress
-    WHERE client_id = ? AND program_id = ?
-    ORDER BY first_seen_at ASC, item_key ASC
-  `).all(clientId, programId);
-
-  const result = new Map();
-  for (const row of rows) {
-    result.set(row.item_key, {
-      itemKey: row.item_key,
-      productExternalId: row.product_external_id || null,
-      productName: row.product_name || 'Товар',
-      category: row.category || null,
-      qty: Math.max(0, Number(row.qty || 0)),
-      firstSeenAt: row.first_seen_at || nowIso(),
-      updatedAt: row.updated_at || row.first_seen_at || nowIso()
-    });
-  }
-  return result;
-}
-
-function saveStampItemCounts(clientId, programId, itemCounts) {
-  ensureStampItemProgressTable();
-
-  db.prepare('DELETE FROM client_stamp_item_progress WHERE client_id = ? AND program_id = ?')
-    .run(clientId, programId);
-
-  const insert = db.prepare(`
-    INSERT INTO client_stamp_item_progress(
-      client_id,
-      program_id,
-      item_key,
-      product_external_id,
-      product_name,
-      category,
-      qty,
-      first_seen_at,
-      updated_at
-    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  for (const item of itemCounts.values()) {
-    const qty = Math.max(0, Math.floor(Number(item.qty || 0)));
-    if (!qty) continue;
-
-    insert.run(
-      clientId,
-      programId,
-      item.itemKey,
-      item.productExternalId || null,
-      item.productName || 'Товар',
-      item.category || null,
-      qty,
-      item.firstSeenAt || nowIso(),
-      item.updatedAt || nowIso()
-    );
-  }
-}
-
-function backfillStampItemCounts(clientId, program, currentProgress, excludedReceiptId, itemCounts) {
+// Відновлює склад лише поточного незавершеного циклу з уже збережених чеків.
+// Окрема таблиця не потрібна: progress точно показує, скільки останніх
+// відповідних одиниць товару належить до поточного циклу.
+function loadCurrentStampCycleItemCounts(clientId, program, currentProgress, excludedReceiptId) {
   let remaining = Math.max(0, Math.floor(Number(currentProgress || 0)));
-  if (!remaining || itemCounts.size) return;
+  const itemCounts = new Map();
+  if (!remaining) return itemCounts;
 
   const rows = db.prepare(`
     SELECT
@@ -925,6 +852,8 @@ function backfillStampItemCounts(clientId, program, currentProgress, excludedRec
     );
     remaining -= usedUnits;
   }
+
+  return itemCounts;
 }
 
 function getMostPurchasedStampItem(itemCounts) {
@@ -953,8 +882,6 @@ function getMostPurchasedStampItem(itemCounts) {
 }
 
 function updateStampProgress(clientId, receiptId, items = []) {
-  ensureStampItemProgressTable();
-
   const programs = db.prepare('SELECT * FROM stamp_programs WHERE is_active = 1').all();
 
   for (const program of programs) {
@@ -966,22 +893,14 @@ function updateStampProgress(clientId, receiptId, items = []) {
 
     if (!count) continue;
 
-    let existing = db.prepare(`
-      SELECT *
-      FROM client_stamp_progress
-      WHERE client_id = ? AND program_id = ?
-    `).get(clientId, program.id);
+    let existing = db.prepare(
+      'SELECT * FROM client_stamp_progress WHERE client_id = ? AND program_id = ?'
+    ).get(clientId, program.id);
 
     if (!existing) {
-      db.prepare(`
-        INSERT INTO client_stamp_progress(
-          client_id,
-          program_id,
-          progress,
-          completed_count,
-          updated_at
-        ) VALUES(?, ?, 0, 0, ?)
-      `).run(clientId, program.id, nowIso());
+      db.prepare(
+        'INSERT INTO client_stamp_progress(client_id, program_id, progress, completed_count, updated_at) VALUES(?, ?, 0, 0, ?)'
+      ).run(clientId, program.id, nowIso());
 
       existing = {
         progress: 0,
@@ -989,20 +908,17 @@ function updateStampProgress(clientId, receiptId, items = []) {
       };
     }
 
-    let next = Math.max(0, Number(existing.progress || 0));
-    let completed = Math.max(0, Number(existing.completed_count || 0));
+    const current = Math.max(0, Number(existing.progress || 0));
     const requiredQty = Math.max(1, Number(program.required_qty || 9));
-    const itemCounts = loadStampItemCounts(clientId, program.id);
+    let next = current;
+    let completed = Math.max(0, Number(existing.completed_count || 0));
 
-    // Після встановлення оновлення відновлюємо розподіл попереднього
-    // незавершеного прогресу з історії чеків, щоб поточні клієнти
-    // не втратили вже накопичені покупки.
-    backfillStampItemCounts(
+    // Беремо товари попередніх покупок лише в межах поточного циклу.
+    const itemCounts = loadCurrentStampCycleItemCounts(
       clientId,
       program,
-      next,
-      receiptId,
-      itemCounts
+      current,
+      receiptId
     );
 
     const createdCodes = [];
@@ -1021,10 +937,9 @@ function updateStampProgress(clientId, receiptId, items = []) {
 
         completed += 1;
 
-        // Код на безкоштовний товар видається саме на той товар,
-        // який клієнт купував найбільшу кількість разів у межах
-        // поточного циклу накопичувальної програми.
-        const rewardItem = getMostPurchasedStampItem(itemCounts);
+        // Нагорода прив'язується до товару, який купували найбільше
+        // разів саме в межах завершеного циклу програми.
+        const rewardItem = getMostPurchasedStampItem(itemCounts) || item;
         const qr = createStampRewardQr(
           clientId,
           program,
@@ -1040,8 +955,7 @@ function updateStampProgress(clientId, receiptId, items = []) {
           break;
         }
 
-        // Новий цикл починається з нуля. Якщо в поточному чеку
-        // залишилися ще одиниці товару, вони вже підуть у наступний цикл.
+        // Після видачі коду починається новий окремий цикл.
         next = 0;
         itemCounts.clear();
       }
@@ -1049,19 +963,9 @@ function updateStampProgress(clientId, receiptId, items = []) {
       if (stopProcessing) break;
     }
 
-    saveStampItemCounts(clientId, program.id, itemCounts);
-
-    db.prepare(`
-      UPDATE client_stamp_progress
-      SET progress = ?, completed_count = ?, updated_at = ?
-      WHERE client_id = ? AND program_id = ?
-    `).run(
-      next,
-      completed,
-      nowIso(),
-      clientId,
-      program.id
-    );
+    db.prepare(
+      'UPDATE client_stamp_progress SET progress = ?, completed_count = ?, updated_at = ? WHERE client_id = ? AND program_id = ?'
+    ).run(next, completed, nowIso(), clientId, program.id);
 
     if (createdCodes.length) {
       logAudit({
