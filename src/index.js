@@ -261,31 +261,89 @@ function getOfferTargetValue(offer) {
   return String(offer?.target_value || offer?.product_external_id || offer?.category || '');
 }
 
+function parseCodeArray(value) {
+  if (Array.isArray(value)) return value.map(normalizeOneCCode).filter(Boolean);
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed.map(normalizeOneCCode).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function catalogProductByAnyCode(value) {
+  const code = normalizeOneCCode(value);
+  if (!code) return null;
+  return db.prepare(`SELECT external_id, id, group_external_id, group_path_json
+    FROM products
+    WHERE external_id = ? OR id = ?
+    LIMIT 1`).get(code, code) || null;
+}
+
+function itemProductCodes(item) {
+  const values = [
+    item?.external_product_id,
+    item?.product_id,
+    item?.external_id,
+    item?.code,
+    item?.product_code,
+    item?.one_c_code
+  ];
+  const result = new Set(values.map(normalizeOneCCode).filter(Boolean));
+
+  for (const value of [...result]) {
+    const product = catalogProductByAnyCode(value);
+    if (product?.external_id) result.add(normalizeOneCCode(product.external_id));
+    if (product?.id) result.add(normalizeOneCCode(product.id));
+  }
+
+  return result;
+}
+
+function itemGroupCodes(item) {
+  const result = new Set([
+    normalizeOneCCode(item?.group_external_id),
+    normalizeOneCCode(item?.group_id),
+    ...parseCodeArray(item?.group_path),
+    ...parseCodeArray(item?.group_path_json)
+  ].filter(Boolean));
+
+  for (const productCode of itemProductCodes(item)) {
+    const product = catalogProductByAnyCode(productCode);
+    if (!product) continue;
+    if (product.group_external_id) result.add(normalizeOneCCode(product.group_external_id));
+    for (const groupCode of parseCodeArray(product.group_path_json)) result.add(groupCode);
+  }
+
+  return result;
+}
+
 function offerMatchesItem(offer, item) {
   const targetType = getOfferTargetType(offer);
   const rawTarget = getOfferTargetValue(offer);
-  if (targetType === 'all') return String(offer?.target_type || '') === 'all';
+
+  if (targetType === 'all') return true;
   if (!rawTarget) return false;
 
-  // Для product/group порівнюємо саме коди 1С: ЦБ000004323 тощо.
-  // Однаковий формат коду не є проблемою, бо тип цілі зберігається окремо.
-  const targetCode = normalizeOneCCode(rawTarget);
-  const productCode = normalizeOneCCode(item.external_product_id || item.product_id);
-  const groupCode = normalizeOneCCode(item.group_external_id);
-  const groupPathCodes = (Array.isArray(item.group_path)
-    ? item.group_path
-    : (() => {
-        try { return item.group_path_json ? JSON.parse(item.group_path_json) : []; }
-        catch { return []; }
-      })())
-    .map(normalizeOneCCode)
-    .filter(Boolean);
+  let targetCode = normalizeOneCCode(rawTarget);
 
-  if (targetType === 'product') return productCode === targetCode;
-  if (targetType === 'group') return groupCode === targetCode || groupPathCodes.includes(targetCode);
+  if (targetType === 'product') {
+    const storedProduct = catalogProductByAnyCode(targetCode);
+    if (storedProduct?.external_id) targetCode = normalizeOneCCode(storedProduct.external_id);
+    return itemProductCodes(item).has(targetCode);
+  }
+
+  if (targetType === 'group') {
+    return itemGroupCodes(item).has(targetCode);
+  }
 
   // Старі текстові категорії залишаємо сумісними.
-  if (targetType === 'category') return normalizeMatchValue(item.category) === normalizeMatchValue(rawTarget);
+  if (targetType === 'category') {
+    return normalizeMatchValue(item?.category) === normalizeMatchValue(rawTarget)
+      || normalizeMatchValue(item?.group_name) === normalizeMatchValue(rawTarget);
+  }
+
   return false;
 }
 
@@ -426,7 +484,15 @@ function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
       }
     }
 
-    const bestPrice = [...priceCandidates].sort((a, b) => {
+    // Правило, яке не зменшує ціну, не повинно блокувати інше реальне правило знижки.
+    const effectiveDiscounts = priceCandidates.filter((candidate) =>
+      candidate.offer && candidate.priceCents < regularUnitPriceCents
+    );
+    const candidatePool = effectiveDiscounts.length
+      ? effectiveDiscounts
+      : priceCandidates.filter((candidate) => !candidate.offer);
+
+    const bestPrice = [...candidatePool].sort((a, b) => {
       if (b.priority !== a.priority) return b.priority - a.priority;
       return a.priceCents - b.priceCents;
     })[0];
@@ -1978,7 +2044,7 @@ app.get('/api/admin/catalog/products', adminAuth, (req, res) => {
   }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const products = db.prepare(`SELECT id, external_id, name, category, group_external_id, group_name, price_cents, image_url
-    FROM products ${where} ORDER BY name LIMIT 500`).all(...args);
+    FROM products ${where} ORDER BY name LIMIT 10000`).all(...args);
   res.json({ ok: true, products });
 });
 
