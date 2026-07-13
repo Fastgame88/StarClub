@@ -17,3 +17,10 @@
 @media(max-width:1380px){.desktop-admin-body .form-grid,.desktop-admin-body .offer-editor{grid-template-columns:repeat(2,minmax(0,1fr))}.desktop-admin-body .pricing-target-picker{grid-template-columns:repeat(2,minmax(0,1fr))}.desktop-admin-body .promo-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1080px){.desktop-admin-body{grid-template-columns:240px minmax(0,1fr)}.desktop-sidebar{width:240px}.desktop-admin-body .pricing-tier-row,.desktop-admin-body .pricing-override-row{grid-template-columns:1fr 1fr}.desktop-admin-body .pricing-tier-row .tier-remove,.desktop-admin-body .pricing-override-row .tier-remove{grid-column:1/-1}}
 @media(max-width:900px){.desktop-admin-body{display:block}.desktop-sidebar{width:auto}.desktop-workspace{overflow:visible}.desktop-admin-body .form-grid,.desktop-admin-body .offer-editor,.desktop-admin-body .pricing-target-picker,.desktop-admin-body .promo-admin-grid,.desktop-admin-body .offer-list{grid-template-columns:1fr}.desktop-admin-body table{min-width:680px}}
+
+/* v21 — desktop stamp and exclusion layout */
+.desktop-admin-body .stamp-picker-panel{grid-column:1/-1}
+.desktop-admin-body .stamp-target-picker{grid-template-columns:repeat(3,minmax(260px,1fr));max-height:540px}
+.desktop-admin-body .star-exclusion-picker{grid-template-columns:repeat(3,minmax(280px,1fr));max-height:620px}
+@media(max-width:1380px){.desktop-admin-body .stamp-target-picker,.desktop-admin-body .star-exclusion-picker{grid-template-columns:repeat(2,minmax(260px,1fr))}}
+@media(max-width:900px){.desktop-admin-body .stamp-target-picker,.desktop-admin-body .star-exclusion-picker{grid-template-columns:1fr}}

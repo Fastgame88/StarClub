@@ -78,7 +78,7 @@ function adminAuth(req, res, next) {
     const permission = path.includes('/personal-coupons') || path.includes('/coupons') ? 'coupons'
       : path.includes('/clients') ? 'clients'
       : path.includes('/stores') ? 'stores'
-      : path.includes('/catalog/rewards') ? 'rewards'
+      : path.includes('/catalog/rewards') || path.includes('/catalog/star-exclusions') ? 'rewards'
       : path.includes('/catalog/offers') || path.includes('/catalog/promo-offers') || path.includes('/catalog/pricing') || path.includes('/catalog/products') || path.includes('/catalog/product-groups') ? 'offers'
       : path.includes('/catalog/challenges') ? 'challenges'
       : path.includes('/catalog/stamps') ? 'stamps'
@@ -239,15 +239,49 @@ function getPeriodKey(periodType, date = new Date()) {
   return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
+function getAdminStarAccrualExclusionSet() {
+  const rows = db.prepare('SELECT product_external_id FROM star_accrual_exclusions').all();
+  return new Set(rows.map((row) => normalizeOneCCode(row.product_external_id)).filter(Boolean));
+}
+
+function getItemExternalProductCode(item = {}) {
+  return normalizeOneCCode(
+    item.external_product_id ?? item.product_external_id ?? item.external_id ?? item.product_id ?? item.id ?? ''
+  );
+}
+
+function isItemExcludedFromStarAccrual(item = {}, adminExcludedCodes = null) {
+  const flags = item.flags || item;
+  if (flags.is_alcohol || flags.is_tobacco || flags.is_min_margin || flags.no_star_accrual) return true;
+  const code = getItemExternalProductCode(item);
+  const excludedCodes = adminExcludedCodes || getAdminStarAccrualExclusionSet();
+  return Boolean(code && excludedCodes.has(code));
+}
+
 function receiptHasEligibleItems(items = []) {
-  return items.some((item) => !item.is_alcohol && !item.is_tobacco && !item.no_star_accrual);
+  const adminExcludedCodes = getAdminStarAccrualExclusionSet();
+  return items.some((item) => !isItemExcludedFromStarAccrual(item, adminExcludedCodes));
 }
 
 function calculateEligibleCents(items = [], explicitEligible) {
-  if (Number.isFinite(Number(explicitEligible))) return Math.round(Number(explicitEligible));
+  const adminExcludedCodes = getAdminStarAccrualExclusionSet();
+  const explicit = Number.isFinite(Number(explicitEligible)) ? Math.max(0, Math.round(Number(explicitEligible))) : null;
+
+  if (explicit !== null) {
+    let adjusted = explicit;
+    for (const item of items) {
+      const flags = item.flags || item;
+      const excludedByReceiptFlags = Boolean(flags.is_alcohol || flags.is_tobacco || flags.is_min_margin || flags.no_star_accrual);
+      const code = getItemExternalProductCode(item);
+      if (!excludedByReceiptFlags && code && adminExcludedCodes.has(code)) {
+        adjusted -= Math.round(Number(item.line_total_cents ?? item.total_cents ?? item.sum_cents ?? 0));
+      }
+    }
+    return Math.max(0, adjusted);
+  }
+
   return items.reduce((sum, item) => {
-    const flags = item.flags || item;
-    const excluded = Boolean(flags.is_alcohol || flags.is_tobacco || flags.is_min_margin || flags.no_star_accrual);
+    const excluded = isItemExcludedFromStarAccrual(item, adminExcludedCodes);
     return excluded ? sum : sum + Math.round(Number(item.line_total_cents ?? item.total_cents ?? item.sum_cents ?? 0));
   }, 0);
 }
@@ -476,11 +510,11 @@ function buildPricingDebug({ items = [], storeId, purchasedAt, calculation }) {
 
 function calculateAccrualWithOffers(items = [], storeId, purchasedAt) {
   const offers = getActiveOffers(storeId, purchasedAt);
+  const adminExcludedCodes = getAdminStarAccrualExclusionSet();
   let stars = 0;
   const applied = [];
   for (const item of items) {
-    const flags = item.flags || item;
-    const excluded = Boolean(flags.is_alcohol || flags.is_tobacco || flags.is_min_margin || flags.no_star_accrual);
+    const excluded = isItemExcludedFromStarAccrual(item, adminExcludedCodes);
     if (excluded) continue;
     const lineCents = Math.round(Number(item.line_total_cents ?? item.total_cents ?? item.sum_cents ?? 0));
     let multiplier = 1;
@@ -642,13 +676,13 @@ function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
   let regularTotalCents = 0;
   let finalTotalCents = 0;
   let expectedStars = 0;
+  const adminExcludedCodes = getAdminStarAccrualExclusionSet();
 
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index] || {};
     const qty = Math.max(0, Number(item.qty || 0));
     const regularUnitPriceCents = Math.max(0, Math.round(Number(item.regular_price_cents ?? item.price_cents ?? 0)));
     const regularLineTotalCents = Math.max(0, Math.round(Number(item.regular_line_total_cents ?? regularUnitPriceCents * qty)));
-    const flags = item.flags || item;
     const priceCandidates = [{ priceCents: regularUnitPriceCents, offer: null, source: 'regular', priority: 0 }];
 
     for (const offer of offers) {
@@ -703,7 +737,7 @@ function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
 
     let multiplier = 1;
     let multiplierOffer = null;
-    const excluded = Boolean(flags.is_alcohol || flags.is_tobacco || flags.is_min_margin || flags.no_star_accrual);
+    const excluded = isItemExcludedFromStarAccrual(item, adminExcludedCodes);
     if (!excluded) {
       for (const offer of offers) {
         if (offer.type !== 'stars_multiplier' || !offer.stars_multiplier || !offerMatchesItem(offer, item)) continue;
@@ -2056,9 +2090,11 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
 
   const insertItem = db.prepare(`INSERT INTO receipt_items(receipt_id, product_id, external_product_id, name, category, qty, price_cents, line_total_cents, is_alcohol, is_tobacco, is_min_margin, no_star_accrual, no_redeem)
     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const adminExcludedCodes = getAdminStarAccrualExclusionSet();
 
   for (const item of items) {
     const flags = item.flags || item;
+    const excludedFromStars = isItemExcludedFromStarAccrual(item, adminExcludedCodes);
     insertItem.run(
       body.id,
       item.product_id || null,
@@ -2071,7 +2107,7 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
       flags.is_alcohol ? 1 : 0,
       flags.is_tobacco ? 1 : 0,
       flags.is_min_margin ? 1 : 0,
-      isRewardReceipt ? 1 : (flags.no_star_accrual ? 1 : 0),
+      isRewardReceipt ? 1 : (excludedFromStars ? 1 : 0),
       isRewardReceipt ? 1 : (flags.no_redeem ? 1 : 0)
     );
   }
@@ -2532,6 +2568,37 @@ function normalizeOfferTiers(body, existing = null) {
   if (body.tiers_json !== undefined) return body.tiers_json || null;
   return existing?.tiers_json || null;
 }
+
+app.get('/api/admin/catalog/star-exclusions', adminAuth, (req, res) => {
+  const excluded = db.prepare(`SELECT e.product_external_id, e.created_at, e.created_by,
+      COALESCE(p.name, e.product_external_id) AS name,
+      p.group_name, p.price_cents
+    FROM star_accrual_exclusions e
+    LEFT JOIN products p ON p.external_id = e.product_external_id
+    ORDER BY COALESCE(p.name, e.product_external_id)`).all();
+  res.json({ ok: true, excluded });
+});
+
+app.put('/api/admin/catalog/star-exclusions', adminAuth, (req, res) => {
+  const rawCodes = Array.isArray(req.body?.product_external_ids) ? req.body.product_external_ids : [];
+  const codes = [...new Set(rawCodes.map(normalizeOneCCode).filter(Boolean))];
+  const findProduct = db.prepare('SELECT external_id FROM products WHERE external_id = ? LIMIT 1');
+  const unknown = codes.filter((code) => !findProduct.get(code));
+  if (unknown.length) {
+    return res.status(400).json({ ok: false, error: 'UNKNOWN_PRODUCTS', message: `Не знайдено в номенклатурі 1С: ${unknown.slice(0, 10).join(', ')}` });
+  }
+
+  const actorId = String(req.admin?.id || req.admin?.telegram_id || 'admin');
+  const createdAt = nowIso();
+  const replaceAll = db.transaction(() => {
+    db.prepare('DELETE FROM star_accrual_exclusions').run();
+    const insert = db.prepare('INSERT INTO star_accrual_exclusions(product_external_id, created_at, created_by) VALUES(?, ?, ?)');
+    for (const code of codes) insert.run(code, createdAt, actorId);
+  });
+  replaceAll();
+  logAudit({ actorType: 'admin', actorId, action: 'star_accrual_exclusions_updated', entityType: 'settings', entityId: 'star_accrual_exclusions', payload: { product_external_ids: codes } });
+  res.json({ ok: true, count: codes.length, product_external_ids: codes });
+});
 
 app.get('/api/admin/catalog/product-groups', adminAuth, (req, res) => {
   const rows = db.prepare(`SELECT external_id, group_external_id, group_name, category, group_path_json, price_cents FROM products`).all();

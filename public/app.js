@@ -340,14 +340,13 @@ function registerScreen() {
         <input class="input" name="password" type="password" autocomplete="new-password" placeholder="Пароль мінімум 6 символів" minlength="6" required>
         <input class="input" name="password_confirm" type="password" autocomplete="new-password" placeholder="Повторіть пароль" minlength="6" required>
       ` : ''}
-      <div class="consent-copy">
-        Реєструючись у Star Club, ви підтверджуєте ознайомлення з
-        <button class="privacy-link" type="button" data-route="privacy">Правилами програми та Політикою конфіденційності</button>.
-      </div>
-      <label class="check"><input type="checkbox" name="agree_rules" ${c.consents?.rules ? 'checked' : ''} required><span>Я погоджуюсь із правилами програми лояльності Star Club.</span></label>
-      <label class="check"><input type="checkbox" name="agree_personal_data" ${c.consents?.personal_data ? 'checked' : ''} required><span>Я добровільно надаю згоду на збирання, зберігання, використання та іншу обробку моїх персональних даних для роботи програми лояльності.</span></label>
-      <label class="check"><input type="checkbox" name="agree_phone_processing" ${c.consents?.phone ? 'checked' : ''} required><span>Я надаю згоду на обробку мого мобільного номера, його використання для ідентифікації акаунта, входу, прив’язки картки, історії покупок і сервісних повідомлень.</span></label>
-      <label class="check"><input type="checkbox" name="marketing_allowed" ${c.marketing_allowed !== false ? 'checked' : ''}><span>Дозволяю отримувати повідомлення про клубні, оптові та персональні пропозиції. Цю згоду можна відкликати у профілі.</span></label>
+      <section class="card gold-border registration-privacy-card">
+        <h3>Реєстрація і конфіденційність</h3>
+        <label class="check registration-privacy-check">
+          <input type="checkbox" name="agree_privacy" ${(c.consents?.rules && c.consents?.personal_data && c.consents?.phone) ? 'checked' : ''} required>
+          <span>Погоджуюсь з <button class="privacy-link" type="button" data-route="privacy">правилами конфіденційності</button></span>
+        </label>
+      </section>
       <button class="btn" type="submit">${c.registered ? 'Зберегти профіль' : 'Завершити реєстрацію'}</button>
     </form>
   `;
@@ -1074,7 +1073,7 @@ function validateRegisterForm(form) {
     if (password.length < 6) return 'Пароль має містити мінімум 6 символів';
     if (password !== confirm) return 'Паролі не співпадають';
   }
-  if (!fd.has('agree_rules') || !fd.has('agree_personal_data') || !fd.has('agree_phone_processing')) return 'Потрібно погодитися з правилами, обробкою персональних даних і мобільного номера';
+  if (!fd.has('agree_privacy')) return 'Потрібно погодитися з правилами конфіденційності';
   return null;
 }
 
@@ -1255,11 +1254,13 @@ function bindEvents() {
       const body = Object.fromEntries(fd.entries());
       body.phone = normalizeClientPhone(body.phone);
       body.name = String(body.name || '').trim();
-      body.agree_rules = fd.has('agree_rules');
-      body.agree_personal_data = fd.has('agree_personal_data');
-      body.agree_phone_processing = fd.has('agree_phone_processing');
-      body.consent_version = '2026-07-12';
-      body.marketing_allowed = fd.has('marketing_allowed');
+      const agreedPrivacy = fd.has('agree_privacy');
+      body.agree_rules = agreedPrivacy;
+      body.agree_personal_data = agreedPrivacy;
+      body.agree_phone_processing = agreedPrivacy;
+      body.consent_version = '2026-07-13';
+      // Маркетингове налаштування не показуємо під час реєстрації і не змінюємо без окремої дії користувача.
+      body.marketing_allowed = state.client?.marketing_allowed !== false;
       try {
         const data = await api('/api/client/register', { method: 'POST', body: JSON.stringify(body) });
         if (data.session?.token) {

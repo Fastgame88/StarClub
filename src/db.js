@@ -264,6 +264,12 @@ export function migrate() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS star_accrual_exclusions (
+      product_external_id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      created_by TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS star_ledger (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,

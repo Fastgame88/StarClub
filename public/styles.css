@@ -354,3 +354,9 @@ body:not(.keyboard-open) .bottom-nav{transform:translateX(-50%)!important;opacit
 .privacy-page p{margin:0;color:#d6d8dd;line-height:1.58}
 .privacy-page .small{color:var(--muted)}
 label.check span{min-width:0}
+
+/* v21 — compact registration privacy consent */
+.registration-privacy-card{display:grid;gap:12px;padding:16px 17px}
+.registration-privacy-card h3{margin:0;font-size:17px}
+.registration-privacy-check{align-items:center!important;margin:0;color:var(--text)!important}
+.registration-privacy-check .privacy-link{vertical-align:baseline}

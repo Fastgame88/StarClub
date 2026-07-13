@@ -664,6 +664,59 @@ async function offers(editId=null,section=null){
 }
 
 
+async function starExclusions(){
+  title.textContent='Не нараховувати зірки';
+  const [{products=[]},{excluded=[]}]=await Promise.all([
+    api('/api/admin/catalog/products'),
+    api('/api/admin/catalog/star-exclusions')
+  ]);
+  const selected=new Set(excluded.map(i=>normalizeAdminOneCCode(i.product_external_id)));
+  content.innerHTML=`
+    <div class="card star-exclusion-editor">
+      <div class="section-title-row">
+        <div><h3>Товари, за які не нараховуються зірки</h3><p class="small">Оберіть конкретні товари з номенклатури 1С. Ці товари залишаються у чеку, але їхня сума не бере участі в нарахуванні зірок.</p></div>
+        <span class="pill" id="starExclusionCount">Вибрано: ${selected.size}</span>
+      </div>
+      <div class="star-exclusion-toolbar">
+        <input id="starExclusionSearch" placeholder="Пошук за назвою або кодом 1С">
+        <button type="button" id="starExclusionClear">Очистити вибір</button>
+      </div>
+      <div id="starExclusionPicker" class="star-exclusion-picker"></div>
+      <div class="form-actions star-exclusion-actions"><button type="button" class="primary" id="saveStarExclusions">Зберегти список</button></div>
+    </div>`;
+
+  const search=$('#starExclusionSearch');
+  const picker=$('#starExclusionPicker');
+  const count=$('#starExclusionCount');
+  const codeOf=p=>normalizeAdminOneCCode(p.external_id||p.id||'');
+  const refreshCount=()=>{count.textContent=`Вибрано: ${selected.size}`;};
+  const renderPicker=()=>{
+    const q=String(search.value||'').trim().toLowerCase();
+    const filtered=products
+      .filter(p=>!q||String(`${p.name||''} ${codeOf(p)} ${p.group_name||''}`).toLowerCase().includes(q))
+      .sort((a,b)=>Number(selected.has(codeOf(b)))-Number(selected.has(codeOf(a)))||String(a.name||'').localeCompare(String(b.name||''),'uk'));
+    picker.innerHTML=filtered.map(p=>{
+      const code=codeOf(p);
+      return `<label class="star-exclusion-item ${selected.has(code)?'selected':''}"><input type="checkbox" value="${esc(code)}" ${selected.has(code)?'checked':''}><span><b>${esc(p.name||code)}</b><small><code>${esc(code)}</code>${p.group_name?` · ${esc(p.group_name)}`:''}${p.price_cents?` · ${num(p.price_cents/100)} грн`:''}</small></span></label>`;
+    }).join('')||'<div class="small">Товарів не знайдено. Синхронізуйте номенклатуру з 1С.</div>';
+    picker.querySelectorAll('input[type="checkbox"]').forEach(input=>input.onchange=()=>{
+      const code=normalizeAdminOneCCode(input.value);
+      if(input.checked)selected.add(code);else selected.delete(code);
+      input.closest('.star-exclusion-item')?.classList.toggle('selected',input.checked);
+      refreshCount();
+    });
+  };
+  search.oninput=renderPicker;
+  $('#starExclusionClear').onclick=()=>{selected.clear();refreshCount();renderPicker();};
+  $('#saveStarExclusions').onclick=async()=>{
+    await api('/api/admin/catalog/star-exclusions',{method:'PUT',body:JSON.stringify({product_external_ids:[...selected]})});
+    alert(`Список збережено. Товарів без нарахування зірок: ${selected.size}`);
+    await starExclusions();
+  };
+  refreshCount();
+  renderPicker();
+}
+
 async function challenges(editId=null){
   title.textContent='Челенджі';
   const {challenges: challengeItems}=await api('/api/admin/catalog/challenges');
@@ -711,14 +764,16 @@ async function stamps(editId=null){
     <div class="card editor-card ${edit?'edit-panel':''}">
       <h3>${edit?'Редагувати програму':'Створити програму'}</h3>
       <p class="small">Оберіть конкретний товар або групу з 1С. Після завершення циклу код видається на товар, який клієнт купував найбільше разів у межах цієї програми.</p>
-      <form id="stampForm" class="form-grid">
+      <form id="stampForm" class="form-grid stamp-editor-grid">
         <label class="admin-field"><span>Назва програми</span><input name="name" placeholder="Наприклад: 10-та кава безкоштовно" value="${esc(edit?.name||'')}" required></label>
         <label class="admin-field"><span>Що зараховувати</span><select name="target_type" id="stampTargetType"><option value="group" ${currentType==='group'?'selected':''}>Групу товарів</option><option value="product" ${currentType==='product'?'selected':''}>Окремий товар</option></select></label>
-        <label class="admin-field"><span>Пошук у номенклатурі 1С</span><input id="stampTargetSearch" placeholder="Назва або код 1С"></label>
-        <div id="stampTargetPicker" class="pricing-target-picker"><div class="small">Завантаження…</div></div>
-        <div class="technical-code">Вибрано: <b id="stampSelectedTarget">${esc(edit?.target_name||currentValue||'нічого')}</b></div>
-        <label class="admin-field"><span>Скільки покупок до коду</span><input name="required_qty" type="number" min="1" placeholder="10" value="${esc(edit?.required_qty||10)}" required></label>
-        <label class="admin-field"><span>Винагорода</span><input value="QR/код на найчастіше придбаний товар, діє 7 днів" readonly></label>
+        <label class="admin-field stamp-qty-field"><span>Скільки покупок до коду</span><input name="required_qty" type="number" min="1" placeholder="10" value="${esc(edit?.required_qty||10)}" required></label>
+        <section class="stamp-picker-panel">
+          <label class="admin-field"><span>Пошук у номенклатурі 1С</span><input id="stampTargetSearch" placeholder="Назва або код 1С"></label>
+          <div id="stampTargetPicker" class="pricing-target-picker stamp-target-picker"><div class="small">Завантаження…</div></div>
+          <div class="technical-code">Вибрано: <b id="stampSelectedTarget">${esc(edit?.target_name||currentValue||'нічого')}</b></div>
+        </section>
+        <label class="admin-field stamp-reward-field"><span>Винагорода</span><input value="QR/код на найчастіше придбаний товар, діє 7 днів" readonly></label>
         <label class="checkline"><input type="checkbox" name="is_repeatable" ${edit?(Number(edit.is_repeatable)?'checked':''):'checked'}> Повторювати після видачі коду</label>
         <label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активна</label>
         ${edit?`<div class="technical-code">Технічний код: <b>${esc(edit.code)}</b></div>`:''}
@@ -946,6 +1001,7 @@ async function render(){
     if(tab==='clients') { if(clientDetailState?.id) await clientDetails(clientDetailState.id); else await clients(); }
     if(tab==='stores') await stores();
     if(tab==='rewards') await rewards();
+    if(tab==='star-exclusions') await starExclusions();
     if(tab==='offers') await offers();
     if(tab==='challenges') await challenges();
     if(tab==='stamps') await stamps();
@@ -1030,7 +1086,8 @@ function applyAdminVisibility(){
   $$('[data-owner-only]').forEach(el=>el.style.display=owner?'':'none');
   $$('[data-tab]').forEach(el=>{
     if(owner) return el.style.display='';
-    el.style.display = permissions.has(el.dataset.tab) ? '' : 'none';
+    const requiredPermission = el.dataset.permission || el.dataset.tab;
+    el.style.display = permissions.has(requiredPermission) ? '' : 'none';
   });
 }
 async function bootstrapAdmin(){

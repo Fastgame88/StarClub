@@ -115,3 +115,23 @@ html,body{max-width:100%;overflow-x:hidden}
 .pricing-preview-card h4{margin:0 0 6px}.pricing-preview-card p{margin:3px 0;color:var(--muted)}
 .pricing-list-image{width:76px;height:64px;object-fit:cover;border-radius:14px;background:#0b0d12;border:1px solid rgba(255,255,255,.08);flex:0 0 auto}
 @media(max-width:760px){.pricing-preview-card{grid-template-columns:80px minmax(0,1fr)}.pricing-preview-card img{width:80px;height:72px}.pricing-list-image{width:64px;height:58px}}
+
+
+/* v21 — readable stamp editor and star accrual exclusions */
+.stamp-editor-grid{align-items:start}
+.stamp-picker-panel{grid-column:1/-1;display:grid;gap:12px;padding:15px;border-radius:18px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.075)}
+.stamp-target-picker{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));max-height:480px;padding:6px}
+.stamp-target-picker .pricing-target-item{min-height:78px;align-items:center}
+.stamp-target-picker .pricing-target-item b{word-break:normal;overflow-wrap:anywhere;line-height:1.28}
+.stamp-qty-field{max-width:280px}
+.stamp-reward-field{grid-column:span 2}
+.star-exclusion-editor{display:grid;gap:15px}
+.star-exclusion-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+.star-exclusion-toolbar input{width:100%;min-height:46px}
+.star-exclusion-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;max-height:560px;overflow:auto;padding:5px}
+.star-exclusion-item{display:flex;align-items:flex-start;gap:11px;min-height:82px;padding:13px 14px;border-radius:16px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);cursor:pointer}
+.star-exclusion-item:hover,.star-exclusion-item.selected{border-color:rgba(226,184,95,.46);background:rgba(226,184,95,.09)}
+.star-exclusion-item input{width:19px;height:19px;flex:0 0 auto;margin-top:2px;accent-color:var(--gold)}
+.star-exclusion-item span{display:grid;gap:5px;min-width:0}.star-exclusion-item b{line-height:1.3;overflow-wrap:anywhere}.star-exclusion-item small{color:var(--muted);overflow-wrap:anywhere}.star-exclusion-item code{color:var(--gold-2)}
+.star-exclusion-actions{margin-top:2px}
+@media(max-width:900px){.stamp-target-picker,.star-exclusion-picker{grid-template-columns:1fr;max-height:480px}.stamp-qty-field{max-width:none}.stamp-reward-field{grid-column:auto}.star-exclusion-toolbar{grid-template-columns:1fr}.star-exclusion-toolbar button{width:100%}}
