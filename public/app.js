@@ -10,10 +10,12 @@ if (tg) {
   tg.setBackgroundColor('#0b0d10');
 }
 
+const persistedRoute = localStorage.getItem('starclub_route') || 'home';
+
 const state = {
   token: localStorage.getItem('starclub_session') || '',
   client: null,
-  route: localStorage.getItem('starclub_route') || 'home',
+  route: persistedRoute === 'stars' ? 'home' : persistedRoute,
   stores: [],
   data: {},
   liveSignature: '',
@@ -28,10 +30,21 @@ const state = {
 };
 
 const icons = {
-  home: '🏠', stores: '📍', offers: '🏷', stars: '⭐', more: '•••', card: '💳', rewards: '🎁', history: '↺', profile: '👤', challenges: '🏆', news: '✦', support: '💬'
+  home: 'home', stores: 'store', offers: 'tags', more: 'menu', card: 'credit-card', rewards: 'gift',
+  history: 'history', profile: 'user-round', challenges: 'trophy', news: 'newspaper', support: 'message-circle',
+  qr: 'qr-code', progress: 'award', notification: 'bell', receipt: 'receipt-text'
 };
 
 const fallbackStores = [];
+
+function safeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function appIcon(name, className = '') {
+  const file = String(name || '').replace(/[^a-z0-9-]/g, '') || 'circle-star';
+  return `<img class="app-icon ${safeHtml(className)}" src="/assets/icons/${file}.svg" alt="" aria-hidden="true">`;
+}
 
 function toast(text) {
   $toast.textContent = text;
@@ -146,7 +159,7 @@ function notificationButton() {
   return `
     <div class="notification-wrap">
       <button type="button" class="icon-btn notification-btn ${unread ? 'has-unread' : ''}" data-toggle-notifications aria-label="Повідомлення">
-        🔔${unread ? `<span class="notification-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
+        ${appIcon(icons.notification)}${unread ? `<span class="notification-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
       </button>
       ${state.notificationPanelOpen ? renderNotificationPanel() : ''}
     </div>
@@ -236,7 +249,9 @@ async function bootstrap() {
 function header(title, back = false) {
   return `
     <div class="topbar">
-      <button class="icon-btn" data-back="${back ? 1 : 0}">${back ? '‹' : '<span class="gold">★</span>'}</button>
+      ${back
+        ? `<button class="back-button" type="button" data-back="1">${appIcon('arrow-left')}<span>Назад</span></button>`
+        : `<span class="topbar-brand-mark" aria-hidden="true">${appIcon('circle-star')}</span>`}
       <h2>${title}</h2>
       ${notificationButton()}
     </div>
@@ -249,12 +264,16 @@ function renderNav() {
   if (!registered) return;
   const items = [
     ['home', 'Головна', icons.home],
-    ['stores', 'Магазини', icons.stores],
     ['offers', 'Пропозиції', icons.offers],
-    ['stars', 'Мої зірки', icons.stars],
+    ['card', 'Моя карта', icons.card],
+    ['rewards', 'За зірки', icons.rewards],
     ['more', 'Ще', icons.more]
   ];
-  $nav.innerHTML = items.map(([route, label, icon]) => `<button class="${state.route === route ? 'active' : ''}" data-route="${route}"><span>${icon}</span>${label}</button>`).join('');
+  const moreRoutes = ['stores', 'rewardCodes', 'progress', 'history', 'news', 'profile', 'support'];
+  $nav.innerHTML = items.map(([route, label, icon]) => {
+    const active = state.route === route || (route === 'more' && moreRoutes.includes(state.route));
+    return `<button class="${active ? 'active' : ''} ${route === 'card' ? 'nav-card' : ''}" data-route="${route}" aria-label="${label}"><span class="nav-icon-shell">${appIcon(icon)}</span><small>${label}</small></button>`;
+  }).join('');
 }
 
 function startScreen() {
@@ -264,14 +283,14 @@ function startScreen() {
         <div class="hero-logo"><div class="logo-star"></div></div>
         <h1>Ласкаво просимо<br>у Star Club</h1>
         <div class="benefits">
-          <div class="benefit"><span class="circle-icon">★</span>Збирайте зірки</div>
-          <div class="benefit"><span class="circle-icon">🏷</span>Клубні ціни</div>
-          <div class="benefit"><span class="circle-icon">🎁</span>Товари за зірки</div>
-          <div class="benefit"><span class="circle-icon">👤</span>Персональні пропозиції</div>
+          <div class="benefit"><span class="circle-icon">${appIcon('circle-star')}</span>Збирайте зірки</div>
+          <div class="benefit"><span class="circle-icon">${appIcon('badge-percent')}</span>Клубні ціни</div>
+          <div class="benefit"><span class="circle-icon">${appIcon('gift')}</span>Товари за зірки</div>
+          <div class="benefit"><span class="circle-icon">${appIcon('user-round')}</span>Персональні пропозиції</div>
         </div>
         <button class="btn" data-route="register">Зареєструватися</button>
         <div class="social-auth">
-          <button class="social-btn" data-auth-telegram type="button">✈ Увійти через Telegram</button>
+          <button class="social-btn" data-auth-telegram type="button">${appIcon('send')}<span>Увійти через Telegram</span></button>
         </div>
         <p class="link-row">Вже є акаунт? <button data-route="login">Увійти</button></p>
       </div>
@@ -291,7 +310,7 @@ function loginScreen() {
       <input class="input" name="password" type="password" autocomplete="current-password" placeholder="Пароль" minlength="6" required>
       <button class="btn" type="submit">Увійти</button>
       <div class="social-auth">
-        <button class="social-btn" data-auth-telegram type="button">✈ Увійти через Telegram</button>
+        <button class="social-btn" data-auth-telegram type="button">${appIcon('send')}<span>Увійти через Telegram</span></button>
       </div>
       <p class="link-row">Ще немає акаунта? <button type="button" data-route="register">Зареєструватися</button></p>
     </form>
@@ -304,7 +323,7 @@ function telegramPasswordScreen() {
     ${header('Створіть пароль', true)}
     <form id="telegramPasswordForm" class="stack">
       <div class="banner">
-        <span class="circle-icon">✈</span>
+        <span class="circle-icon">${appIcon('send')}</span>
         <div>Telegram підтверджено<br><strong>${c.name || 'Клієнт Star Club'}</strong>${c.phone ? `<br><span class="small">${c.phone}</span>` : ''}</div>
       </div>
       <p class="small">Перед входом створіть пароль. Далі ви зможете входити за номером телефону і паролем.</p>
@@ -408,6 +427,34 @@ function privacyScreen() {
   `;
 }
 
+function homeBanner() {
+  const news = (state.data.news || []).slice(0, 4);
+  const slides = news.length ? news : [{
+    tag: 'STAR CLUB',
+    title: 'Новини, акції та приємні бонуси',
+    text: 'Стежте за новинками у вашому улюбленому магазині.',
+    image_url: '/assets/star.svg'
+  }];
+  return `
+    <section class="home-banner" aria-label="Банери Star Club">
+      <div class="home-banner-rail">
+        ${slides.map((item) => `
+          <button class="home-banner-slide" type="button" data-route="news">
+            <div class="home-banner-copy">
+              <span>${safeHtml(item.tag || 'STAR CLUB')}</span>
+              <h2>${safeHtml(item.title || 'Новини Star Club')}</h2>
+              <p>${safeHtml(item.text || '')}</p>
+            </div>
+            <div class="home-banner-media">
+              <img src="${safeHtml(item.image_url || '/assets/star.svg')}" alt="" onerror="this.onerror=null;this.src='/assets/star.svg'">
+            </div>
+          </button>
+        `).join('')}
+      </div>
+      <div class="home-banner-dots" aria-hidden="true">${slides.map((_, index) => `<i class="${index === 0 ? 'active' : ''}"></i>`).join('')}</div>
+    </section>`;
+}
+
 function homeScreen() {
   const c = state.client;
   const progress = c.profile_progress || { percent: 0, bonus: { enabled: true, stars: 500 } };
@@ -425,9 +472,10 @@ function homeScreen() {
   const stampLeft = stamp ? Math.max(0, stamp.required_qty - stamp.progress) : 0;
   return `
     <div class="topbar">
-      <h1>Вітаємо, ${c.name || 'друже'}! 👋</h1>
+      <div class="home-heading"><span>${appIcon('sparkles')}</span><h1>Вітаємо, ${safeHtml(c.name || 'друже')}!</h1></div>
       ${notificationButton()}
     </div>
+    ${homeBanner()}
     <div class="stack">
       <section class="card balance-card spark">
         <div class="label">Ваш баланс</div>
@@ -445,34 +493,17 @@ function homeScreen() {
           </div>
           <div class="progressbar"><span style="width:${progress.percent}%"></span></div>
         </section>` : ''}
-      <section class="card gold-border" data-route="progress">
-        <div class="progress-row">
-          <div>
-            <b>${challenge?.name || 'Активний челендж'}</b>
-            <p class="small">${challenge ? `Залишилось ${challengeLeft} відвідувань до бонусу ${fmtStars(challenge.reward_stars)} ★` : 'Челенджі зʼявляться після налаштування в адмінці'}</p>
-          </div>
-          <div class="progress-ring">${challengeText}</div>
-        </div>
-      </section>
-      <section class="card gold-border" data-route="progress">
-        <div class="progress-row">
-          <div>
-            <b>${stamp?.name || 'Накопичувальна програма'}</b>
-            <p class="small">${stamp ? `Ще ${stampLeft} до безкоштовного коду` : 'Прогрес зʼявиться після чеків із 1С'}</p>
-          </div>
-          <div class="progress-ring">${stampText}</div>
-        </div>
-      </section>
-      <section class="card spark" data-route="offers">
-        <b>Клубні пропозиції лише для учасників</b>
-        <p class="small">Перегляньте актуальні пропозиції Star Club</p>
-      </section>
-      <div class="quick">
-        <button data-route="card"><b>▣</b>Моя карта</button>
-        <button data-route="rewards"><b>🎁</b>За зірки</button>
-        <button data-route="history"><b>↺</b>Історія</button>
-        <button data-route="profile"><b>♙</b>Профіль</button>
-      <button data-route="support"><b>💬</b>Підтримка</button>
+      <div class="home-progress-grid">
+        <button class="card home-progress-card" type="button" data-route="progress">
+          <span class="home-progress-icon">${appIcon('trophy')}</span>
+          <span><b>${safeHtml(challenge?.name || 'Активні челенджі')}</b><small>${challenge ? `Ще ${challengeLeft} до бонусу ${fmtStars(challenge.reward_stars)} ★` : 'Нові завдання зʼявляться тут'}</small></span>
+          <strong>${challengeText}</strong>
+        </button>
+        <button class="card home-progress-card" type="button" data-route="progress">
+          <span class="home-progress-icon">${appIcon('coffee')}</span>
+          <span><b>${safeHtml(stamp?.name || 'Накопичувальні')}</b><small>${stamp ? `Ще ${stampLeft} до безкоштовного коду` : 'Прогрес зʼявиться після покупок'}</small></span>
+          <strong>${stampText}</strong>
+        </button>
       </div>
     </div>
   `;
@@ -496,7 +527,10 @@ async function loadRewardQrs() {
 
 async function loadOffers() {
   const data = await api('/api/client/offers');
-  state.data.offers = data.offers;
+  state.data.offers = data.offers || [];
+  state.data.offerStores = data.stores || [];
+  state.data.offerStoreId = data.favorite_store || state.client?.favorite_store || 'all';
+  state.data.offerStoreName = data.favorite_store_name || data.stores?.[0]?.name || '';
 }
 
 async function loadProgress() {
@@ -613,7 +647,7 @@ function hasFocusedEditor() {
 }
 
 function routeNeedsLiveRender(route = state.route) {
-  return ['home', 'card', 'rewards', 'rewardCodes', 'history', 'stars', 'progress', 'support'].includes(route);
+  return ['home', 'card', 'rewards', 'rewardCodes', 'history', 'progress', 'support'].includes(route);
 }
 
 async function refreshVisibleData({ forceRender = false } = {}) {
@@ -622,10 +656,10 @@ async function refreshVisibleData({ forceRender = false } = {}) {
   state.liveBusy = true;
   try {
     await refreshClient();
-    if (state.route === 'home') await loadProgress();
+    if (state.route === 'home') await Promise.all([loadProgress(), loadNews()]);
     if (state.route === 'rewards') await loadRewards();
     if (state.route === 'rewardCodes') await loadRewardQrs();
-    if (state.route === 'history' || state.route === 'stars') await loadHistory();
+    if (state.route === 'history') await loadHistory();
     if (state.route === 'progress') await loadProgress();
     if (state.route === 'support') await loadSupport();
     const signature = JSON.stringify({
@@ -742,7 +776,13 @@ function clientOfferPriceLabel(o) {
 function offersScreen() {
   const all = state.data.offers || [];
   const tab = state.data.offerTab || 'club';
-  const items = all.filter((o) => o.type === tab);
+  const selectedStore = state.data.offerStoreId || state.client?.favorite_store || 'all';
+  const selectedStoreName = state.data.offerStoreName || selectedStore;
+  const items = all.filter((o) => {
+    if (o.type !== tab) return false;
+    const offerStore = String(o.store_id || 'all');
+    return offerStore === 'all' || selectedStore === 'all' || offerStore === String(selectedStore);
+  });
   return `
     ${header(tab === 'club' ? 'Клубні пропозиції' : 'Оптові пропозиції', true)}
     <div class="stack">
@@ -750,59 +790,59 @@ function offersScreen() {
         <button class="${tab === 'club' ? 'active' : ''}" data-offer-tab="club">Клубні</button>
         <button class="${tab === 'wholesale' ? 'active' : ''}" data-offer-tab="wholesale">Оптові</button>
       </div>
-      <section class="card gold-border spark">
-        <b>${tab === 'club' ? 'Ексклюзивно для учасників Star Club' : 'Вигідні оптові пропозиції'}</b>
-        <p class="small">Актуальна вітрина спеціальних пропозицій програми лояльності.</p>
-      </section>
-      ${items.map((o) => `
-        <article class="card offer">
-          <div>
-            ${o.badge ? `<span class="pill">${o.badge}</span>` : ''}
-            <h3>${o.name}</h3>
-            <p class="small">${o.description || ''}</p>
-            <div class="big-price">${clientOfferPriceLabel(o)}</div>
-            ${o.old_price_cents ? `<p class="small">Стара ціна: <s>${o.price_from ? 'від ' : ''}${formatOfferMoney(o.old_price_cents)}</s></p>` : ''}${o.discount_label ? `<p class="offer-scope">${o.discount_label}</p>` : ''}
+      <section class="card gold-border spark"><b>${tab === 'club' ? 'Ексклюзивно для учасників Star Club' : 'Вигідні оптові пропозиції'}</b><p class="small">Показано актуальні пропозиції для улюбленого магазину: <b>${safeHtml(selectedStoreName || 'не вибрано')}</b>. Змінити магазин можна у профілі.</p></section>
+      ${items.map((o) => {
+        const oldPrice = o.old_price_cents === null || o.old_price_cents === undefined ? null : Number(o.old_price_cents);
+        const newPrice = o.current_price_cents === null || o.current_price_cents === undefined ? null : Number(o.current_price_cents);
+        const saving = o.saving_cents === null || o.saving_cents === undefined
+          ? (oldPrice !== null && newPrice !== null ? Math.max(0, oldPrice - newPrice) : null)
+          : Number(o.saving_cents);
+        return `<article class="card promo-feed-card">
+          <div class="promo-feed-card__body">
+            <div class="offer-card-badges"><span class="pill offer-store-badge">${safeHtml(o.store_name || o.store_id || 'Усі магазини')}</span>${o.badge ? `<span class="pill">${safeHtml(o.badge)}</span>` : ''}</div>
+            <h3>${safeHtml(o.target_name || o.name)}</h3>
+            ${o.name && o.target_name && o.name !== o.target_name ? `<p class="promo-feed-kicker">${safeHtml(o.name)}</p>` : ''}
+            <p class="promo-feed-description">${safeHtml(o.description || '')}</p>
+            <div class="offer-prices">${oldPrice !== null ? `<span class="offer-old-price">${o.price_from ? 'від ' : ''}${formatOfferMoney(oldPrice)}</span>` : ''}${newPrice !== null ? `<strong class="offer-new-price">${o.price_from ? 'від ' : ''}${formatOfferMoney(newPrice)}</strong>` : `<strong class="offer-new-price">${safeHtml(o.discount_label || 'Star Club')}</strong>`}</div>
+            ${saving !== null && saving > 0 ? `<div class="offer-saving">Економія ${formatOfferMoney(saving)}</div>` : ''}${o.discount_label ? `<p class="offer-scope">${safeHtml(o.discount_label)}</p>` : ''}
           </div>
-          <img src="${o.image_url || '/assets/star.svg'}" alt="${o.name}" onerror="this.onerror=null;this.src='/assets/star.svg'">
-        </article>
-      `).join('') || '<div class="card empty">Активних пропозицій поки немає</div>'}
-    </div>
-  `;
-}
-
-function starsScreen() {
-  return `
-    ${header('Мої зірки', false)}
-    <div class="stack">
-      <button class="card gold-border" data-route="card"><b>Моя карта</b><p class="small">QR-код, штрихкод, номер картки</p></button>
-      <button class="card gold-border" data-route="rewards"><b>За зірки</b><p class="small">Каталог товарів за накопичені зірки</p></button>
-      <button class="card gold-border" data-route="rewardCodes"><b>Мої QR-коди</b><p class="small">Активні коди та історія</p></button>
-      <button class="card gold-border" data-route="progress"><b>Прогрес</b><p class="small">10-та кава, 10-й багет, челенджі</p></button>
-      <button class="card gold-border" data-route="history"><b>Історія</b><p class="small">Нарахування, витрати, чеки</p></button>
-    </div>
-  `;
+          <div class="promo-feed-card__media"><img src="${safeHtml(o.image_url || '/assets/star.svg')}" alt="${safeHtml(o.name)}" onerror="this.onerror=null;this.src='/assets/star.svg'"></div>
+        </article>`;
+      }).join('') || '<div class="card empty">Активних пропозицій для цього магазину поки немає</div>'}
+    </div>`;
 }
 
 function progressScreen() {
   const p = state.data.progress || { stamps: [], challenges: [] };
+  const progressSteps = (value, required, iconName) => {
+    const total = Math.max(1, Math.min(10, Number(required || 1)));
+    const filled = Math.min(total, Math.round((Number(value || 0) / Math.max(1, Number(required || 1))) * total));
+    return Array.from({ length: total }, (_, index) => `<span class="program-step ${index < filled ? 'filled' : ''}">${appIcon(iconName)}</span>`).join('');
+  };
   return `
     ${header('Прогрес і активність', true)}
     <div class="stack">
-      <section class="card gold-border spark"><b>Активні челенджі</b><p class="small">Виконуйте завдання та отримуйте зірки</p></section>
+      <section class="progress-hero">
+        <span>${appIcon('award')}</span>
+        <div><p class="eyebrow">STAR CLUB</p><h2>Ваші цілі та винагороди</h2><p>Виконуйте завдання — прогрес оновлюється автоматично після покупок.</p></div>
+      </section>
+      <div class="section-heading"><span>${appIcon('trophy')}</span><div><h3>Активні челенджі</h3><p>Виконуйте завдання та отримуйте зірки</p></div></div>
       ${p.challenges.map((c) => `
-        <section class="card">
-          <div class="progress-row"><div><b>${c.name}</b><p class="small">${c.description || ''}</p></div><b>${c.progress}/${c.required_visits}</b></div>
-          <div class="progressbar"><span style="width:${Math.min(100, c.progress / c.required_visits * 100)}%"></span></div>
-          <p class="small">Залишилось ${Math.max(0, c.required_visits - c.progress)} відвідування до бонусу ${fmtStars(c.reward_stars)} ★</p>
+        <section class="card challenge-card">
+          <div class="challenge-card-head"><span>${appIcon('target')}</span><div><b>${safeHtml(c.name)}</b><p>${safeHtml(c.description || '')}</p></div><strong>${c.progress}/${c.required_visits}</strong></div>
+          <div class="progressbar"><span style="width:${Math.min(100, c.progress / Math.max(1, c.required_visits) * 100)}%"></span></div>
+          <p class="challenge-reward">Залишилось ${Math.max(0, c.required_visits - c.progress)} · винагорода <b>${fmtStars(c.reward_stars)} ★</b></p>
         </section>
-      `).join('')}
-      <section class="card gold-border spark"><b>Накопичувальні програми</b><p class="small">Після потрібної кількості покупок автоматично зʼявляється безкоштовний код на 7 днів.</p></section>
+      `).join('') || '<div class="empty">Активних челенджів поки немає</div>'}
+      <div class="section-heading"><span>${appIcon('coffee')}</span><div><h3>Накопичувальні програми</h3><p>Збирайте покупки до безкоштовного коду</p></div></div>
       ${p.stamps.map((s) => `
-        <section class="card">
-          <div class="progress-row"><div><b>${s.name}</b><p class="small">Ще ${Math.max(0, s.required_qty - s.progress)} до безкоштовного коду</p></div><b>${s.progress}/${s.required_qty}</b></div>
-          <div class="progressbar"><span style="width:${Math.min(100, s.progress / s.required_qty * 100)}%"></span></div>
+        <section class="card stamp-program-card">
+          <div class="stamp-program-head"><div><p class="eyebrow">ПРОГРАМА ЛОЯЛЬНОСТІ</p><h3>${safeHtml(s.name)}</h3></div><strong>${s.progress}/${s.required_qty}</strong></div>
+          <div class="program-steps">${progressSteps(s.progress, s.required_qty, /кав|coffee/i.test(s.name || '') ? 'coffee' : 'shopping-bag')}</div>
+          <div class="progressbar"><span style="width:${Math.min(100, s.progress / Math.max(1, s.required_qty) * 100)}%"></span></div>
+          <div class="program-hint">${appIcon('gift')}<span>Ще <b>${Math.max(0, s.required_qty - s.progress)}</b> до безкоштовного коду. Винагорода зʼявиться автоматично.</span></div>
         </section>
-      `).join('')}
+      `).join('') || '<div class="empty">Накопичувальних програм поки немає</div>'}
     </div>
   `;
 }
@@ -844,20 +884,40 @@ async function showReceiptModal(receiptId) {
 function historyScreen() {
   const ledger = state.data.ledger || [];
   const receipts = state.data.receipts || [];
+  const filter = state.data.historyFilter || 'all';
+  const filteredLedger = ledger.filter((item) => {
+    if (filter === 'income') return Number(item.amount) > 0;
+    if (filter === 'expense') return Number(item.amount) < 0;
+    if (filter === 'bonus') return /bonus|бонус|challenge|profile|stamp/i.test(`${item.type || ''} ${item.description || ''}`);
+    return true;
+  });
+  let previousDay = '';
+  const ledgerRows = filteredLedger.map((item) => {
+    const day = fmtDate(item.created_at);
+    const dayLabel = day !== previousDay ? `<div class="history-day-label">${day}</div>` : '';
+    previousDay = day;
+    const positive = Number(item.amount) > 0;
+    return `${dayLabel}<div class="history-event">
+      <span class="history-event-icon ${positive ? 'income' : 'expense'}">${appIcon(positive ? 'plus' : 'minus')}</span>
+      <div><b>${safeHtml(item.description || item.type)}</b><p>${fmtTime(item.created_at)}</p></div>
+      <strong class="${positive ? 'plus' : 'minus'}">${positive ? '+' : ''}${fmtStars(item.amount)} ★</strong>
+    </div>`;
+  }).join('');
   return `
     ${header('Історія', true)}
     <div class="stack">
-      <section class="card balance-card"><div class="small">Ваш баланс</div><div class="balance" style="font-size:34px">${fmtStars(state.client.stars_balance)} <span class="star">★</span></div></section>
-      <section class="card">
-        <b>Історія зірок</b>
-        <div class="timeline">
-          ${ledger.length ? ledger.map((l) => `<div class="tx"><span>${l.amount > 0 ? '＋' : '−'}</span><div><b>${l.description || l.type}</b><p class="small">${fmtDate(l.created_at)} ${fmtTime(l.created_at)}</p></div><b class="amount ${l.amount > 0 ? 'plus' : 'minus'}">${l.amount > 0 ? '+' : ''}${fmtStars(l.amount)} ★</b></div>`).join('') : '<div class="empty">Поки немає операцій</div>'}
-        </div>
+      <section class="history-balance-card"><div><p>Ваш баланс</p><div>${fmtStars(state.client.stars_balance)} <span>★</span></div></div><i>${appIcon('circle-star')}</i></section>
+      <div class="history-filters">
+        ${[['all','Усі'],['income','Нарахування'],['expense','Витрати'],['bonus','Бонуси']].map(([value,label]) => `<button type="button" class="${filter === value ? 'active' : ''}" data-history-filter="${value}">${label}</button>`).join('')}
+      </div>
+      <section class="card history-list-card">
+        <div class="section-heading compact"><span>${appIcon('history')}</span><div><h3>Рух зірок</h3><p>Нарахування та списання</p></div></div>
+        <div class="history-events">${ledgerRows || '<div class="empty">Для цього фільтра операцій немає</div>'}</div>
       </section>
-      <section class="card">
-        <b>Чеки</b>
+      <section class="card history-list-card">
+        <div class="section-heading compact"><span>${appIcon('receipt-text')}</span><div><h3>Чеки</h3><p>Натисніть, щоб переглянути деталі</p></div></div>
         <div class="timeline">
-          ${receipts.length ? receipts.map((r) => `<button class="tx receipt-row" type="button" data-open-receipt="${r.id}"><span>${r.is_reward_purchase ? '★' : '🧾'}</span><div><b>${r.is_reward_purchase ? 'Покупка за зірки' : (r.store_id || 'Магазин Star')}</b><p class="small">${fmtDate(r.purchased_at)} · ${r.items.length} товарів${r.is_reward_purchase ? ' · товар отримано за зірки' : ''}</p></div><b class="${r.is_reward_purchase ? 'minus' : ''}">${r.is_reward_purchase ? `-${r.stars_spent} ★` : `${r.total_uah} грн`}</b></button>`).join('') : '<div class="empty">Чеки зʼявляться після покупок із картою</div>'}
+          ${receipts.length ? receipts.map((r) => `<button class="receipt-history-row" type="button" data-open-receipt="${r.id}"><span>${appIcon(r.is_reward_purchase ? 'gift' : 'receipt-text')}</span><div><b>${r.is_reward_purchase ? 'Покупка за зірки' : safeHtml(r.store_id || 'Магазин Star')}</b><p>${fmtDate(r.purchased_at)} · ${r.items.length} товарів${r.is_reward_purchase ? ' · товар отримано за зірки' : ''}</p></div><strong class="${r.is_reward_purchase ? 'minus' : ''}">${r.is_reward_purchase ? `-${r.stars_spent} ★` : `${r.total_uah} грн`}</strong></button>`).join('') : '<div class="empty">Чеки зʼявляться після покупок із картою</div>'}
         </div>
       </section>
     </div>
@@ -886,14 +946,13 @@ function moreScreen() {
   return `
     ${header('Ще', false)}
     <div class="more-grid">
-      <button data-route="card"><b>▣</b>Моя карта</button>
-      <button data-route="rewards"><b>🎁</b>За зірки</button>
-      <button data-route="rewardCodes"><b>▣</b>Мої QR-коди</button>
-      <button data-route="progress"><b>🏆</b>Челенджі</button>
-      <button data-route="history"><b>↺</b>Історія</button>
-      <button data-route="news"><b>✦</b>Новини</button>
-      <button data-route="profile"><b>♙</b>Профіль</button>
-      <button data-route="support"><b>💬</b>Підтримка</button>
+      <button data-route="stores"><b>${appIcon('store')}</b><span>Магазини</span></button>
+      <button data-route="rewardCodes"><b>${appIcon('qr-code')}</b><span>Мої QR-коди</span></button>
+      <button data-route="progress"><b>${appIcon('trophy')}</b><span>Прогрес</span></button>
+      <button data-route="history"><b>${appIcon('history')}</b><span>Історія</span></button>
+      <button data-route="news"><b>${appIcon('newspaper')}</b><span>Новини</span></button>
+      <button data-route="profile"><b>${appIcon('user-round-pen')}</b><span>Профіль</span></button>
+      <button data-route="support"><b>${appIcon('message-circle')}</b><span>Підтримка</span></button>
     </div>
   `;
 }
@@ -926,13 +985,13 @@ function newsScreen() {
     ${header('Новини', true)}
     <div class="stack">
       ${news.map((n) => `
-        <section class="card offer">
-          <div>
-            <p class="small gold">${n.tag || 'STAR CLUB'}</p>
-            <h3>${n.title}</h3>
-            <p class="small">${n.text}</p>
+        <section class="card promo-feed-card news-feed-card">
+          <div class="promo-feed-card__body">
+            <p class="promo-feed-kicker">${safeHtml(n.tag || 'STAR CLUB')}</p>
+            <h3>${safeHtml(n.title)}</h3>
+            <p class="promo-feed-description">${safeHtml(n.text)}</p>
           </div>
-          <img src="${n.image_url}" alt="${n.title}">
+          <div class="promo-feed-card__media"><img src="${safeHtml(n.image_url || '/assets/star.svg')}" alt="${safeHtml(n.title)}" onerror="this.onerror=null;this.src='/assets/star.svg'"></div>
         </section>
       `).join('')}
     </div>
@@ -1027,7 +1086,6 @@ async function render() {
     else if (state.route === 'progress') { await loadProgress(); $app.innerHTML = progressScreen(); }
     else if (state.route === 'history') { await loadHistory(); $app.innerHTML = historyScreen(); }
     else if (state.route === 'stores') $app.innerHTML = storesScreen();
-    else if (state.route === 'stars') $app.innerHTML = starsScreen();
     else if (state.route === 'more') $app.innerHTML = moreScreen();
     else if (state.route === 'news') { await loadNews(); $app.innerHTML = newsScreen(); }
     else if (state.route === 'support') { await loadSupport(); $app.innerHTML = supportScreen(); }
@@ -1037,7 +1095,7 @@ async function render() {
     else if (state.route === 'privacy') $app.innerHTML = privacyScreen();
     else if (state.route === 'register') $app.innerHTML = registerScreen();
     else if (state.route === 'login') $app.innerHTML = loginScreen();
-    else { await loadProgress(); $app.innerHTML = homeScreen(); }
+    else { await Promise.all([loadProgress(), loadNews()]); $app.innerHTML = homeScreen(); }
   } catch (e) {
     if (e.code === 'CLIENT_UNAUTHORIZED' || e.message === 'CLIENT_UNAUTHORIZED') {
       localStorage.removeItem('starclub_session');
@@ -1114,6 +1172,7 @@ function bindEvents() {
   });
   document.querySelectorAll('[data-back="1"]').forEach((el) => el.onclick = () => setRoute(state.client?.registered ? 'home' : 'start'));
   document.querySelectorAll('[data-offer-tab]').forEach((el) => el.onclick = () => { state.data.offerTab = el.dataset.offerTab; render(); });
+  document.querySelectorAll('[data-history-filter]').forEach((el) => el.onclick = () => { state.data.historyFilter = el.dataset.historyFilter; render(); });
   document.querySelectorAll('[data-logout]').forEach((el) => el.onclick = () => { localStorage.removeItem('starclub_session'); localStorage.removeItem('starclub_route'); location.reload(); });
   document.querySelectorAll('[data-show-cashier]').forEach((el) => el.onclick = () => showCashierModal(el.dataset.cardNumber));
   document.querySelectorAll('[data-close-modal]').forEach((el) => el.onclick = () => el.closest('.modal-backdrop')?.remove());

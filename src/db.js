@@ -236,11 +236,14 @@ export function migrate() {
 
     CREATE TABLE IF NOT EXISTS stores (
       id TEXT PRIMARY KEY,
+      external_id TEXT UNIQUE,
       name TEXT NOT NULL,
       address TEXT,
       work_hours TEXT,
       phone TEXT,
       image_url TEXT,
+      source TEXT DEFAULT 'manual',
+      synced_at TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT,
       updated_at TEXT
@@ -262,6 +265,19 @@ export function migrate() {
       no_star_accrual INTEGER DEFAULT 0,
       no_redeem INTEGER DEFAULT 0,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS product_store_prices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      store_id TEXT NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      synced_price_cents INTEGER NOT NULL DEFAULT 0,
+      manual_price_cents INTEGER,
+      use_manual_price INTEGER NOT NULL DEFAULT 0,
+      synced_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(product_id, store_id)
     );
 
     CREATE TABLE IF NOT EXISTS star_accrual_exclusions (
@@ -371,6 +387,12 @@ export function migrate() {
       rounding_mode TEXT DEFAULT 'kopeck',
       club_price_cents INTEGER,
       old_price_cents INTEGER,
+      calculated_old_price_cents INTEGER,
+      calculated_new_price_cents INTEGER,
+      manual_old_price_cents INTEGER,
+      use_manual_old_price INTEGER DEFAULT 0,
+      manual_new_price_cents INTEGER,
+      use_manual_new_price INTEGER DEFAULT 0,
       stars_multiplier REAL,
       tiers_json TEXT,
       store_id TEXT,
@@ -544,11 +566,17 @@ export function migrate() {
 
   const storeInfo = innerDb.exec('PRAGMA table_info(stores)');
   const storeColumns = new Set((storeInfo?.[0]?.values || []).map((row) => row[1]));
+  if (!storeColumns.has('external_id')) innerDb.run('ALTER TABLE stores ADD COLUMN external_id TEXT');
   if (!storeColumns.has('image_url')) innerDb.run('ALTER TABLE stores ADD COLUMN image_url TEXT');
+  if (!storeColumns.has('source')) innerDb.run("ALTER TABLE stores ADD COLUMN source TEXT DEFAULT 'manual'");
+  if (!storeColumns.has('synced_at')) innerDb.run('ALTER TABLE stores ADD COLUMN synced_at TEXT');
   if (!storeColumns.has('is_active')) innerDb.run('ALTER TABLE stores ADD COLUMN is_active INTEGER DEFAULT 1');
   if (!storeColumns.has('created_at')) innerDb.run('ALTER TABLE stores ADD COLUMN created_at TEXT');
   if (!storeColumns.has('updated_at')) innerDb.run('ALTER TABLE stores ADD COLUMN updated_at TEXT');
+  innerDb.run("UPDATE stores SET external_id = id WHERE external_id IS NULL OR external_id = ''");
+  innerDb.run("UPDATE stores SET source = 'manual' WHERE source IS NULL OR source = ''");
   innerDb.run('UPDATE stores SET is_active = 1 WHERE is_active IS NULL');
+  innerDb.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_stores_external_id ON stores(external_id)');
 
   if (!clientColumns.has('consent_rules_at')) innerDb.run('ALTER TABLE clients ADD COLUMN consent_rules_at TEXT');
   if (!clientColumns.has('consent_personal_data_at')) innerDb.run('ALTER TABLE clients ADD COLUMN consent_personal_data_at TEXT');
@@ -592,6 +620,12 @@ export function migrate() {
   if (!offerPricingColumns.has('parent_offer_id')) innerDb.run('ALTER TABLE offers ADD COLUMN parent_offer_id INTEGER');
   if (!offerPricingColumns.has('visible_in_app')) innerDb.run('ALTER TABLE offers ADD COLUMN visible_in_app INTEGER DEFAULT 1');
   if (!offerPricingColumns.has('rounding_mode')) innerDb.run("ALTER TABLE offers ADD COLUMN rounding_mode TEXT DEFAULT 'kopeck'");
+  if (!offerPricingColumns.has('calculated_old_price_cents')) innerDb.run('ALTER TABLE offers ADD COLUMN calculated_old_price_cents INTEGER');
+  if (!offerPricingColumns.has('calculated_new_price_cents')) innerDb.run('ALTER TABLE offers ADD COLUMN calculated_new_price_cents INTEGER');
+  if (!offerPricingColumns.has('manual_old_price_cents')) innerDb.run('ALTER TABLE offers ADD COLUMN manual_old_price_cents INTEGER');
+  if (!offerPricingColumns.has('use_manual_old_price')) innerDb.run('ALTER TABLE offers ADD COLUMN use_manual_old_price INTEGER DEFAULT 0');
+  if (!offerPricingColumns.has('manual_new_price_cents')) innerDb.run('ALTER TABLE offers ADD COLUMN manual_new_price_cents INTEGER');
+  if (!offerPricingColumns.has('use_manual_new_price')) innerDb.run('ALTER TABLE offers ADD COLUMN use_manual_new_price INTEGER DEFAULT 0');
 
   innerDb.run(`
     UPDATE offers
@@ -628,6 +662,8 @@ export function migrate() {
   innerDb.run('UPDATE offers SET visible_in_app = 1 WHERE visible_in_app IS NULL');
   innerDb.run("UPDATE offers SET rounding_mode = 'kopeck' WHERE rounding_mode IS NULL OR rounding_mode = ''");
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_products_group_external_id ON products(group_external_id)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_product_store_prices_store ON product_store_prices(store_id, product_id)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_product_store_prices_product ON product_store_prices(product_id, store_id)');
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_offers_target ON offers(target_type, target_value)');
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_promo_offers_active ON promo_offers(type, is_active)');
 
@@ -691,8 +727,10 @@ export function seed() {
     ['star-market', 'Star Маркет', 'вул. Шевченка, 24', '08:00–22:00', '+380000000002'],
     ['star-bakery', 'Star Bakery', 'вул. Миру, 5', '07:30–21:30', '+380000000003']
   ];
-  const insertStore = db.prepare('INSERT OR IGNORE INTO stores(id, name, address, work_hours, phone, image_url, is_active, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, 1, ?, ?)');
-  stores.forEach((s) => insertStore.run(...s, '/assets/star.svg', t, t));
+  const insertStore = db.prepare(`INSERT OR IGNORE INTO stores(
+    id, external_id, name, address, work_hours, phone, image_url, source, synced_at, is_active, created_at, updated_at
+  ) VALUES(?, ?, ?, ?, ?, ?, ?, 'seed', NULL, 1, ?, ?)`);
+  stores.forEach((s) => insertStore.run(s[0], s[0], s[1], s[2], s[3], s[4], '/assets/star.svg', t, t));
 
   const rewardsCount = db.prepare('SELECT COUNT(*) AS c FROM reward_products').get().c;
   if (!rewardsCount) {

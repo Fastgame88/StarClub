@@ -135,3 +135,23 @@ html,body{max-width:100%;overflow-x:hidden}
 .star-exclusion-item span{display:grid;gap:5px;min-width:0}.star-exclusion-item b{line-height:1.3;overflow-wrap:anywhere}.star-exclusion-item small{color:var(--muted);overflow-wrap:anywhere}.star-exclusion-item code{color:var(--gold-2)}
 .star-exclusion-actions{margin-top:2px}
 @media(max-width:900px){.stamp-target-picker,.star-exclusion-picker{grid-template-columns:1fr;max-height:480px}.stamp-qty-field{max-width:none}.stamp-reward-field{grid-column:auto}.star-exclusion-toolbar{grid-template-columns:1fr}.star-exclusion-toolbar button{width:100%}}
+
+/* Multi-store pricing v22 */
+.store-price-manager{margin-bottom:18px}.store-price-toolbar{display:grid;grid-template-columns:minmax(180px,240px) minmax(240px,1fr) auto;gap:12px;align-items:end}.store-price-products{display:grid;gap:12px;margin-top:14px;max-height:760px;overflow:auto;padding-right:4px}.store-price-product{border:1px solid rgba(0,0,0,.09);border-radius:16px;padding:14px;background:#fff}.store-price-product-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px}.store-price-product-head div{display:grid;gap:3px}.store-price-product-head code{font-size:11px;opacity:.65}.store-price-rows{display:grid;gap:8px}.store-price-row{display:grid;grid-template-columns:minmax(160px,1fr) auto 110px auto auto auto;gap:8px;align-items:center;padding:9px;border-radius:12px;background:#f6f7f8}.store-price-row>div{display:grid}.store-price-row span{font-size:12px;opacity:.66}.store-price-row input[type=number]{width:110px}.store-price-row button{padding:8px 10px}.store-price-row strong{white-space:nowrap}.store-manual-switch{display:flex;gap:5px;align-items:center;font-size:12px}.pricing-manual-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:13px;border:1px dashed rgba(0,0,0,.16);border-radius:14px}.pricing-preview-card{grid-template-columns:repeat(3,minmax(0,1fr))!important}.offer-mobile-card dl>div{align-items:flex-start}.offer-mobile-card s{opacity:.58;margin-right:4px}.pricing-target-item small{display:block;margin-top:3px}.pricing-target-item input{flex:0 0 auto}
+@media(max-width:900px){.store-price-toolbar{grid-template-columns:1fr}.store-price-row{grid-template-columns:1fr 1fr}.store-price-row>div{grid-column:1/-1}.pricing-manual-grid{grid-template-columns:1fr}.pricing-preview-card{grid-template-columns:1fr!important}}
+.fixed-price-single-hint{
+  display:grid;
+  gap:4px;
+  padding:12px 14px;
+  border:1px solid rgba(246,211,123,.42);
+  border-radius:14px;
+  background:linear-gradient(135deg,rgba(228,183,95,.14),rgba(228,183,95,.05));
+  color:var(--text,#f8f8f5);
+}
+.fixed-price-single-hint[hidden]{display:none}
+.fixed-price-single-hint b{color:var(--gold2,#f3cd73)}
+.fixed-price-single-hint span{font-size:12px;color:var(--muted,#9ba0aa);line-height:1.4}
+.pricing-target-picker.single-target-mode .pricing-target-item:has(input:checked){
+  border-color:rgba(246,211,123,.62);
+  background:rgba(228,183,95,.12);
+}
