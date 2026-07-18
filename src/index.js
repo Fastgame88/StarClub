@@ -302,6 +302,51 @@ function normalizeOneCCode(value) {
     .replace(/\s+/g, '');
 }
 
+// 1С може передати магазин у трьох формах: код, зовнішній код або текстове
+// представлення посилання (назву). Синхронізація зберігає код, тому старі
+// касові модулі, які надсилали назву, треба безпечно звести до того самого id.
+function findStoreByIdentity(value) {
+  const raw = String(value || '').normalize('NFKC').trim();
+  if (!raw) return null;
+  const normalized = normalizeOneCCode(raw);
+
+  const exact = db.prepare(`SELECT * FROM stores
+    WHERE is_active = 1
+      AND (id = ? OR external_id = ? OR id = ? OR external_id = ?)
+    LIMIT 1`).get(raw, raw, normalized, normalized);
+  if (exact) return exact;
+
+  // Назву використовуємо тільки коли вона однозначно вказує на один магазин.
+  const matches = db.prepare('SELECT * FROM stores WHERE is_active = 1').all()
+    .filter((store) => normalizeOneCCode(store.name) === normalized);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function findStoreFromPayload(payload = {}) {
+  for (const value of [payload.store_external_id, payload.store_id, payload.store_name]) {
+    const store = findStoreByIdentity(value);
+    if (store) return store;
+  }
+  return null;
+}
+
+function canonicalStoreId(value) {
+  const store = findStoreByIdentity(value);
+  return String(store?.id || value || '').trim();
+}
+
+function storeMatchesOffer(offerStoreId, requestedStoreId) {
+  const ruleId = String(offerStoreId || 'all').trim();
+  if (!ruleId || ruleId === 'all') return true;
+
+  const ruleStore = findStoreByIdentity(ruleId);
+  const requestedStore = findStoreByIdentity(requestedStoreId);
+  if (ruleStore && requestedStore) return String(ruleStore.id) === String(requestedStore.id);
+
+  return Boolean(requestedStoreId)
+    && normalizeOneCCode(ruleId) === normalizeOneCCode(requestedStoreId);
+}
+
 function normalizeImageUrl(value) {
   const raw = String(value || '').trim();
   if (!raw) return '/assets/star.svg';
@@ -445,7 +490,7 @@ function offerMatchesItem(offer, item) {
 function getActiveOffers(storeId, purchasedAt) {
   const at = new Date(purchasedAt || Date.now()).getTime();
   return db.prepare('SELECT * FROM offers WHERE is_active = 1').all().filter((offer) => {
-    if (offer.store_id && offer.store_id !== 'all' && String(offer.store_id) !== String(storeId || '')) return false;
+    if (!storeMatchesOffer(offer.store_id, storeId)) return false;
     if (offer.active_from && new Date(offer.active_from).getTime() > at) return false;
     if (offer.active_to && new Date(offer.active_to).getTime() < at) return false;
     return true;
@@ -462,7 +507,8 @@ function buildPricingDebug({ items = [], storeId, purchasedAt, calculation }) {
 
   const lines = [];
   lines.push('STARCLUB PRICING DEBUG');
-  lines.push(`store_id="${String(storeId || '')}" purchased_at="${String(purchasedAt || '')}"`);
+  const resolvedStore = findStoreByIdentity(storeId);
+  lines.push(`store_id="${String(storeId || '')}" resolved_store_id="${String(resolvedStore?.id || '')}" resolved_store_name="${String(resolvedStore?.name || '')}" purchased_at="${String(purchasedAt || '')}"`);
   lines.push(`items=${items.length}; pricing_rules_found=${allPricingOffers.length}`);
 
   items.forEach((item, index) => {
@@ -482,7 +528,7 @@ function buildPricingDebug({ items = [], storeId, purchasedAt, calculation }) {
     for (const offer of allPricingOffers) {
       let reason = 'ACTIVE';
       if (!offer.is_active) reason = 'DISABLED';
-      else if (offer.store_id && offer.store_id !== 'all' && String(offer.store_id) !== String(storeId || '')) {
+      else if (!storeMatchesOffer(offer.store_id, storeId)) {
         reason = `STORE_MISMATCH(rule=${offer.store_id})`;
       } else if (offer.active_from && new Date(offer.active_from).getTime() > at) {
         reason = `NOT_STARTED(${offer.active_from})`;
@@ -566,11 +612,12 @@ function effectiveStorePriceCents(row) {
 
 function getProductStorePrice(productId, storeId) {
   if (!productId || !storeId || storeId === 'all') return null;
+  const resolvedStoreId = canonicalStoreId(storeId);
   const row = db.prepare(`SELECT psp.*, s.name AS store_name, s.external_id AS store_external_id
     FROM product_store_prices psp
     JOIN stores s ON s.id = psp.store_id
     WHERE psp.product_id = ? AND psp.store_id = ?
-    LIMIT 1`).get(String(productId), String(storeId));
+    LIMIT 1`).get(String(productId), resolvedStoreId);
   if (!row) return null;
   return { ...row, effective_price_cents: effectiveStorePriceCents(row) };
 }
@@ -739,8 +786,8 @@ function productsForOfferShowcase(offer = {}) {
 
 function offerShowcaseView(offer = {}, preferredStoreId = null) {
   const products = productsForOfferShowcase(offer);
-  const ruleStoreId = offer.store_id && offer.store_id !== 'all' ? String(offer.store_id) : null;
-  const storeId = ruleStoreId || (preferredStoreId && preferredStoreId !== 'all' ? String(preferredStoreId) : null);
+  const ruleStoreId = offer.store_id && offer.store_id !== 'all' ? canonicalStoreId(offer.store_id) : null;
+  const storeId = ruleStoreId || (preferredStoreId && preferredStoreId !== 'all' ? canonicalStoreId(preferredStoreId) : null);
   const pricedProducts = products.map((product) => ({
     ...product,
     effective_price_cents: storeId ? priceForProductAndStore(product, storeId) : Math.max(0, Math.round(Number(product.price_cents || 0)))
@@ -1957,16 +2004,10 @@ app.get('/api/client/reward-qrs', clientAuth, (req, res) => {
 app.get('/api/client/offers', clientAuth, (req, res) => {
   const now = Date.now();
   const requestedFavoriteStore = String(req.client?.favorite_store || '').trim();
-  const favoriteStoreRow = requestedFavoriteStore
-    ? db.prepare(`SELECT id, external_id, name, source, synced_at
-        FROM stores
-        WHERE is_active = 1 AND (id = ? OR external_id = ?)
-        LIMIT 1`).get(requestedFavoriteStore, requestedFavoriteStore)
-    : null;
+  const favoriteStoreRow = requestedFavoriteStore ? findStoreByIdentity(requestedFavoriteStore) : null;
   const favoriteStore = String(favoriteStoreRow?.id || requestedFavoriteStore || '');
   const matchesFavoriteStore = (offer) => {
-    const offerStore = String(offer?.store_id || 'all');
-    return offerStore === 'all' || Boolean(favoriteStore && offerStore === favoriteStore);
+    return storeMatchesOffer(offer?.store_id, favoriteStore);
   };
 
   const rules = db.prepare(`SELECT * FROM offers
@@ -2151,10 +2192,13 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
   // У старій 1С дата чека часто передається як 00:00:00, через що правило,
   // створене сьогодні, помилково мало статус NOT_STARTED.
   const pricingAt = nowIso();
+  const resolvedStore = findStoreFromPayload(body);
+  const requestedStoreIdentity = body.store_external_id || body.store_id || body.store_name || '';
+  const storeId = String(resolvedStore?.id || requestedStoreIdentity || '').trim();
 
   const calculation = calculateDraftWithOffers({
     items,
-    storeId: body.store_id,
+    storeId,
     purchasedAt: pricingAt
   });
 
@@ -2168,11 +2212,13 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
       stars_balance: client.stars_balance,
       available_stars: getClientAvailableStars(client.id)
     },
+    resolved_store_id: resolvedStore?.id || null,
+    resolved_store_name: resolvedStore?.name || null,
     ...calculation,
     ...(body.debug ? {
       debug_text: buildPricingDebug({
         items,
-        storeId: body.store_id,
+        storeId,
         purchasedAt: pricingAt,
         calculation
       })
@@ -2182,6 +2228,9 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
 
 app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   const body = req.body || {};
+  const resolvedStore = findStoreFromPayload(body);
+  const requestedStoreIdentity = body.store_external_id || body.store_id || body.store_name || '';
+  const storeId = String(resolvedStore?.id || requestedStoreIdentity || '').trim();
   if (!body.id) return res.status(400).json({ ok: false, error: 'RECEIPT_ID_REQUIRED' });
 
   const rewardTokens = [];
@@ -2197,8 +2246,8 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
       finalized.push(finalizeRewardQrOnce({
         token: rewardToken,
         receiptId: body.id,
-        actorId: body.store_id || '1c',
-        storeId: body.store_id || '1c'
+        actorId: storeId || '1c',
+        storeId: storeId || '1c'
       }));
     }
     return res.json({
@@ -2238,7 +2287,7 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   const eligibleCents = isRewardReceipt ? 0 : eligibleCentsRaw;
   const excludedCents = Math.max(0, totalCents - eligibleCents);
   const purchasedAt = body.purchased_at || nowIso();
-  const accrual = isRewardReceipt ? { stars: 0, applied: [] } : calculateAccrualWithOffers(items, body.store_id, purchasedAt);
+  const accrual = isRewardReceipt ? { stars: 0, applied: [] } : calculateAccrualWithOffers(items, storeId, purchasedAt);
   const starsAccrued = items.length ? accrual.stars : (isRewardReceipt ? 0 : Math.floor(eligibleCents / 100));
 
   let starsSpent = Math.abs(Number(body.stars_spent || 0));
@@ -2254,7 +2303,7 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
       body.id,
       body.fiscal_number || null,
       client.id,
-      body.store_id || null,
+      storeId || null,
       body.cash_register || null,
       body.cashier || null,
       totalCents,
@@ -2300,8 +2349,8 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     finalized.push(finalizeRewardQrOnce({
       token: rewardToken,
       receiptId: body.id,
-      actorId: body.store_id || '1c',
-      storeId: body.store_id || '1c'
+      actorId: storeId || '1c',
+      storeId: storeId || '1c'
     }));
   }
 
@@ -2317,7 +2366,7 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
 
   logAudit({
     actorType: '1c',
-    actorId: body.store_id || '1c',
+    actorId: storeId || '1c',
     action: isRewardReceipt ? 'reward_receipt_imported' : 'receipt_imported',
     entityType: 'receipt',
     entityId: body.id,
@@ -2325,7 +2374,17 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   });
 
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
-  res.json({ ok: true, duplicate: false, receipt_id: body.id, stars_accrued: starsAccrued, stars_spent: starsSpent, balance: fresh.stars_balance, reward_finalize: finalized });
+  res.json({
+    ok: true,
+    duplicate: false,
+    receipt_id: body.id,
+    resolved_store_id: resolvedStore?.id || null,
+    resolved_store_name: resolvedStore?.name || null,
+    stars_accrued: starsAccrued,
+    stars_spent: starsSpent,
+    balance: fresh.stars_balance,
+    reward_finalize: finalized
+  });
 });
 
 app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
