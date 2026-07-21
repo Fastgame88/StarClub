@@ -26,7 +26,8 @@ const state = {
   lastNotifyAt: 0,
   notifications: [],
   notificationsLoadedFor: '',
-  notificationPanelOpen: false
+  notificationPanelOpen: false,
+  openCashierOnCard: false
 };
 
 const icons = {
@@ -354,7 +355,7 @@ function registerScreen() {
           <option value="">Улюблений магазин</option>
           ${storeOptions}
         </select>
-        <span class="registration-field-chevron" aria-hidden="true">⌄</span>
+        <span class="registration-field-chevron" aria-hidden="true"></span>
       </label>
       <input class="input" name="email" type="email" autocomplete="email" placeholder="Email (необовʼязково)" value="${c.email || ''}">
       <input class="input" name="preferences" placeholder="Вподобання через кому: кава, випічка" value="${Array.isArray(c.preferences) ? c.preferences.join(', ') : ''}">
@@ -1135,6 +1136,11 @@ async function render() {
     }
   }
   bindEvents();
+  if (state.route === 'card' && state.openCashierOnCard) {
+    state.openCashierOnCard = false;
+    const cashierButton = document.querySelector('[data-show-cashier]');
+    if (cashierButton) showCashierModal(cashierButton.dataset.cardNumber);
+  }
 }
 
 function normalizeClientPhone(phone) {
@@ -1194,6 +1200,7 @@ function bindEvents() {
     if ($nav.contains(el)) return;
     el.onclick = (event) => {
       event?.preventDefault?.();
+      if (el.dataset.route === 'card') state.openCashierOnCard = true;
       setRoute(el.dataset.route);
     };
   });
@@ -1377,6 +1384,7 @@ $nav.addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();
   if (button.disabled) return;
+  if (button.dataset.route === 'card') state.openCashierOnCard = true;
   setRoute(button.dataset.route);
 });
 

@@ -293,7 +293,7 @@ body{background:#05070a;color:var(--text);overflow-x:hidden}
 .date-field input[type="date"]{color:var(--text);font-size:16px;min-width:0;width:100%}
 .registration-store-field{position:relative;display:block}
 .registration-store-field select{appearance:none;-webkit-appearance:none;padding-right:50px}
-.registration-field-chevron{position:absolute;right:18px;top:50%;width:14px;transform:translateY(-54%);display:grid;place-items:center;color:var(--muted);font-size:20px;line-height:1;pointer-events:none}
+.registration-field-chevron{position:absolute;right:21px;top:50%;width:10px;height:10px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:translateY(-68%) rotate(45deg);transform-origin:center;pointer-events:none;box-sizing:border-box}
 textarea.input,.textarea{font-size:16px;min-height:112px;line-height:1.45;padding:14px 15px;resize:vertical}
 input.input,select.input{font-size:16px}
 .offer-scope{margin:8px 0;color:var(--gold2);font-size:12px;overflow-wrap:anywhere}
