@@ -349,10 +349,13 @@ function registerScreen() {
       <input class="input" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+380XXXXXXXXX" value="${c.phone || '+380'}" pattern="^(\\+?380\\d{9}|0\\d{9})$" maxlength="13" required>
       <input class="input" name="name" placeholder="Імʼя" value="${c.name || ''}" required>
       <label class="input-field date-field"><span>Дата народження</span><input class="input" name="birth_date" type="date" value="${c.birth_date || ''}" required></label>
-      <select class="input" name="favorite_store" required>
-        <option value="">Улюблений магазин</option>
-        ${storeOptions}
-      </select>
+      <label class="registration-store-field">
+        <select class="input" name="favorite_store" required>
+          <option value="">Улюблений магазин</option>
+          ${storeOptions}
+        </select>
+        <span class="registration-field-chevron" aria-hidden="true">⌄</span>
+      </label>
       <input class="input" name="email" type="email" autocomplete="email" placeholder="Email (необовʼязково)" value="${c.email || ''}">
       <input class="input" name="preferences" placeholder="Вподобання через кому: кава, випічка" value="${Array.isArray(c.preferences) ? c.preferences.join(', ') : ''}">
       ${needPassword ? `
@@ -449,6 +452,25 @@ function homeBanner() {
       </div>
       <div class="home-banner-dots" aria-hidden="true">${slides.map((_, index) => `<i class="${index === 0 ? 'active' : ''}"></i>`).join('')}</div>
     </section>`;
+}
+
+function bindHomeBannerCarousel() {
+  const rail = document.querySelector('.home-banner-rail');
+  const dots = [...document.querySelectorAll('.home-banner-dots i')];
+  if (!rail || dots.length < 2) return;
+
+  let frame = 0;
+  const syncDots = () => {
+    frame = 0;
+    const pageWidth = Math.max(1, rail.clientWidth);
+    const activeIndex = Math.min(dots.length - 1, Math.max(0, Math.round(rail.scrollLeft / pageWidth)));
+    dots.forEach((dot, index) => dot.classList.toggle('active', index === activeIndex));
+  };
+  rail.addEventListener('scroll', () => {
+    if (frame) cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(syncDots);
+  }, { passive: true });
+  syncDots();
 }
 
 function homeScreen() {
@@ -729,7 +751,7 @@ function rewardsScreen() {
         <p class="small">Доступно: ${fmtStars(data?.available_stars || 0)} ★</p>
       </section>
       ${active.length ? `<section class="card gold-border"><b>Активні коди</b><p class="small">У вас є активний QR-код. Його можна повторно відкрити.</p>${active.map((q)=>`<button class="reward-code-row" data-open-reward-code="${q.token}"><span>${q.reward.name}</span><b>${q.manual_code}</b></button>`).join('')}</section>` : ''}
-      <button class="card gold-border" data-route="rewardCodes"><b>Мої QR-коди</b><p class="small">Активні коди та історія використання</p></button>
+      <button class="card gold-border reward-codes-link" data-route="rewardCodes"><b>Мої QR-коди</b><p class="small">Активні коди та історія використання</p></button>
       ${items.map((r) => `
         <article class="product">
           <img src="${r.image_url}" alt="${r.name}">
@@ -1166,6 +1188,7 @@ function bindNotificationEvents() {
 }
 
 function bindEvents() {
+  bindHomeBannerCarousel();
   bindNotificationEvents();
   document.querySelectorAll('[data-route]').forEach((el) => {
     if ($nav.contains(el)) return;

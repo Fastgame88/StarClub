@@ -1026,6 +1026,169 @@ function getProfileBonusConfig() {
   };
 }
 
+const CLIENT_CLEANUP_DAY_MS = 24 * 60 * 60 * 1000;
+
+function normalizeClientCleanupConfig(raw = {}) {
+  const positiveMinBalance = Math.max(1, Math.floor(Number(raw.positiveMinBalance ?? 1) || 1));
+  const rawMaxBalance = Number(raw.positiveMaxBalance);
+  const positiveMaxBalance = Number.isFinite(rawMaxBalance) && rawMaxBalance > 0
+    ? Math.max(positiveMinBalance, Math.floor(rawMaxBalance))
+    : null;
+  return {
+    enabled: raw.enabled !== false,
+    deletePositiveBalance: raw.deletePositiveBalance !== false,
+    positiveInactiveDays: Math.min(3650, Math.max(1, Math.floor(Number(raw.positiveInactiveDays ?? 183) || 183))),
+    positiveMinBalance,
+    positiveMaxBalance,
+    deleteZeroBalance: raw.deleteZeroBalance !== false,
+    zeroInactiveDays: Math.min(3650, Math.max(1, Math.floor(Number(raw.zeroInactiveDays ?? 183) || 183))),
+    lastRunAt: raw.lastRunAt || null,
+    lastDeletedCount: Math.max(0, Math.floor(Number(raw.lastDeletedCount || 0)))
+  };
+}
+
+function getClientCleanupConfig() {
+  return normalizeClientCleanupConfig(getSetting('client_cleanup', {}));
+}
+
+function saveClientCleanupConfig(input = {}, { preserveRunStatus = true } = {}) {
+  const current = getClientCleanupConfig();
+  const normalized = normalizeClientCleanupConfig({
+    ...input,
+    ...(preserveRunStatus ? {
+      lastRunAt: current.lastRunAt,
+      lastDeletedCount: current.lastDeletedCount
+    } : {})
+  });
+  db.prepare(`INSERT INTO settings(key, value) VALUES('client_cleanup', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(normalized));
+  return normalized;
+}
+
+function clientCleanupCandidates(config = getClientCleanupConfig(), at = new Date()) {
+  const nowMs = at instanceof Date ? at.getTime() : new Date(at).getTime();
+  const rows = db.prepare(`SELECT c.*,
+      (SELECT MAX(r.purchased_at) FROM receipts r WHERE r.client_id = c.id AND COALESCE(r.is_return, 0) = 0) AS latest_receipt_at,
+      (SELECT MAX(l.created_at) FROM star_ledger l WHERE l.client_id = c.id) AS last_balance_change_at
+    FROM clients c
+    ORDER BY c.id`).all();
+
+  const candidates = [];
+  for (const client of rows) {
+    const balance = Number(client.stars_balance || 0);
+    let reason = null;
+    let inactiveDaysRequired = null;
+
+    if (balance === 0 && config.deleteZeroBalance) {
+      reason = 'zero_balance';
+      inactiveDaysRequired = config.zeroInactiveDays;
+    } else if (
+      balance >= config.positiveMinBalance
+      && config.deletePositiveBalance
+      && (config.positiveMaxBalance === null || balance <= config.positiveMaxBalance)
+    ) {
+      reason = 'positive_balance';
+      inactiveDaysRequired = config.positiveInactiveDays;
+    }
+    if (!reason) continue;
+
+    const activityTimes = [
+      client.created_at,
+      client.registered_at,
+      client.last_purchase_at,
+      client.latest_receipt_at,
+      client.last_balance_change_at
+    ].map((value) => new Date(value || 0).getTime()).filter(Number.isFinite);
+    const lastActivityMs = activityTimes.length ? Math.max(...activityTimes) : 0;
+    if (!lastActivityMs || lastActivityMs > nowMs - inactiveDaysRequired * CLIENT_CLEANUP_DAY_MS) continue;
+
+    candidates.push({
+      id: Number(client.id),
+      name: client.name || null,
+      phone: client.phone || null,
+      card_number: client.card_number || null,
+      balance,
+      reason,
+      inactive_days: Math.floor((nowMs - lastActivityMs) / CLIENT_CLEANUP_DAY_MS),
+      last_activity_at: new Date(lastActivityMs).toISOString()
+    });
+  }
+  return candidates;
+}
+
+function deleteInactiveClient(candidate, { actorId = 'system', trigger = 'scheduled' } = {}) {
+  const clientId = Number(candidate.id);
+  const counts = {
+    receipts_anonymized: Number(db.prepare('SELECT COUNT(*) AS c FROM receipts WHERE client_id = ?').get(clientId)?.c || 0),
+    ledger_deleted: Number(db.prepare('SELECT COUNT(*) AS c FROM star_ledger WHERE client_id = ?').get(clientId)?.c || 0),
+    reward_qrs_deleted: Number(db.prepare('SELECT COUNT(*) AS c FROM reward_qrs WHERE client_id = ?').get(clientId)?.c || 0)
+  };
+
+  const remove = db.transaction(() => {
+    db.prepare('DELETE FROM support_messages WHERE ticket_id IN (SELECT id FROM support_tickets WHERE client_id = ?)').run(clientId);
+    db.prepare('DELETE FROM support_tickets WHERE client_id = ?').run(clientId);
+    db.prepare('DELETE FROM sessions WHERE client_id = ?').run(clientId);
+    db.prepare('DELETE FROM star_ledger WHERE client_id = ?').run(clientId);
+    db.prepare('DELETE FROM reward_qrs WHERE client_id = ?').run(clientId);
+    db.prepare('DELETE FROM client_stamp_progress WHERE client_id = ?').run(clientId);
+    db.prepare('DELETE FROM client_challenge_days WHERE client_id = ?').run(clientId);
+    db.prepare('DELETE FROM client_challenge_rewards WHERE client_id = ?').run(clientId);
+    db.prepare('DELETE FROM personal_coupons WHERE client_id = ?').run(clientId);
+    db.prepare('UPDATE receipts SET client_id = NULL WHERE client_id = ?').run(clientId);
+    db.prepare("DELETE FROM audit_logs WHERE entity_type = 'client' AND entity_id = ?").run(String(clientId));
+    db.prepare('DELETE FROM clients WHERE id = ?').run(clientId);
+    logAudit({
+      actorType: actorId === 'system' ? 'system' : 'admin',
+      actorId,
+      action: 'inactive_client_auto_deleted',
+      entityType: 'client_cleanup',
+      entityId: String(clientId),
+      payload: {
+        trigger,
+        reason: candidate.reason,
+        balance: candidate.balance,
+        inactive_days: candidate.inactive_days,
+        last_activity_at: candidate.last_activity_at,
+        ...counts
+      }
+    });
+  });
+  remove();
+  return counts;
+}
+
+function runClientCleanup({ actorId = 'system', trigger = 'scheduled' } = {}) {
+  const config = getClientCleanupConfig();
+  if (!config.enabled) return { ok: true, skipped: true, reason: 'DISABLED', deleted: 0, config };
+
+  const candidates = clientCleanupCandidates(config);
+  const errors = [];
+  let deleted = 0;
+  for (const candidate of candidates) {
+    try {
+      deleteInactiveClient(candidate, { actorId, trigger });
+      deleted += 1;
+    } catch (error) {
+      errors.push({ client_id: candidate.id, error: String(error?.message || error) });
+    }
+  }
+
+  const updatedConfig = saveClientCleanupConfig({
+    ...config,
+    lastRunAt: nowIso(),
+    lastDeletedCount: deleted
+  }, { preserveRunStatus: false });
+  logAudit({
+    actorType: actorId === 'system' ? 'system' : 'admin',
+    actorId,
+    action: 'client_cleanup_completed',
+    entityType: 'client_cleanup',
+    entityId: 'client_cleanup',
+    payload: { trigger, candidates: candidates.length, deleted, errors: errors.length }
+  });
+  return { ok: errors.length === 0, skipped: false, candidates: candidates.length, deleted, errors, config: updatedConfig };
+}
+
 function clientHasProfileFields(client, requiredFields = []) {
   return requiredFields.every((field) => {
     if (field === 'preferences') {
@@ -3609,6 +3772,40 @@ app.delete('/api/admin/users/:id', ownerAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/admin/settings/client-cleanup/preview', adminAuth, (req, res) => {
+  const config = getClientCleanupConfig();
+  const candidates = clientCleanupCandidates(config);
+  res.json({
+    ok: true,
+    config,
+    summary: {
+      total: candidates.length,
+      zero_balance: candidates.filter((item) => item.reason === 'zero_balance').length,
+      positive_balance: candidates.filter((item) => item.reason === 'positive_balance').length
+    },
+    candidates: candidates.slice(0, 50)
+  });
+});
+
+app.put('/api/admin/settings/client_cleanup', adminAuth, (req, res) => {
+  const input = req.body?.value ?? req.body ?? {};
+  const config = saveClientCleanupConfig(input);
+  logAudit({
+    actorType: 'admin',
+    actorId: String(req.admin?.id || 'admin'),
+    action: 'client_cleanup_settings_updated',
+    entityType: 'setting',
+    entityId: 'client_cleanup',
+    payload: config
+  });
+  res.json({ ok: true, config });
+});
+
+app.post('/api/admin/settings/client-cleanup/run', adminAuth, (req, res) => {
+  const result = runClientCleanup({ actorId: String(req.admin?.id || 'admin'), trigger: 'manual' });
+  res.json(result);
+});
+
 app.get('/api/admin/settings', adminAuth, (req, res) => {
   res.json({ ok: true, settings: db.prepare('SELECT * FROM settings ORDER BY key').all().map(r => ({ key: r.key, value: JSON.parse(r.value) })) });
 });
@@ -3772,6 +3969,22 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'in
 
 const server = app.listen(port, async () => {
   console.log(`Star Club prototype is running on http://localhost:${port}`);
+
+  try {
+    const cleanup = runClientCleanup({ actorId: 'system', trigger: 'startup' });
+    if (cleanup.deleted) console.log(`Star Club: automatically deleted ${cleanup.deleted} inactive client(s).`);
+  } catch (error) {
+    console.error('Star Club client cleanup failed:', error.message || error);
+  }
+  const cleanupTimer = setInterval(() => {
+    try {
+      const cleanup = runClientCleanup({ actorId: 'system', trigger: 'daily' });
+      if (cleanup.deleted) console.log(`Star Club: automatically deleted ${cleanup.deleted} inactive client(s).`);
+    } catch (error) {
+      console.error('Star Club client cleanup failed:', error.message || error);
+    }
+  }, CLIENT_CLEANUP_DAY_MS);
+  cleanupTimer.unref?.();
 
   if (String(process.env.RUN_BOT || 'true') !== 'false') {
     try {

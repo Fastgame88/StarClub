@@ -725,6 +725,17 @@ export function seed() {
     showMoneyEquivalentToClient: false
   });
   setDefaultSetting('home_banners', { enabled: true });
+  setDefaultSetting('client_cleanup', {
+    enabled: true,
+    deletePositiveBalance: true,
+    positiveInactiveDays: 183,
+    positiveMinBalance: 1,
+    positiveMaxBalance: null,
+    deleteZeroBalance: true,
+    zeroInactiveDays: 183,
+    lastRunAt: null,
+    lastDeletedCount: 0
+  });
 
   // Default browser Owner for the desktop admin panel.
   // Login: owner / Password: StarClub2026!

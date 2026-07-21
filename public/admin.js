@@ -789,33 +789,64 @@ async function news(editId=null){
 
 async function settings(){
   title.textContent='Налаштування';
-  const data=await api('/api/admin/settings');
+  const [data,cleanupPreview]=await Promise.all([
+    api('/api/admin/settings'),
+    api('/api/admin/settings/client-cleanup/preview')
+  ]);
   const map={};
   (data.settings||[]).forEach(s=>map[s.key]=s.value);
   const bonus=map.profile_bonus||{enabled:true,stars:500,grantWhen:'immediately',requiredFields:['phone','name','birth_date','favorite_store']};
+  const cleanup=cleanupPreview.config||map.client_cleanup||{enabled:true,deletePositiveBalance:true,positiveInactiveDays:183,positiveMinBalance:1,positiveMaxBalance:null,deleteZeroBalance:true,zeroInactiveDays:183};
+  const cleanupSummary=cleanupPreview.summary||{total:0,zero_balance:0,positive_balance:0};
   const required=new Set(bonus.requiredFields||[]);
   const field = (name,label) => `<label class="checkline"><input type="checkbox" name="requiredFields" value="${name}" ${required.has(name)?'checked':''}> ${label}</label>`;
-  content.innerHTML=`<div class="card"><h2>Бонус за повний профіль</h2><p class="small">Ці параметри керують тим, чи отримує клієнт бонус, який розмір бонусу, коли він нараховується і які поля вважаються повним профілем.</p>
-    <form id="bonusSettingsForm" class="form-grid">
-      <label class="checkline"><input type="checkbox" name="enabled" ${bonus.enabled!==false?'checked':''}> Давати бонус</label>
-      <input name="stars" type="number" min="0" step="1" placeholder="Розмір бонусу, ★" value="${esc(bonus.stars??500)}">
-      <select name="grantWhen">
-        <option value="immediately" ${bonus.grantWhen!=='after_first_purchase'?'selected':''}>Одразу після повного профілю</option>
-        <option value="after_first_purchase" ${bonus.grantWhen==='after_first_purchase'?'selected':''}>Після першої покупки</option>
-      </select>
-      <div class="card inner"><b>Поля повного профілю</b>
-        ${field('phone','Номер телефону')}
-        ${field('name','Імʼя')}
-        ${field('birth_date','Дата народження')}
-        ${field('favorite_store','Улюблений магазин')}
-        ${field('email','Email')}
-        ${field('preferences','Вподобання')}
+  content.innerHTML=`<div class="admin-settings-stack">
+    <div class="card"><h2>Бонус за повний профіль</h2><p class="small">Ці параметри керують тим, чи отримує клієнт бонус, який розмір бонусу, коли він нараховується і які поля вважаються повним профілем.</p>
+      <form id="bonusSettingsForm" class="form-grid">
+        <label class="checkline"><input type="checkbox" name="enabled" ${bonus.enabled!==false?'checked':''}> Давати бонус</label>
+        <input name="stars" type="number" min="0" step="1" placeholder="Розмір бонусу, ★" value="${esc(bonus.stars??500)}">
+        <select name="grantWhen">
+          <option value="immediately" ${bonus.grantWhen!=='after_first_purchase'?'selected':''}>Одразу після повного профілю</option>
+          <option value="after_first_purchase" ${bonus.grantWhen==='after_first_purchase'?'selected':''}>Після першої покупки</option>
+        </select>
+        <div class="card inner"><b>Поля повного профілю</b>
+          ${field('phone','Номер телефону')}
+          ${field('name','Імʼя')}
+          ${field('birth_date','Дата народження')}
+          ${field('favorite_store','Улюблений магазин')}
+          ${field('email','Email')}
+          ${field('preferences','Вподобання')}
+        </div>
+        <button>Зберегти налаштування</button>
+      </form>
+    </div>
+
+    <div class="card cleanup-settings-card">
+      <div class="section-title-row"><div><span class="pill">Автоматичне очищення</span><h2>Неактивні клієнти</h2><p class="small">Клієнт видаляється лише тоді, коли одночасно немає покупок і не змінювався баланс зірок протягом заданого часу. Чеки залишаються в обліку без персональної привʼязки.</p></div><strong>${num(cleanupSummary.total)} кандидатів</strong></div>
+      <div class="cleanup-summary-grid">
+        <div><span>Баланс 0</span><b>${num(cleanupSummary.zero_balance)}</b></div>
+        <div><span>Баланс у заданому діапазоні</span><b>${num(cleanupSummary.positive_balance)}</b></div>
+        <div><span>Остання перевірка</span><b>${cleanup.lastRunAt?dt(cleanup.lastRunAt):'ще не запускалась'}</b></div>
+        <div><span>Видалено минулого разу</span><b>${num(cleanup.lastDeletedCount||0)}</b></div>
       </div>
-      <button>Зберегти налаштування</button>
-    </form>
+      <form id="clientCleanupForm" class="form-grid cleanup-settings-form">
+        <label class="checkline"><input type="checkbox" name="enabled" ${cleanup.enabled!==false?'checked':''}> Увімкнути автоматичне очищення</label>
+        <label class="checkline"><input type="checkbox" name="deletePositiveBalance" ${cleanup.deletePositiveBalance!==false?'checked':''}> Видаляти з додатним балансом</label>
+        <label class="admin-field"><span>Неактивність для балансу від 1, днів</span><input name="positiveInactiveDays" type="number" min="1" max="3650" step="1" value="${esc(cleanup.positiveInactiveDays??183)}" required></label>
+        <label class="admin-field"><span>Мінімальний баланс, ★</span><input name="positiveMinBalance" type="number" min="1" step="1" value="${esc(cleanup.positiveMinBalance??1)}" required></label>
+        <label class="admin-field"><span>Максимальний баланс, ★</span><input name="positiveMaxBalance" type="number" min="0" step="1" value="${esc(cleanup.positiveMaxBalance??0)}"><small>0 — без верхнього обмеження</small></label>
+        <label class="checkline"><input type="checkbox" name="deleteZeroBalance" ${cleanup.deleteZeroBalance!==false?'checked':''}> Видаляти з балансом 0</label>
+        <label class="admin-field"><span>Неактивність для балансу 0, днів</span><input name="zeroInactiveDays" type="number" min="1" max="3650" step="1" value="${esc(cleanup.zeroInactiveDays??183)}" required></label>
+        <div class="admin-help">За замовчуванням 183 дні — приблизно пів року. Автоматична перевірка виконується під час запуску сервера та один раз на добу.</div>
+        <div class="form-actions"><button class="primary">Зберегти правила</button><button type="button" class="danger" id="runClientCleanup">Перевірити й очистити зараз</button></div>
+      </form>
+    </div>
   </div>`;
   const form=$('#bonusSettingsForm');
   form.onsubmit=async ev=>{ev.preventDefault();const fd=new FormData(form);const requiredFields=fd.getAll('requiredFields');const body={value:{enabled:fd.has('enabled'),stars:Number(fd.get('stars')||0),grantWhen:fd.get('grantWhen')||'immediately',requiredFields}};await api('/api/admin/settings/profile_bonus',{method:'PUT',body:JSON.stringify(body)});alert('Налаштування бонусу збережено');settings();};
+  const cleanupForm=$('#clientCleanupForm');
+  cleanupForm.onsubmit=async ev=>{ev.preventDefault();const fd=new FormData(cleanupForm);const maxBalance=Number(fd.get('positiveMaxBalance')||0);const body={value:{enabled:fd.has('enabled'),deletePositiveBalance:fd.has('deletePositiveBalance'),positiveInactiveDays:Number(fd.get('positiveInactiveDays')||183),positiveMinBalance:Number(fd.get('positiveMinBalance')||1),positiveMaxBalance:maxBalance>0?maxBalance:null,deleteZeroBalance:fd.has('deleteZeroBalance'),zeroInactiveDays:Number(fd.get('zeroInactiveDays')||183)}};await api('/api/admin/settings/client_cleanup',{method:'PUT',body:JSON.stringify(body)});alert('Правила автоматичного очищення збережено');settings();};
+  $('#runClientCleanup').onclick=async()=>{if(!confirm(`Перевірити клієнтів зараз? За поточними правилами кандидатів: ${num(cleanupSummary.total)}.`))return;const result=await api('/api/admin/settings/client-cleanup/run',{method:'POST',body:'{}'});if(result.skipped)alert('Автоматичне очищення вимкнене. Спочатку увімкніть і збережіть правило.');else alert(`Перевірку завершено. Видалено клієнтів: ${num(result.deleted||0)}.`);settings();};
 }
 
 async function support(){

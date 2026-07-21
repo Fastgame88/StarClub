@@ -291,6 +291,9 @@ body{background:#05070a;color:var(--text);overflow-x:hidden}
 .input-field>span{font-size:12px;color:var(--muted);font-weight:700}
 .input-field .input{height:30px;padding:0;border:0;background:transparent;border-radius:0;box-shadow:none}
 .date-field input[type="date"]{color:var(--text);font-size:16px;min-width:0;width:100%}
+.registration-store-field{position:relative;display:block}
+.registration-store-field select{appearance:none;-webkit-appearance:none;padding-right:50px}
+.registration-field-chevron{position:absolute;right:18px;top:50%;width:14px;transform:translateY(-54%);display:grid;place-items:center;color:var(--muted);font-size:20px;line-height:1;pointer-events:none}
 textarea.input,.textarea{font-size:16px;min-height:112px;line-height:1.45;padding:14px 15px;resize:vertical}
 input.input,select.input{font-size:16px}
 .offer-scope{margin:8px 0;color:var(--gold2);font-size:12px;overflow-wrap:anywhere}
@@ -392,7 +395,7 @@ label.check span{min-width:0}
 .home-banner-media{height:100%;min-width:0;overflow:hidden;background:rgba(255,255,255,.035)}
 .home-banner-media img{width:100%;height:100%;display:block;object-fit:cover}
 .home-banner-dots{height:20px;display:flex;align-items:center;justify-content:center;gap:5px}
-.home-banner-dots i{width:6px;height:6px;border-radius:99px;background:rgba(255,255,255,.28)}
+.home-banner-dots i{width:6px;height:6px;border-radius:99px;background:rgba(255,255,255,.28);transition:width .2s ease,background-color .2s ease,transform .2s ease}
 .home-banner-dots i.active{width:21px;background:var(--gold2)}
 .home-progress-grid{display:grid;gap:10px}
 .home-progress-card{width:100%;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:11px;align-items:center;padding:13px 14px;text-align:left;color:var(--text);border-color:var(--line)}
@@ -498,6 +501,9 @@ label.check span{min-width:0}
 .offer-compact-prices s{color:var(--muted);font-size:11px;opacity:.7}
 .offer-compact-prices span{padding:4px 7px;border-radius:999px;background:rgba(228,183,95,.13);color:var(--gold2);font-size:9px;font-weight:850}
 .offer-compact-rule{margin:7px 0 0;color:var(--gold2);font-size:10px;line-height:1.25}
+.reward-codes-link{width:100%;display:block;text-align:center;color:var(--text)}
+.reward-codes-link b{color:#fff;font-size:18px}
+.reward-codes-link p{margin-bottom:0}
 .history-filters button{min-height:42px;font-size:12px;line-height:1.1;padding:7px 5px}
 @media(max-width:380px){
   .offer-compact-card{grid-template-columns:minmax(0,1fr) 88px!important;min-height:132px!important}
