@@ -299,6 +299,28 @@ export function migrate() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS change_accrual_operations (
+      id TEXT PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      card_token TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      stars_amount INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      receipt_id TEXT,
+      receipt_number TEXT,
+      fiscal_receipt_number TEXT,
+      store_id TEXT,
+      store_name TEXT,
+      cash_register TEXT,
+      cashier TEXT,
+      cancel_reason TEXT,
+      ledger_id INTEGER REFERENCES star_ledger(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL,
+      completed_at TEXT,
+      cancelled_at TEXT,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS receipts (
       id TEXT PRIMARY KEY,
       fiscal_number TEXT,
@@ -682,6 +704,9 @@ export function migrate() {
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_offers_target ON offers(target_type, target_value)');
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_promo_offers_active ON promo_offers(type, is_active)');
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_home_banners_active ON home_banners(is_active, sort_order, id)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_change_accrual_status ON change_accrual_operations(status, created_at)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_change_accrual_client ON change_accrual_operations(client_id, created_at)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_change_accrual_receipt ON change_accrual_operations(receipt_id)');
 
   // Одноразово переносимо старі видимі клубні/оптові картки у нову статичну вітрину.
   // Реальні правила ціни залишаються в offers і продовжують працювати окремо.

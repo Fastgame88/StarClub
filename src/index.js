@@ -2389,6 +2389,219 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
   });
 });
 
+// Зарахування частини готівкової здачі на баланс StarClub.
+// 1 грн здачі = 1 зірка. Операція створюється як pending і завершується
+// лише після успішного фіскального проведення чека у 1С.
+app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
+  const body = req.body || {};
+  const client = findClientForOneC({
+    card_number: body.card_number || body.card_token,
+    card_token: body.card_token,
+    phone: body.phone
+  });
+
+  if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
+  if (client.is_blocked) return res.status(403).json({ ok: false, error: 'CLIENT_BLOCKED' });
+
+  const amountCents = Math.round(Number(body.amount_cents ?? (Number(body.amount_uah || 0) * 100)));
+  if (!Number.isFinite(amountCents) || amountCents <= 0) {
+    return res.status(400).json({ ok: false, error: 'INVALID_AMOUNT' });
+  }
+  if (amountCents % 100 !== 0) {
+    return res.status(400).json({
+      ok: false,
+      error: 'AMOUNT_MUST_BE_WHOLE_UAH',
+      message: 'Сума зарахування має бути цілою кількістю гривень.'
+    });
+  }
+
+  const starsAmount = amountCents / 100;
+  const operationId = randomToken('chg_');
+  const createdAt = nowIso();
+  const resolvedStore = findStoreFromPayload(body);
+  const requestedStoreIdentity = body.store_external_id || body.store_id || body.store_name || '';
+  const storeId = String(resolvedStore?.id || requestedStoreIdentity || '').trim();
+  const normalizedCard = String(body.card_token || body.card_number || client.card_token || '').trim();
+
+  db.prepare(`INSERT INTO change_accrual_operations(
+      id, client_id, card_token, amount_cents, stars_amount, status,
+      receipt_id, receipt_number, store_id, store_name, cash_register, cashier,
+      created_at, updated_at
+    ) VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(
+      operationId,
+      client.id,
+      normalizedCard,
+      amountCents,
+      starsAmount,
+      body.receipt_id || null,
+      body.receipt_number || null,
+      storeId || null,
+      resolvedStore?.name || body.store_name || null,
+      body.cash_register || null,
+      body.cashier || null,
+      createdAt,
+      createdAt
+    );
+
+  logAudit({
+    actorType: '1c',
+    actorId: body.cashier || body.cash_register || storeId || '1c',
+    action: 'change_accrual_prepared',
+    entityType: 'change_accrual_operation',
+    entityId: operationId,
+    payload: { client_id: client.id, amount_cents: amountCents, stars_amount: starsAmount, receipt_id: body.receipt_id || null }
+  });
+
+  return res.status(201).json({
+    ok: true,
+    success: true,
+    operation_id: operationId,
+    status: 'pending',
+    amount_cents: amountCents,
+    amount_uah: money(amountCents),
+    stars_amount: starsAmount,
+    client: {
+      id: client.id,
+      card_number: client.card_number,
+      stars_balance: Number(client.stars_balance || 0)
+    }
+  });
+});
+
+app.post('/api/1c/change-accrual/complete', oneCAuth, (req, res) => {
+  const body = req.body || {};
+  const operationId = String(body.operation_id || '').trim();
+  if (!operationId) return res.status(400).json({ ok: false, error: 'OPERATION_ID_REQUIRED' });
+
+  const existing = db.prepare('SELECT * FROM change_accrual_operations WHERE id = ?').get(operationId);
+  if (!existing) return res.status(404).json({ ok: false, error: 'OPERATION_NOT_FOUND' });
+
+  if (existing.status === 'completed') {
+    const client = db.prepare('SELECT stars_balance FROM clients WHERE id = ?').get(existing.client_id);
+    return res.json({
+      ok: true,
+      success: true,
+      duplicate: true,
+      operation_id: operationId,
+      status: 'completed',
+      stars_added: existing.stars_amount,
+      stars_balance: Number(client?.stars_balance || 0)
+    });
+  }
+
+  if (existing.status === 'cancelled') {
+    return res.status(409).json({ ok: false, error: 'OPERATION_CANCELLED' });
+  }
+
+  const completedAt = nowIso();
+  let balanceAfter = 0;
+
+  const completeOperation = db.transaction(() => {
+    const fresh = db.prepare('SELECT * FROM change_accrual_operations WHERE id = ?').get(operationId);
+    if (!fresh) throw new Error('OPERATION_NOT_FOUND');
+    if (fresh.status === 'completed') {
+      const client = db.prepare('SELECT stars_balance FROM clients WHERE id = ?').get(fresh.client_id);
+      return Number(client?.stars_balance || 0);
+    }
+    if (fresh.status !== 'pending') throw new Error(`INVALID_OPERATION_STATUS:${fresh.status}`);
+
+    const nextBalance = awardStars(
+      fresh.client_id,
+      'change_accrual',
+      fresh.stars_amount,
+      '1c_change',
+      `+${fresh.stars_amount} ⭐ із здачі`,
+      body.receipt_id || fresh.receipt_id || null,
+      null
+    );
+
+    const ledger = db.prepare(`SELECT id FROM star_ledger
+      WHERE client_id = ? AND type = 'change_accrual' AND source = '1c_change'
+      ORDER BY id DESC LIMIT 1`).get(fresh.client_id);
+
+    db.prepare(`UPDATE change_accrual_operations
+      SET status = 'completed', receipt_id = COALESCE(?, receipt_id),
+          receipt_number = COALESCE(?, receipt_number), fiscal_receipt_number = ?,
+          ledger_id = ?, completed_at = ?, updated_at = ?
+      WHERE id = ?`)
+      .run(
+        body.receipt_id || null,
+        body.receipt_number || null,
+        body.fiscal_receipt_number || null,
+        ledger?.id || null,
+        completedAt,
+        completedAt,
+        operationId
+      );
+
+    return nextBalance;
+  });
+
+  try {
+    balanceAfter = completeOperation();
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (message === 'OPERATION_NOT_FOUND') return res.status(404).json({ ok: false, error: message });
+    if (message.startsWith('INVALID_OPERATION_STATUS:')) {
+      return res.status(409).json({ ok: false, error: message });
+    }
+    throw error;
+  }
+
+  logAudit({
+    actorType: '1c',
+    actorId: body.cashier || '1c',
+    action: 'change_accrual_completed',
+    entityType: 'change_accrual_operation',
+    entityId: operationId,
+    payload: { receipt_id: body.receipt_id || existing.receipt_id || null, stars_added: existing.stars_amount }
+  });
+
+  return res.json({
+    ok: true,
+    success: true,
+    operation_id: operationId,
+    status: 'completed',
+    amount_cents: existing.amount_cents,
+    stars_added: existing.stars_amount,
+    stars_balance: balanceAfter
+  });
+});
+
+app.post('/api/1c/change-accrual/cancel', oneCAuth, (req, res) => {
+  const body = req.body || {};
+  const operationId = String(body.operation_id || '').trim();
+  if (!operationId) return res.status(400).json({ ok: false, error: 'OPERATION_ID_REQUIRED' });
+
+  const operation = db.prepare('SELECT * FROM change_accrual_operations WHERE id = ?').get(operationId);
+  if (!operation) return res.status(404).json({ ok: false, error: 'OPERATION_NOT_FOUND' });
+
+  if (operation.status === 'cancelled') {
+    return res.json({ ok: true, success: true, duplicate: true, operation_id: operationId, status: 'cancelled' });
+  }
+  if (operation.status === 'completed') {
+    return res.status(409).json({ ok: false, error: 'COMPLETED_OPERATION_CANNOT_BE_CANCELLED' });
+  }
+
+  const cancelledAt = nowIso();
+  db.prepare(`UPDATE change_accrual_operations
+    SET status = 'cancelled', cancel_reason = ?, cancelled_at = ?, updated_at = ?
+    WHERE id = ? AND status = 'pending'`)
+    .run(body.reason || null, cancelledAt, cancelledAt, operationId);
+
+  logAudit({
+    actorType: '1c',
+    actorId: body.cashier || '1c',
+    action: 'change_accrual_cancelled',
+    entityType: 'change_accrual_operation',
+    entityId: operationId,
+    payload: { reason: body.reason || null }
+  });
+
+  return res.json({ ok: true, success: true, operation_id: operationId, status: 'cancelled' });
+});
+
 app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   const body = req.body || {};
   const resolvedStore = findStoreFromPayload(body);
