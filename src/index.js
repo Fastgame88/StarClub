@@ -2390,7 +2390,7 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
 });
 
 // Зарахування частини готівкової здачі на баланс StarClub.
-// 1 грн здачі = 1 зірка. Операція створюється як pending і завершується
+// 1 грн здачі = 5 зірок. Операція створюється як pending і завершується
 // лише після успішного фіскального проведення чека у 1С.
 app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
   const body = req.body || {};
@@ -2415,7 +2415,7 @@ app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
     });
   }
 
-  const starsAmount = amountCents / 100;
+  const starsAmount = (amountCents / 100) * 5;
   const operationId = randomToken('chg_');
   const createdAt = nowIso();
   const resolvedStore = findStoreFromPayload(body);
