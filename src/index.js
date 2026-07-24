@@ -2392,6 +2392,89 @@ app.post('/api/1c/calculate', oneCAuth, (req, res) => {
 // Зарахування частини готівкової здачі на баланс StarClub.
 // 1 грн здачі = 5 зірок. Операція створюється як pending і завершується
 // лише після успішного фіскального проведення чека у 1С.
+
+function completePendingChangeAccrualForReceipt({ receiptId, receiptNumber, fiscalReceiptNumber, clientId }) {
+  const normalizedReceiptId = String(receiptId || '').trim();
+  const normalizedReceiptNumber = String(receiptNumber || '').trim();
+  if (!normalizedReceiptId && !normalizedReceiptNumber) return [];
+
+  const clauses = [];
+  const params = [];
+  if (normalizedReceiptId) {
+    clauses.push('receipt_id = ?');
+    params.push(normalizedReceiptId);
+  }
+  if (normalizedReceiptNumber) {
+    clauses.push('receipt_number = ?');
+    params.push(normalizedReceiptNumber);
+  }
+
+  let sql = `SELECT * FROM change_accrual_operations
+    WHERE status = 'pending' AND (${clauses.join(' OR ')})`;
+  if (clientId) {
+    sql += ' AND client_id = ?';
+    params.push(clientId);
+  }
+  sql += ' ORDER BY created_at ASC';
+
+  const pending = db.prepare(sql).all(...params);
+  const completed = [];
+
+  for (const operation of pending) {
+    const completedAt = nowIso();
+    const completeOne = db.transaction(() => {
+      const fresh = db.prepare('SELECT * FROM change_accrual_operations WHERE id = ?').get(operation.id);
+      if (!fresh || fresh.status !== 'pending') return null;
+
+      const balanceAfter = awardStars(
+        fresh.client_id,
+        'change_accrual',
+        fresh.stars_amount,
+        '1c_change',
+        `+${fresh.stars_amount} ⭐ із здачі`,
+        normalizedReceiptId || fresh.receipt_id || null,
+        null
+      );
+
+      const ledger = db.prepare(`SELECT id FROM star_ledger
+        WHERE client_id = ? AND type = 'change_accrual' AND source = '1c_change'
+        ORDER BY id DESC LIMIT 1`).get(fresh.client_id);
+
+      db.prepare(`UPDATE change_accrual_operations
+        SET status = 'completed', receipt_id = COALESCE(?, receipt_id),
+            receipt_number = COALESCE(?, receipt_number), fiscal_receipt_number = COALESCE(?, fiscal_receipt_number),
+            ledger_id = ?, completed_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'pending'`)
+        .run(
+          normalizedReceiptId || null,
+          normalizedReceiptNumber || null,
+          fiscalReceiptNumber || null,
+          ledger?.id || null,
+          completedAt,
+          completedAt,
+          fresh.id
+        );
+
+      return { operation_id: fresh.id, stars_added: fresh.stars_amount, stars_balance: balanceAfter };
+    });
+
+    const result = completeOne();
+    if (result) {
+      completed.push(result);
+      logAudit({
+        actorType: '1c',
+        actorId: 'receipt-auto-complete',
+        action: 'change_accrual_completed',
+        entityType: 'change_accrual_operation',
+        entityId: result.operation_id,
+        payload: { receipt_id: normalizedReceiptId || null, stars_added: result.stars_added, automatic: true }
+      });
+    }
+  }
+
+  return completed;
+}
+
 app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
   const body = req.body || {};
   const client = findClientForOneC({
@@ -2626,12 +2709,19 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
         storeId: storeId || '1c'
       }));
     }
+    const changeAccrualCompleted = completePendingChangeAccrualForReceipt({
+      receiptId: body.id,
+      receiptNumber: body.receipt_number || body.number,
+      fiscalReceiptNumber: body.fiscal_number,
+      clientId: existing.client_id
+    });
     return res.json({
       ok: true,
       duplicate: true,
       receipt_id: existing.id,
       stars_accrued: existing.stars_accrued,
       stars_spent: existing.stars_spent,
+      change_accrual_completed: changeAccrualCompleted,
       reward_finalize: finalized
     });
   }
@@ -2749,6 +2839,13 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     payload: { starsAccrued, starsSpent, eligibleCents, rewardTokens: cleanRewardTokens, profileBonus: profileBonusResult }
   });
 
+  const changeAccrualCompleted = completePendingChangeAccrualForReceipt({
+    receiptId: body.id,
+    receiptNumber: body.receipt_number || body.number,
+    fiscalReceiptNumber: body.fiscal_number,
+    clientId: client.id
+  });
+
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
   res.json({
     ok: true,
@@ -2759,6 +2856,7 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     stars_accrued: starsAccrued,
     stars_spent: starsSpent,
     balance: fresh.stars_balance,
+    change_accrual_completed: changeAccrualCompleted,
     reward_finalize: finalized
   });
 });
