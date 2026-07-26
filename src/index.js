@@ -2505,13 +2505,6 @@ app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
   if (!Number.isFinite(amountCents) || amountCents <= 0) {
     return res.status(400).json({ ok: false, error: 'INVALID_AMOUNT' });
   }
-  if (amountCents % 100 !== 0) {
-    return res.status(400).json({
-      ok: false,
-      error: 'AMOUNT_MUST_BE_WHOLE_UAH',
-      message: 'Сума зарахування має бути цілою кількістю гривень.'
-    });
-  }
 
   const starsAmount = amountCents; // 1 зірка = 1 копійка
   const operationId = randomToken('chg_');
