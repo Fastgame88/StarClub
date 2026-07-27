@@ -2467,20 +2467,19 @@ function completePendingChangeAccrualForReceipt({ receiptId, receiptNumber, fisc
       const fresh = db.prepare('SELECT * FROM change_accrual_operations WHERE id = ?').get(operation.id);
       if (!fresh || fresh.status !== 'pending') return null;
 
-      const isTopup = String(fresh.operation_type || 'change') === 'topup';
       const balanceAfter = awardStars(
         fresh.client_id,
-        isTopup ? 'topup' : 'change_accrual',
+        'change_accrual',
         fresh.stars_amount,
-        isTopup ? '1c_topup' : '1c_change',
-        isTopup ? `+${fresh.stars_amount} ⭐ поповнення` : `+${fresh.stars_amount} ⭐ з решти`,
+        '1c_change',
+        `+${fresh.stars_amount} ⭐ з решти`,
         normalizedReceiptId || fresh.receipt_id || null,
         null
       );
 
       const ledger = db.prepare(`SELECT id FROM star_ledger
-        WHERE client_id = ? AND type = ? AND source = ?
-        ORDER BY id DESC LIMIT 1`).get(fresh.client_id, isTopup ? 'topup' : 'change_accrual', isTopup ? '1c_topup' : '1c_change');
+        WHERE client_id = ? AND type = 'change_accrual' AND source = '1c_change'
+        ORDER BY id DESC LIMIT 1`).get(fresh.client_id);
 
       db.prepare(`UPDATE change_accrual_operations
         SET status = 'completed', receipt_id = COALESCE(?, receipt_id),
@@ -2543,9 +2542,9 @@ app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
 
   db.prepare(`INSERT INTO change_accrual_operations(
       id, client_id, card_token, amount_cents, stars_amount, status,
-      receipt_id, receipt_number, store_id, store_name, cash_register, cashier, operation_type,
+      receipt_id, receipt_number, store_id, store_name, cash_register, cashier,
       created_at, updated_at
-    ) VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    ) VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(
       operationId,
       client.id,
@@ -2558,7 +2557,6 @@ app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
       resolvedStore?.name || body.store_name || null,
       body.cash_register || null,
       body.cashier || null,
-      String(body.operation_type || 'change').trim().toLowerCase() === 'topup' ? 'topup' : 'change',
       createdAt,
       createdAt
     );
@@ -2636,8 +2634,8 @@ app.post('/api/1c/change-accrual/complete', oneCAuth, (req, res) => {
     );
 
     const ledger = db.prepare(`SELECT id FROM star_ledger
-      WHERE client_id = ? AND type = ? AND source = ?
-      ORDER BY id DESC LIMIT 1`).get(fresh.client_id, isTopup ? 'topup' : 'change_accrual', isTopup ? '1c_topup' : '1c_change');
+      WHERE client_id = ? AND type = 'change_accrual' AND source = '1c_change'
+      ORDER BY id DESC LIMIT 1`).get(fresh.client_id);
 
     db.prepare(`UPDATE change_accrual_operations
       SET status = 'completed', receipt_id = COALESCE(?, receipt_id),
