@@ -245,6 +245,30 @@ function getAdminStarAccrualExclusionSet() {
   return new Set(rows.map((row) => normalizeOneCCode(row.product_external_id)).filter(Boolean));
 }
 
+function getStarAccrualGroupExclusionSet() {
+  const rows = db.prepare('SELECT group_external_id FROM star_accrual_group_exclusions').all();
+  return new Set(rows.map((row) => normalizeOneCCode(row.group_external_id)).filter(Boolean));
+}
+
+function itemMatchesExcludedGroup(item = {}, excludedGroups = null) {
+  const groups = excludedGroups || getStarAccrualGroupExclusionSet();
+  if (!groups.size) return false;
+
+  const candidates = [
+    item.group_external_id,
+    item.group_id,
+    item.category_external_id
+  ];
+
+  if (Array.isArray(item.group_path)) candidates.push(...item.group_path);
+  if (Array.isArray(item.group_path_ids)) candidates.push(...item.group_path_ids);
+
+  return candidates
+    .map((value) => normalizeOneCCode(value))
+    .filter(Boolean)
+    .some((code) => groups.has(code));
+}
+
 function getItemExternalProductCode(item = {}) {
   return normalizeOneCCode(
     item.external_product_id ?? item.product_external_id ?? item.external_id ?? item.product_id ?? item.id ?? ''
@@ -561,6 +585,7 @@ function buildPricingDebug({ items = [], storeId, purchasedAt, calculation }) {
 function calculateAccrualWithOffers(items = [], storeId, purchasedAt) {
   const offers = getActiveOffers(storeId, purchasedAt);
   const adminExcludedCodes = getAdminStarAccrualExclusionSet();
+  const adminExcludedGroups = getStarAccrualGroupExclusionSet();
   let stars = 0;
   const applied = [];
   for (const item of items) {
@@ -878,6 +903,7 @@ function calculateDraftWithOffers({ items = [], storeId, purchasedAt }) {
   let finalTotalCents = 0;
   let expectedStars = 0;
   const adminExcludedCodes = getAdminStarAccrualExclusionSet();
+  const adminExcludedGroups = getStarAccrualGroupExclusionSet();
 
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index] || {};
