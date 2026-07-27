@@ -2192,7 +2192,7 @@ app.get('/api/client/reward-qrs', clientAuth, (req, res) => {
     WHERE q.client_id = ?
     ORDER BY q.created_at DESC
     LIMIT 100`).all(req.client.id);
-  const coupons = db.prepare(`SELECT id, code, product_external_id, product_name, discount_percent, status, expires_at, created_at, used_at FROM personal_coupons WHERE client_id = ? ORDER BY created_at DESC LIMIT 50`).all(req.client.id);
+  const coupons = db.prepare(`SELECT id, code, product_external_id, product_name, discount_percent, status, expires_at, created_at, used_at, banner_title, banner_text, banner_image_url, show_as_banner FROM personal_coupons WHERE client_id = ? ORDER BY created_at DESC LIMIT 50`).all(req.client.id);
   res.json({ ok: true, coupons, qrs: rows.map(formatRewardQr) });
 });
 
@@ -4220,7 +4220,10 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
   const storeId = String(req.query.store_id || 'all').trim();
   const dateFrom = String(req.query.date_from || '').trim();
   const dateTo = String(req.query.date_to || '').trim();
-  const balanceDate = String(req.query.balance_date || dateTo || '').trim();
+  const balanceMode=String(req.query.balance_mode||'date').trim();
+  const balanceDate=String(req.query.balance_date||req.query.balance_to||dateTo||'').trim();
+  const balanceFrom=String(req.query.balance_from||'').trim();
+  const balanceTo=String(req.query.balance_to||balanceDate||'').trim();
   const where = ["r.is_return = 0"]; const params = [];
   if (storeId && storeId !== 'all') { where.push('(r.store_id = ? OR r.store_id IN (SELECT external_id FROM stores WHERE id = ?))'); params.push(storeId, storeId); }
   if (dateFrom) { where.push('r.purchased_at >= ?'); params.push(`${dateFrom}T00:00:00`); }
@@ -4230,12 +4233,13 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
   const active = db.prepare('SELECT COUNT(*) AS c FROM clients WHERE last_purchase_at IS NOT NULL').get().c;
   const receipts = db.prepare(`SELECT COUNT(*) AS c, COALESCE(SUM(r.total_cents),0) total, COALESCE(SUM(r.stars_accrued),0) accrued, COALESCE(SUM(r.stars_spent),0) spent, COALESCE(AVG(r.total_cents),0) avg_total FROM receipts r WHERE ${receiptWhere}`).get(...params);
   const cashAccrued = db.prepare(`SELECT COALESCE(SUM(stars_amount),0) AS s FROM change_accrual_operations WHERE status='completed' ${dateFrom?'AND completed_at >= ?':''} ${dateTo?'AND completed_at <= ?':''}`).get(...([dateFrom?`${dateFrom}T00:00:00`:null,dateTo?`${dateTo}T23:59:59`:null].filter(Boolean))).s;
-  const ledgerWhere=[]; const ledgerParams=[]; if(balanceDate){ledgerWhere.push('created_at <= ?');ledgerParams.push(`${balanceDate}T23:59:59`);}
-  const stars = balanceDate ? db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM star_ledger ${ledgerWhere.length?'WHERE '+ledgerWhere.join(' AND '):''}`).get(...ledgerParams).s : db.prepare('SELECT COALESCE(SUM(stars_balance),0) s FROM clients').get().s;
+  const ledgerWhere=[];const ledgerParams=[];if(balanceMode==='range'){if(balanceFrom){ledgerWhere.push('created_at >= ?');ledgerParams.push(`${balanceFrom}T00:00:00`);}if(balanceTo){ledgerWhere.push('created_at <= ?');ledgerParams.push(`${balanceTo}T23:59:59`);}}else if(balanceMode==='date'&&balanceDate){ledgerWhere.push('created_at <= ?');ledgerParams.push(`${balanceDate}T23:59:59`);}
+  const stars=balanceMode==='all'?db.prepare('SELECT COALESCE(SUM(amount),0) s FROM star_ledger').get().s:db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM star_ledger ${ledgerWhere.length?'WHERE '+ledgerWhere.join(' AND '):''}`).get(...ledgerParams).s;
   const topStores = db.prepare(`SELECT COALESCE(s.name,r.store_id,'Невідомий магазин') name, COUNT(*) receipts, COALESCE(SUM(r.total_cents),0) total_cents FROM receipts r LEFT JOIN stores s ON s.id=r.store_id OR s.external_id=r.store_id WHERE ${receiptWhere} GROUP BY COALESCE(s.name,r.store_id) ORDER BY total_cents DESC LIMIT 5`).all(...params);
   const topProducts = db.prepare(`SELECT i.name, SUM(i.qty) qty, SUM(i.line_total_cents) total_cents FROM receipt_items i JOIN receipts r ON r.id=i.receipt_id WHERE ${receiptWhere} GROUP BY i.name ORDER BY qty DESC LIMIT 5`).all(...params);
-  const stores = db.prepare(`SELECT id, external_id, name FROM stores WHERE is_active=1 ORDER BY CASE WHEN source='1c' THEN 0 ELSE 1 END, name`).all();
-  res.json({ ok:true, stores, filters:{store_id:storeId,date_from:dateFrom,date_to:dateTo,balance_date:balanceDate}, summary:{ clients, active, stars, receipts:receipts.c, total_sales_uah:money(receipts.total), average_receipt_uah:money(receipts.avg_total), stars_accrued:Number(receipts.accrued||0), cash_change_stars:Number(cashAccrued||0), stars_spent:Number(receipts.spent||0), rewards_used:db.prepare('SELECT COUNT(*) c FROM reward_qrs WHERE status="used"').get().c, top_stores:topStores.map(x=>({...x,total_uah:money(x.total_cents)})), top_products:topProducts.map(x=>({...x,total_uah:money(x.total_cents)})) } });
+  const hasOneCStores=Number(db.prepare("SELECT COUNT(*) c FROM stores WHERE is_active=1 AND source='1c'").get().c)>0;
+  const stores=db.prepare(`SELECT id, external_id, name FROM stores WHERE is_active=1 AND ${hasOneCStores?"source='1c'":"source!='seed'"} ORDER BY name`).all();
+  res.json({ ok:true, stores, filters:{store_id:storeId,date_from:dateFrom,date_to:dateTo,balance_mode:balanceMode,balance_date:balanceDate,balance_from:balanceFrom,balance_to:balanceTo}, summary:{ clients, active, stars, receipts:receipts.c, total_sales_uah:money(receipts.total), average_receipt_uah:money(receipts.avg_total), stars_accrued:Number(receipts.accrued||0), cash_change_stars:Number(cashAccrued||0), stars_spent:Number(receipts.spent||0), rewards_used:db.prepare('SELECT COUNT(*) c FROM reward_qrs WHERE status="used"').get().c, top_stores:topStores.map(x=>({...x,total_uah:money(x.total_cents)})), top_products:topProducts.map(x=>({...x,total_uah:money(x.total_cents)})) } });
 });
 
 app.get('/api/admin/clients', adminAuth, (req, res) => {
@@ -4310,6 +4314,17 @@ app.post('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {
   const coupon = db.prepare('SELECT * FROM personal_coupons WHERE id = ?').get(r.lastInsertRowid);
   logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'personal_coupon_created', entityType: 'personal_coupon', entityId: String(coupon.id), payload: { client_id: client.id, code, productExternalId, productName, discountPercent } });
   res.json({ ok: true, coupon });
+});
+
+app.patch('/api/admin/clients/:clientId/personal-coupons/:couponId/banner', adminAuth, (req, res) => {
+  const coupon=db.prepare('SELECT * FROM personal_coupons WHERE id=? AND client_id=?').get(req.params.couponId,req.params.clientId);
+  if(!coupon)return res.status(404).json({ok:false,error:'PERSONAL_COUPON_NOT_FOUND'});
+  const title=String(req.body?.banner_title??coupon.banner_title??'').trim();
+  const text=String(req.body?.banner_text??coupon.banner_text??'').trim();
+  const image=normalizeImageUrl(req.body?.banner_image_url??coupon.banner_image_url??'/assets/star.svg');
+  const show=req.body?.show_as_banner===undefined?Number(coupon.show_as_banner):(req.body.show_as_banner?1:0);
+  db.prepare('UPDATE personal_coupons SET banner_title=?, banner_text=?, banner_image_url=?, show_as_banner=? WHERE id=?').run(title,text,image,show,coupon.id);
+  res.json({ok:true,coupon:db.prepare('SELECT * FROM personal_coupons WHERE id=?').get(coupon.id)});
 });
 
 app.get('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {

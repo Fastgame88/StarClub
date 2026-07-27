@@ -583,6 +583,11 @@ function getLatestReceiptKey(receipts = []) {
   return r ? `${r.id || ''}|${r.purchased_at || r.created_at || ''}` : '';
 }
 
+function getLatestPersonalCouponKey(coupons = []) {
+  const latest = [...coupons].sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))[0];
+  return latest ? `${latest.id}:${latest.created_at}:${latest.status}` : '';
+}
+
 function getLatestReservedQrKey(qrs = []) {
   const active = qrs.filter((q) => q.status === 'reserved');
   const q = active.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0];
@@ -617,7 +622,8 @@ async function getClientActivitySnapshot() {
     balance: state.client?.stars_balance ?? null,
     qrsCount: qrs.length,
     receiptsCount: receipts.length,
-    supportCount: tickets.reduce((sum, t) => sum + (t.messages || []).length, 0)
+    supportCount: tickets.reduce((sum, t) => sum + (t.messages || []).length, 0),
+    latestCoupon: getLatestPersonalCouponKey(qrsData.coupons || [])
   };
 }
 
@@ -644,7 +650,10 @@ async function checkClientActivity({ initialize = false } = {}) {
 
     let message = '';
     let route = '';
-    if (next.latestQr && next.latestQr !== previous.latestQr) {
+    if (next.latestCoupon && next.latestCoupon !== previous.latestCoupon) {
+      message = 'Вам надано нову персональну знижку';
+      route = 'rewardCodes';
+    } else if (next.latestQr && next.latestQr !== previous.latestQr) {
       message = 'Новий QR-код уже доступний у розділі «Мої QR-коди»';
       route = 'rewardCodes';
     } else if (next.latestSupport && next.latestSupport !== previous.latestSupport) {
@@ -657,7 +666,7 @@ async function checkClientActivity({ initialize = false } = {}) {
 
     saveActivitySnapshot(next);
     state.activityReady = true;
-    if (message) notifyInApp(message, route, { dedupeKey: `${route}:${next.latestQr || next.latestSupport || next.latestReceipt}` });
+    if (message) notifyInApp(message, route, { dedupeKey: `${route}:${next.latestCoupon || next.latestQr || next.latestSupport || next.latestReceipt}` });
   } catch (error) {
     console.warn('Activity check failed:', error.message || error);
   } finally {
@@ -783,7 +792,7 @@ function rewardCodesScreen() {
   return `
     ${header('Мої QR-коди', true)}
     <div class="stack">
-      ${coupons.length ? `<section class="card personal-coupon-list"><div class="section-heading compact"><span>${appIcon('ticket-percent')}</span><div><h3>Персональні знижки</h3><p>Коди, видані саме для вас</p></div></div>${coupons.map(c=>`<article class="personal-coupon-card"><span>−${c.discount_percent}%</span><div><b>${safeHtml(c.product_name||'Персональна пропозиція')}</b><p>${safeHtml(c.code)} · до ${new Date(c.expires_at).toLocaleDateString('uk-UA')}</p></div><img src="/api/svg/barcode?text=${encodeURIComponent(c.code)}" alt="Код знижки"></article>`).join('')}</section>` : ''}
+      ${coupons.length ? `<section class="card personal-coupon-list"><div class="section-heading compact"><span>${appIcon('ticket-percent')}</span><div><h3>Персональні знижки</h3><p>Коди, видані саме для вас</p></div></div>${coupons.map(c=>`<article class="personal-coupon-card"><span class="coupon-percent">−${c.discount_percent}%</span><div class="coupon-copy"><small>ПЕРСОНАЛЬНА ЗНИЖКА</small><b>${safeHtml(c.product_name||'Персональна пропозиція')}</b><p>Діє до ${new Date(c.expires_at).toLocaleDateString('uk-UA')}</p></div><button type="button" class="coupon-cashier-btn" data-show-coupon="${c.id}" data-coupon-code="${safeHtml(c.code)}" data-coupon-product="${safeHtml(c.product_name||'Персональна пропозиція')}" data-coupon-discount="${c.discount_percent}">Показати касиру</button></article>`).join('')}</section>` : ''}
       <section class="card gold-border"><b>Активні</b>${active.length ? active.map(renderQr).join('') : '<div class="empty">Активних кодів немає</div>'}</section>
       <section class="card"><b>Історія</b>${history.length ? history.map(renderQr).join('') : '<div class="empty">Історія кодів порожня</div>'}</section>
     </div>
@@ -908,6 +917,16 @@ async function showReceiptModal(receiptId) {
     </div>`;
   document.body.appendChild(wrap);
   wrap.querySelectorAll('[data-close-modal]').forEach((b) => b.onclick = () => wrap.remove());
+}
+
+function showPersonalCouponModal(data) {
+  const wrap=document.createElement('div');
+  wrap.className='modal-backdrop';
+  const code=String(data.code||'');
+  wrap.innerHTML=`<div class="modal coupon-code-modal"><div class="modal-heading"><div><p class="eyebrow">ПЕРСОНАЛЬНА ЗНИЖКА</p><h3>−${safeHtml(data.discount)}% на ${safeHtml(data.product)}</h3></div><button class="icon-btn compact" type="button" data-close-modal>×</button></div><p class="small">Покажіть цей код касиру перед оплатою.</p><div class="coupon-barcode-wrap"><img src="/api/svg/barcode?text=${encodeURIComponent(code)}" alt="Код персональної знижки"><b>${safeHtml(code)}</b></div><div class="modal-actions"><button class="btn secondary" type="button" data-copy-code="${safeHtml(code)}">Скопіювати код</button><button class="btn" type="button" data-close-modal>Готово</button></div></div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelectorAll('[data-close-modal]').forEach(b=>b.onclick=()=>wrap.remove());
+  wrap.querySelector('[data-copy-code]')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(code);toast('Код скопійовано');}catch{toast(code);}});
 }
 
 function historyScreen() {
@@ -1184,6 +1203,7 @@ function bindEvents() {
   document.querySelectorAll('[data-history-filter]').forEach((el) => el.onclick = () => { state.data.historyFilter = el.dataset.historyFilter; render(); });
   document.querySelectorAll('[data-logout]').forEach((el) => el.onclick = () => { localStorage.removeItem('starclub_session'); localStorage.removeItem('starclub_route'); location.reload(); });
   document.querySelectorAll('[data-show-cashier]').forEach((el) => el.onclick = () => showCashierModal(el.dataset.cardNumber));
+  document.querySelectorAll('[data-show-coupon]').forEach((el)=>el.onclick=()=>showPersonalCouponModal({code:el.dataset.couponCode,product:el.dataset.couponProduct,discount:el.dataset.couponDiscount}));
   document.querySelectorAll('[data-close-modal]').forEach((el) => el.onclick = () => el.closest('.modal-backdrop')?.remove());
   document.querySelectorAll('[data-copy-code]').forEach((el) => el.onclick = async () => { try { await navigator.clipboard.writeText(el.dataset.copyCode); toast('Код скопійовано'); } catch { toast(el.dataset.copyCode); } });
   document.querySelectorAll('[data-cancel-reward-code]').forEach((el) => el.onclick = async () => {

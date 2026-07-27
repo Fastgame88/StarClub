@@ -180,3 +180,7 @@ html,body{max-width:100%;overflow-x:hidden}
 
 /* v28 analytics and coupon tools */
 .analytics-filters{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px;align-items:end;margin-bottom:16px}.analytics-filters label{display:grid;gap:6px;font-size:12px}.analytics-filters input,.analytics-filters select{width:100%}.analytics-grid{margin-bottom:16px}.analytics-lists{display:grid;grid-template-columns:1fr 1fr;gap:16px}.analytics-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.coupon-actions{display:flex;gap:8px;flex-wrap:wrap}.couponForm label{display:grid;gap:4px;font-size:11px}.top-product-card .couponForm{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end}@media(max-width:800px){.analytics-filters{grid-template-columns:1fr 1fr}.analytics-lists{grid-template-columns:1fr}.top-product-card .couponForm{grid-template-columns:1fr}}
+
+
+/* v29 modal and analytics fixes */
+.admin-modal-backdrop{position:fixed;inset:0;z-index:500;display:grid;place-items:center;padding:18px;background:rgba(4,6,9,.78);backdrop-filter:blur(14px)}.admin-modal{width:min(760px,100%);max-height:92vh;overflow:auto;padding:22px;border-radius:26px;background:linear-gradient(165deg,#1a1f28,#0d1015);border:1px solid var(--line);box-shadow:0 30px 100px rgba(0,0,0,.55)}.admin-modal [data-close-admin-modal]{min-width:40px}.coupon-banner-modal .banner-admin-preview{grid-column:1/-1}.warning-text{color:#f0b95e}.analytics-filters{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
