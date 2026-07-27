@@ -180,3 +180,9 @@ html,body{max-width:100%;overflow-x:hidden}
 
 /* v28 analytics and coupon tools */
 .analytics-filters{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px;align-items:end;margin-bottom:16px}.analytics-filters label{display:grid;gap:6px;font-size:12px}.analytics-filters input,.analytics-filters select{width:100%}.analytics-grid{margin-bottom:16px}.analytics-lists{display:grid;grid-template-columns:1fr 1fr;gap:16px}.analytics-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.coupon-actions{display:flex;gap:8px;flex-wrap:wrap}.couponForm label{display:grid;gap:4px;font-size:11px}.top-product-card .couponForm{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end}@media(max-width:800px){.analytics-filters{grid-template-columns:1fr 1fr}.analytics-lists{grid-template-columns:1fr}.top-product-card .couponForm{grid-template-columns:1fr}}
+
+
+/* v29 coupon banner modal */
+.admin-modal-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(4,6,10,.78);backdrop-filter:blur(12px)}
+.admin-modal{width:min(720px,96vw);max-height:92vh;overflow:auto;padding:22px;border-radius:24px;background:#121720;border:1px solid var(--line);box-shadow:0 30px 90px rgba(0,0,0,.5)}
+.admin-modal [data-close-admin-modal]{min-width:42px}.coupon-banner-modal .banner-admin-preview{min-height:170px}

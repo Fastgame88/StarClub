@@ -515,3 +515,20 @@ label.check span{min-width:0}
 
 /* v28 history receipts and personal coupons */
 .receipt-modal{width:min(94vw,520px);max-height:90vh;padding:24px;border-radius:28px}.receipt-modal .modal-heading{margin-bottom:18px}.receipt-modal>.small{margin:0 0 18px}.receipt-items{display:grid;gap:12px;margin:14px 0}.receipt-item{padding:16px;border-radius:18px}.personal-coupon-list{overflow:hidden}.personal-coupon-card{display:grid;grid-template-columns:62px 1fr 110px;gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line-soft)}.personal-coupon-card>span{display:grid;place-items:center;min-height:52px;border-radius:16px;background:linear-gradient(135deg,#f8d56b,#c98a18);color:#15120b;font-weight:900;font-size:18px}.personal-coupon-card img{width:110px;max-height:48px;object-fit:contain;background:#fff;border-radius:8px}
+
+
+/* v29 targeted receipt/history/personal coupon fixes */
+.receipt-modal{display:flex;flex-direction:column;max-height:min(90vh,760px);overflow:hidden}
+.receipt-modal .modal-heading,.receipt-modal>.small,.receipt-modal .receipt-summary-grid,.receipt-modal .receipt-total,.receipt-modal .modal-actions{flex:0 0 auto}
+.receipt-modal .receipt-items{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:5px;margin:12px 0}
+.receipt-modal .modal-actions{position:relative;background:var(--card);padding-top:12px;margin-top:0}
+.history-filters{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:4px;border-radius:18px;overflow:visible}
+.history-filters button{display:flex;align-items:center;justify-content:center;text-align:center;width:100%;min-width:0;border-radius:14px;color:#fff!important;padding:10px 6px;border:1px solid transparent;box-shadow:none}
+.history-filters button.active{color:#17130b!important;background:linear-gradient(135deg,#ffe7a8,#d8a33d)!important;border-color:rgba(255,233,170,.9)!important;box-shadow:0 5px 16px rgba(211,157,48,.28)!important;transform:none!important}
+.personal-coupon-list{overflow:visible}
+.personal-coupon-card{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px;margin-top:12px;border:1px solid rgba(231,190,91,.28);border-radius:20px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(218,165,54,.06));box-shadow:0 12px 30px rgba(0,0,0,.15)}
+.personal-coupon-card:last-child{border-bottom:1px solid rgba(231,190,91,.28)}
+.personal-coupon-value{display:grid;place-items:center;min-height:64px;border-radius:18px;background:linear-gradient(135deg,#ffe69b,#c88b20);color:#15120b;font-weight:950;font-size:19px}
+.personal-coupon-copy{min-width:0}.personal-coupon-copy b{display:block;font-size:16px}.personal-coupon-copy p,.personal-coupon-copy small{display:block;color:var(--muted);margin:5px 0 0}.personal-coupon-show{white-space:nowrap;min-height:42px;padding:9px 12px}
+.personal-coupon-modal{width:min(94vw,460px)}.personal-coupon-modal-product{display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;background:rgba(226,180,76,.11);margin:14px 0}.personal-coupon-modal-product>span{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,#ffe69b,#c88b20);color:#17130b}.coupon-use-note{text-align:center;margin-top:14px}
+@media(max-width:520px){.personal-coupon-card{grid-template-columns:64px minmax(0,1fr)}.personal-coupon-show{grid-column:1/-1;width:100%}}
