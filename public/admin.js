@@ -103,10 +103,10 @@ function scrollAdminFormIntoView(){
 async function dashboard(){
   title.textContent='Аналітика';
   const today=new Date().toISOString().slice(0,10);
-  const params=new URLSearchParams(window.__analyticsFilters||{date_from:today.slice(0,8)+'01',date_to:today,balance_mode:'date',balance_date:today,balance_from:'',balance_to:today,store_id:'all'});
+  const params=new URLSearchParams(window.__analyticsFilters||{date_from:today.slice(0,8)+'01',date_to:today,balance_date:today,store_id:'all'});
   const {summary,stores,filters}=await api('/api/admin/summary?'+params.toString());
   const storeOptions=['<option value="all">Усі магазини</option>',...stores.map(x=>`<option value="${esc(x.id)}" ${String(filters.store_id)===String(x.id)?'selected':''}>${esc(x.name)}</option>`)].join('');
-  content.innerHTML=`<form id="analyticsFilters" class="card analytics-filters"><label>Магазин<select name="store_id">${storeOptions}</select></label><label>Від<input type="date" name="date_from" value="${esc(filters.date_from)}"></label><label>До<input type="date" name="date_to" value="${esc(filters.date_to)}"></label><label>Баланс зірок<select name="balance_mode"><option value="date" ${filters.balance_mode==='date'?'selected':''}>На дату</option><option value="range" ${filters.balance_mode==='range'?'selected':''}>За проміжок</option><option value="all" ${filters.balance_mode==='all'?'selected':''}>За весь час</option></select></label><label>Баланс від<input type="date" name="balance_from" value="${esc(filters.balance_from||'')}"></label><label>Баланс до<input type="date" name="balance_to" value="${esc(filters.balance_to||filters.balance_date||today)}"></label><button class="primary">Застосувати</button></form><div class="grid analytics-grid"><div class="card metric"><span>Клієнти</span><b>${num(summary.clients)}</b></div><div class="card metric"><span>Активні клієнти</span><b>${num(summary.active)}</b></div><div class="card metric"><span>Зірки на балансах на дату</span><b>${num(summary.stars)} ★</b></div><div class="card metric"><span>Нараховано за покупки</span><b>${num(summary.stars_accrued)} ★</b></div><div class="card metric"><span>Нараховано «з решти»/поповнення</span><b>${num(summary.cash_change_stars)} ★</b></div><div class="card metric"><span>Використано зірок</span><b>${num(summary.stars_spent)} ★</b></div><div class="card metric"><span>Сума чеків</span><b>${money(summary.total_sales_uah)}</b></div><div class="card metric"><span>Середній чек</span><b>${money(summary.average_receipt_uah)}</b></div><div class="card metric"><span>Кількість чеків</span><b>${num(summary.receipts)}</b></div><div class="card metric"><span>Використано QR</span><b>${num(summary.rewards_used)}</b></div></div><div class="analytics-lists"><section class="card"><h3>Топ магазинів</h3>${summary.top_stores.map(x=>`<div class="analytics-row"><span>${esc(x.name)}</span><b>${num(x.receipts)} чеків · ${money(x.total_uah)}</b></div>`).join('')||'<p class="small">Немає даних</p>'}</section><section class="card"><h3>Топ товарів</h3>${summary.top_products.map(x=>`<div class="analytics-row"><span>${esc(x.name)}</span><b>${num(x.qty)} шт · ${money(x.total_uah)}</b></div>`).join('')||'<p class="small">Немає даних</p>'}</section></div>`;
+  content.innerHTML=`<form id="analyticsFilters" class="card analytics-filters"><label>Магазин<select name="store_id">${storeOptions}</select></label><label>Від<input type="date" name="date_from" value="${esc(filters.date_from)}"></label><label>До<input type="date" name="date_to" value="${esc(filters.date_to)}"></label><label>Баланс на дату<input type="date" name="balance_date" value="${esc(filters.balance_date)}"></label><button class="primary">Застосувати</button></form><div class="grid analytics-grid"><div class="card metric"><span>Клієнти</span><b>${num(summary.clients)}</b></div><div class="card metric"><span>Активні клієнти</span><b>${num(summary.active)}</b></div><div class="card metric"><span>Зірки на балансах на дату</span><b>${num(summary.stars)} ★</b></div><div class="card metric"><span>Нараховано за покупки</span><b>${num(summary.stars_accrued)} ★</b></div><div class="card metric"><span>Нараховано «з решти»/поповнення</span><b>${num(summary.cash_change_stars)} ★</b></div><div class="card metric"><span>Використано зірок</span><b>${num(summary.stars_spent)} ★</b></div><div class="card metric"><span>Сума чеків</span><b>${money(summary.total_sales_uah)}</b></div><div class="card metric"><span>Середній чек</span><b>${money(summary.average_receipt_uah)}</b></div><div class="card metric"><span>Кількість чеків</span><b>${num(summary.receipts)}</b></div><div class="card metric"><span>Використано QR</span><b>${num(summary.rewards_used)}</b></div></div><div class="analytics-lists"><section class="card"><h3>Топ магазинів</h3>${summary.top_stores.map(x=>`<div class="analytics-row"><span>${esc(x.name)}</span><b>${num(x.receipts)} чеків · ${money(x.total_uah)}</b></div>`).join('')||'<p class="small">Немає даних</p>'}</section><section class="card"><h3>Топ товарів</h3>${summary.top_products.map(x=>`<div class="analytics-row"><span>${esc(x.name)}</span><b>${num(x.qty)} шт · ${money(x.total_uah)}</b></div>`).join('')||'<p class="small">Немає даних</p>'}</section></div>`;
   $('#analyticsFilters').onsubmit=async e=>{e.preventDefault();window.__analyticsFilters=Object.fromEntries(new FormData(e.currentTarget));await dashboard();};
 }
 
@@ -164,14 +164,7 @@ async function clientDetails(id, opts={}){
   $('#hideReceipts').onclick=()=>{clientDetailState.receipts=clientDetailState.receipts.slice(0,3);$('#receiptRows').innerHTML=clientDetailState.receipts.map(receiptCard).join('');$('#receiptsShown').textContent=clientDetailState.receipts.length;$('#moreReceipts').disabled=clientDetailState.receipts.length>=clientDetailState.receiptTotal;};
   $$('.couponForm').forEach(form=>form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form);const coupon=await api(`/api/admin/clients/${id}/personal-coupons`,{method:'POST',body:JSON.stringify({product_external_id:form.dataset.productId,product_name:form.dataset.productName,discount_percent:Number(fd.get('discount_percent')),valid_days:Number(fd.get('valid_days'))})});alert(`Код створено: ${coupon.coupon.code}`);clientDetails(id);});
   $$('[data-delete-coupon]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити цей код на знижку?')){await api(`/api/admin/clients/${id}/personal-coupons/${b.dataset.deleteCoupon}`,{method:'DELETE'});clientDetails(id);}});
-  $$('[data-coupon-banner]').forEach(b=>b.onclick=()=>openCouponBannerModal(id,(data.personal_coupons||[]).find(x=>String(x.id)===String(b.dataset.couponBanner))));
-}
-
-function openCouponBannerModal(clientId,coupon){
-  if(!coupon)return;
-  const overlay=document.createElement('div');overlay.className='admin-modal-backdrop';
-  overlay.innerHTML=`<div class="admin-modal coupon-banner-modal"><div class="section-title-row"><div><span class="pill">Персональний банер</span><h3>Налаштування і попередній перегляд</h3></div><button type="button" data-close-admin-modal>×</button></div><form id="couponBannerForm" class="form-grid"><label class="admin-field"><span>Назва</span><input name="banner_title" value="${esc(coupon.banner_title||`Персональна знижка −${coupon.discount_percent}%`)}" required></label><label class="admin-field"><span>Фото URL</span><input name="banner_image_url" value="${esc(coupon.banner_image_url||'/assets/star.svg')}"></label><label class="admin-field banner-text-field"><span>Опис</span><textarea name="banner_text">${esc(coupon.banner_text||`На ${coupon.product_name||'товар'}`)}</textarea></label><div class="banner-admin-preview"><div><span class="pill">ЛИШЕ ДЛЯ ВАС</span><b id="couponBannerPreviewTitle"></b><p id="couponBannerPreviewText"></p></div><img id="couponBannerPreviewImage" alt=""></div><label class="checkline"><input type="checkbox" name="show_as_banner" ${Number(coupon.show_as_banner)?'checked':''}> Показувати клієнту на головній</label><div class="form-actions"><button class="primary">Зберегти банер</button><button type="button" data-close-admin-modal>Скасувати</button></div></form></div>`;
-  document.body.appendChild(overlay);const form=overlay.querySelector('#couponBannerForm');const refresh=()=>{overlay.querySelector('#couponBannerPreviewTitle').textContent=val(form,'banner_title');overlay.querySelector('#couponBannerPreviewText').textContent=val(form,'banner_text');overlay.querySelector('#couponBannerPreviewImage').src=previewImageUrl(val(form,'banner_image_url'));};form.addEventListener('input',refresh);refresh();overlay.querySelectorAll('[data-close-admin-modal]').forEach(x=>x.onclick=()=>overlay.remove());form.onsubmit=async e=>{e.preventDefault();await api(`/api/admin/clients/${clientId}/personal-coupons/${coupon.id}/banner`,{method:'PATCH',body:JSON.stringify({banner_title:val(form,'banner_title'),banner_text:val(form,'banner_text'),banner_image_url:val(form,'banner_image_url')||'/assets/star.svg',show_as_banner:check(form,'show_as_banner')})});overlay.remove();clientDetails(clientId);};
+  $$('[data-coupon-banner]').forEach(b=>b.onclick=async()=>{const c=(data.personal_coupons||[]).find(x=>String(x.id)===String(b.dataset.couponBanner));const titleText=prompt('Назва персональної пропозиції',c?.banner_title||`Персональна знижка −${c?.discount_percent||10}%`);if(titleText===null)return;const text=prompt('Опис',c?.banner_text||`На ${c?.product_name||'товар'}`);if(text===null)return;const image=prompt('Фото URL',c?.banner_image_url||'/assets/star.svg');if(image===null)return;await api(`/api/admin/clients/${id}/personal-coupons/${b.dataset.couponBanner}/banner`,{method:'PATCH',body:JSON.stringify({banner_title:titleText,banner_text:text,banner_image_url:image,show_as_banner:true})});clientDetails(id);});
 }
 
 function rewardForm(r={},stores=[]){
@@ -241,15 +234,14 @@ async function stores(editId=null){
 
 async function rewards(editId=null){
   title.textContent='Товари за зірки';
-  const [{items=[]},{stores=[]},{products=[]}]=await Promise.all([
-    api('/api/admin/catalog/rewards'),api('/api/admin/stores'),api('/api/admin/catalog/products')
-  ]);
-  const syncedStores=stores.some(x=>x.source==='1c')?stores.filter(x=>x.source==='1c'&&Number(x.is_active)):stores.filter(x=>x.source!=='seed'&&Number(x.is_active));
-  const edit=editId?items.find(x=>String(x.id)===String(editId)):null;
-  const productOptions=['<option value="">Оберіть товар з 1С</option>',...products.map(p=>`<option value="${esc(p.external_id)}" ${String(edit?.product_external_id||'')===String(p.external_id)?'selected':''}>${esc(p.name)} · ${esc(p.external_id)}</option>`)].join('');
-  content.innerHTML=`<div class="card"><h3>${edit?'Редагувати товар':'Додати товар за зірки'}</h3><form id="rewardForm" class="form-grid"><input name="name" placeholder="Назва товару" value="${esc(edit?.name||'')}" required><input name="stars_price" type="number" min="1" placeholder="Ціна у зірках" value="${esc(edit?.stars_price||'')}" required><label class="admin-field"><span>Товар з 1С</span><select name="product_external_id" required>${productOptions}</select></label><input name="image_url" placeholder="Фото URL" value="${esc(edit?.image_url||'/assets/star.svg')}"><label class="admin-field"><span>Магазин з 1С</span><select name="store_id">${pricingStoreOptions(syncedStores,edit?.store_id||'all',true)}</select></label><input name="per_client_limit" type="number" min="1" value="${esc(edit?.per_client_limit||1)}"><label class="checkline"><input type="checkbox" name="is_active" ${edit?(Number(edit.is_active)?'checked':''):'checked'}> Активний</label><textarea name="conditions" placeholder="Умови отримання">${esc(edit?.conditions||'')}</textarea><button class="primary">${edit?'Зберегти':'Додати'}</button>${edit?'<button type="button" id="cancelEdit">Скасувати</button>':''}</form>${!products.length?'<p class="small warning-text">Номенклатура поки порожня. Запустіть синхронізацію товарів з 1С.</p>':''}</div><div class="card"><table><thead><tr><th>Назва</th><th>Зірки</th><th>1С товар</th><th>Магазин</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${items.map(r=>`<tr><td>${esc(r.name)}</td><td>${num(r.stars_price)} ★</td><td>${esc(r.product_external_id||'—')}</td><td>${esc((syncedStores.find(x=>String(x.id)===String(r.store_id)||String(x.external_id)===String(r.store_id))?.name)||r.store_id||'all')}</td><td>${activeText(r.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-reward="${r.id}"`)}${btn('Видалити',`data-delete-reward="${r.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
-  const form=$('#rewardForm');form.onsubmit=async ev=>{ev.preventDefault();const product=products.find(p=>String(p.external_id)===String(val(form,'product_external_id')));const body={name:val(form,'name')||product?.name,stars_price:Number(val(form,'stars_price')),product_external_id:val(form,'product_external_id'),image_url:val(form,'image_url')||product?.image_url||'/assets/star.svg',store_id:val(form,'store_id')||'all',per_client_limit:Number(val(form,'per_client_limit')||1),conditions:val(form,'conditions'),is_active:check(form,'is_active')};await api(edit?`/api/admin/catalog/rewards/${edit.id}`:'/api/admin/catalog/rewards',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});rewards();};
-  $('#cancelEdit')?.addEventListener('click',()=>rewards());$$('[data-edit-reward]').forEach(b=>b.onclick=()=>rewards(b.dataset.editReward));$$('[data-delete-reward]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити товар за зірки?')){await api(`/api/admin/catalog/rewards/${b.dataset.deleteReward}`,{method:'DELETE'});rewards();}});
+  const {items}=await api('/api/admin/catalog/rewards');
+  const edit = editId ? items.find(x=>String(x.id)===String(editId)) : null;
+  content.innerHTML=`<div class="card"><h3>${edit?'Редагувати товар':'Додати товар за зірки'}</h3>${rewardForm(edit||{})}</div><div class="card"><table><thead><tr><th>Назва</th><th>Зірки</th><th>1С товар</th><th>Магазин</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${items.map(r=>`<tr><td>${esc(r.name)}</td><td>${num(r.stars_price)} ★</td><td>${esc(r.product_external_id||'—')}</td><td>${esc(r.store_id||'all')}</td><td>${activeText(r.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-reward="${r.id}"`)}${btn('Видалити',`data-delete-reward="${r.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
+  const form=$('#rewardForm');
+  form.onsubmit=async ev=>{ev.preventDefault();const body={name:val(form,'name'),stars_price:Number(val(form,'stars_price')),product_external_id:val(form,'product_external_id'),image_url:val(form,'image_url')||'/assets/star.svg',store_id:val(form,'store_id')||'all',per_client_limit:Number(val(form,'per_client_limit')||1),conditions:val(form,'conditions'),is_active:check(form,'is_active')}; await api(edit?`/api/admin/catalog/rewards/${edit.id}`:'/api/admin/catalog/rewards',{method:edit?'PATCH':'POST',body:JSON.stringify(body)}); rewards();};
+  $('#cancelEdit')?.addEventListener('click',()=>rewards());
+  $$('[data-edit-reward]').forEach(b=>b.onclick=()=>rewards(b.dataset.editReward));
+  $$('[data-delete-reward]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити товар за зірки?')){await api(`/api/admin/catalog/rewards/${b.dataset.deleteReward}`,{method:'DELETE'});rewards();}});
 }
 
 function normalizeAdminOneCCode(value){
@@ -543,12 +535,55 @@ async function offers(editId=null,section=null){
 
 async function starExclusions(){
   title.textContent='Не нараховувати зірки';
-  const [{products=[]},{excluded=[]},{groups:excludedGroups=[]},{groups:catalogGroups=[]}]=await Promise.all([api('/api/admin/catalog/products'),api('/api/admin/catalog/star-exclusions'),api('/api/admin/catalog/star-group-exclusions'),api('/api/admin/catalog/product-groups')]);
-  let mode='product';const selectedProducts=new Set(excluded.map(i=>normalizeAdminOneCCode(i.product_external_id)));const selectedGroups=new Map(excludedGroups.map(g=>[normalizeAdminOneCCode(g.group_external_id),g.group_name]));
-  content.innerHTML=`<div class="card star-exclusion-editor"><div class="section-title-row"><div><h3>Не нараховувати зірки</h3><p class="small">Перемикайтеся між окремими товарами та цілими групами з 1С.</p></div><span class="pill" id="starExclusionCount"></span></div><div class="offer-admin-tabs"><button type="button" data-exclusion-mode="product" class="active">Товари</button><button type="button" data-exclusion-mode="group">Групи</button></div><div class="star-exclusion-toolbar"><input id="starExclusionSearch" placeholder="Пошук за назвою або кодом 1С"><button type="button" id="starExclusionClear">Очистити поточний вибір</button></div><div id="starExclusionPicker" class="star-exclusion-picker"></div><div class="form-actions"><button type="button" class="primary" id="saveStarExclusions">Зберегти</button></div></div>`;
-  const search=$('#starExclusionSearch'),picker=$('#starExclusionPicker'),count=$('#starExclusionCount');const codeOf=p=>normalizeAdminOneCCode(p.external_id||p.id||'');
-  const render=()=>{const selected=mode==='product'?selectedProducts:new Set(selectedGroups.keys());count.textContent=`Вибрано: ${selected.size}`;const q=String(search.value||'').toLowerCase();const rows=(mode==='product'?products:catalogGroups).filter(x=>!q||String(`${x.name||x.group_name||''} ${x.external_id||x.group_external_id||''}`).toLowerCase().includes(q));picker.innerHTML=rows.map(x=>{const code=normalizeAdminOneCCode(mode==='product'?codeOf(x):x.group_external_id);const name=mode==='product'?(x.name||code):(x.group_name||code);return `<label class="star-exclusion-item ${selected.has(code)?'selected':''}"><input type="checkbox" value="${esc(code)}" ${selected.has(code)?'checked':''}><span><b>${esc(name)}</b><small><code>${esc(code)}</code>${mode==='product'&&x.group_name?` · ${esc(x.group_name)}`:''}</small></span></label>`;}).join('')||'<div class="small">Дані не знайдені. Перевірте синхронізацію з 1С.</div>';picker.querySelectorAll('input').forEach(i=>i.onchange=()=>{const code=normalizeAdminOneCCode(i.value);if(mode==='product'){i.checked?selectedProducts.add(code):selectedProducts.delete(code);}else{i.checked?selectedGroups.set(code,(catalogGroups.find(g=>normalizeAdminOneCCode(g.group_external_id)===code)?.group_name||code)):selectedGroups.delete(code);}render();});};
-  $$('[data-exclusion-mode]').forEach(b=>b.onclick=()=>{mode=b.dataset.exclusionMode;$$('[data-exclusion-mode]').forEach(x=>x.classList.toggle('active',x===b));search.value='';render();});search.oninput=render;$('#starExclusionClear').onclick=()=>{mode==='product'?selectedProducts.clear():selectedGroups.clear();render();};$('#saveStarExclusions').onclick=async()=>{await Promise.all([api('/api/admin/catalog/star-exclusions',{method:'PUT',body:JSON.stringify({product_external_ids:[...selectedProducts]})}),api('/api/admin/catalog/star-group-exclusions',{method:'PUT',body:JSON.stringify({groups:[...selectedGroups].map(([group_external_id,group_name])=>({group_external_id,group_name}))})})]);alert('Налаштування збережено');starExclusions();};render();
+  const [{products=[]},{excluded=[]}]=await Promise.all([
+    api('/api/admin/catalog/products'),
+    api('/api/admin/catalog/star-exclusions')
+  ]);
+  const selected=new Set(excluded.map(i=>normalizeAdminOneCCode(i.product_external_id)));
+  content.innerHTML=`
+    <div class="card star-exclusion-editor">
+      <div class="section-title-row">
+        <div><h3>Товари, за які не нараховуються зірки</h3><p class="small">Оберіть конкретні товари з номенклатури 1С. Ці товари залишаються у чеку, але їхня сума не бере участі в нарахуванні зірок.</p></div>
+        <span class="pill" id="starExclusionCount">Вибрано: ${selected.size}</span>
+      </div>
+      <div class="star-exclusion-toolbar">
+        <input id="starExclusionSearch" placeholder="Пошук за назвою або кодом 1С">
+        <button type="button" id="starExclusionClear">Очистити вибір</button>
+      </div>
+      <div id="starExclusionPicker" class="star-exclusion-picker"></div>
+      <div class="form-actions star-exclusion-actions"><button type="button" class="primary" id="saveStarExclusions">Зберегти список</button></div>
+    </div>`;
+
+  const search=$('#starExclusionSearch');
+  const picker=$('#starExclusionPicker');
+  const count=$('#starExclusionCount');
+  const codeOf=p=>normalizeAdminOneCCode(p.external_id||p.id||'');
+  const refreshCount=()=>{count.textContent=`Вибрано: ${selected.size}`;};
+  const renderPicker=()=>{
+    const q=String(search.value||'').trim().toLowerCase();
+    const filtered=products
+      .filter(p=>!q||String(`${p.name||''} ${codeOf(p)} ${p.group_name||''}`).toLowerCase().includes(q))
+      .sort((a,b)=>Number(selected.has(codeOf(b)))-Number(selected.has(codeOf(a)))||String(a.name||'').localeCompare(String(b.name||''),'uk'));
+    picker.innerHTML=filtered.map(p=>{
+      const code=codeOf(p);
+      return `<label class="star-exclusion-item ${selected.has(code)?'selected':''}"><input type="checkbox" value="${esc(code)}" ${selected.has(code)?'checked':''}><span><b>${esc(p.name||code)}</b><small><code>${esc(code)}</code>${p.group_name?` · ${esc(p.group_name)}`:''}${p.price_cents?` · ${num(p.price_cents/100)} грн`:''}</small></span></label>`;
+    }).join('')||'<div class="small">Товарів не знайдено. Синхронізуйте номенклатуру з 1С.</div>';
+    picker.querySelectorAll('input[type="checkbox"]').forEach(input=>input.onchange=()=>{
+      const code=normalizeAdminOneCCode(input.value);
+      if(input.checked)selected.add(code);else selected.delete(code);
+      input.closest('.star-exclusion-item')?.classList.toggle('selected',input.checked);
+      refreshCount();
+    });
+  };
+  search.oninput=renderPicker;
+  $('#starExclusionClear').onclick=()=>{selected.clear();refreshCount();renderPicker();};
+  $('#saveStarExclusions').onclick=async()=>{
+    await api('/api/admin/catalog/star-exclusions',{method:'PUT',body:JSON.stringify({product_external_ids:[...selected]})});
+    alert(`Список збережено. Товарів без нарахування зірок: ${selected.size}`);
+    await starExclusions();
+  };
+  refreshCount();
+  renderPicker();
 }
 
 async function challenges(editId=null){
