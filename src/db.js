@@ -313,6 +313,7 @@ export function migrate() {
       amount_cents INTEGER NOT NULL,
       stars_amount INTEGER NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
+      operation_type TEXT NOT NULL DEFAULT 'change',
       receipt_id TEXT,
       receipt_number TEXT,
       fiscal_receipt_number TEXT,
@@ -656,7 +657,9 @@ export function migrate() {
 
   const changeAccrualInfo = innerDb.exec('PRAGMA table_info(change_accrual_operations)');
   const changeAccrualColumns = new Set((changeAccrualInfo?.[0]?.values || []).map((row) => row[1]));
-  if (!changeAccrualColumns.has('operation_type')) innerDb.run("ALTER TABLE change_accrual_operations ADD COLUMN operation_type TEXT DEFAULT 'change'");
+  if (!changeAccrualColumns.has('operation_type')) {
+    innerDb.run("ALTER TABLE change_accrual_operations ADD COLUMN operation_type TEXT NOT NULL DEFAULT 'change'");
+  }
   innerDb.run("UPDATE change_accrual_operations SET operation_type = 'change' WHERE operation_type IS NULL OR operation_type = ''");
 
   const rewardQrInfo = innerDb.exec('PRAGMA table_info(reward_qrs)');

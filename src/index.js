@@ -2467,19 +2467,26 @@ function completePendingChangeAccrualForReceipt({ receiptId, receiptNumber, fisc
       const fresh = db.prepare('SELECT * FROM change_accrual_operations WHERE id = ?').get(operation.id);
       if (!fresh || fresh.status !== 'pending') return null;
 
+      const isTopup = fresh.operation_type === 'topup';
+      const ledgerType = isTopup ? 'topup' : 'change_accrual';
+      const ledgerSource = isTopup ? '1c_topup' : '1c_change';
+      const ledgerDescription = isTopup
+        ? `+${fresh.stars_amount} ⭐ поповнення`
+        : `+${fresh.stars_amount} ⭐ з решти`;
+
       const balanceAfter = awardStars(
         fresh.client_id,
-        'change_accrual',
+        ledgerType,
         fresh.stars_amount,
-        '1c_change',
-        `+${fresh.stars_amount} ⭐ з решти`,
+        ledgerSource,
+        ledgerDescription,
         normalizedReceiptId || fresh.receipt_id || null,
         null
       );
 
       const ledger = db.prepare(`SELECT id FROM star_ledger
-        WHERE client_id = ? AND type = 'change_accrual' AND source = '1c_change'
-        ORDER BY id DESC LIMIT 1`).get(fresh.client_id);
+        WHERE client_id = ? AND type = ? AND source = ?
+        ORDER BY id DESC LIMIT 1`).get(fresh.client_id, ledgerType, ledgerSource);
 
       db.prepare(`UPDATE change_accrual_operations
         SET status = 'completed', receipt_id = COALESCE(?, receipt_id),
@@ -2518,6 +2525,9 @@ function completePendingChangeAccrualForReceipt({ receiptId, receiptNumber, fisc
 
 app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
   const body = req.body || {};
+  const operationType = body.operation_type === 'topup' || body.source === 'topup_from_1c'
+    ? 'topup'
+    : 'change';
   const client = findClientForOneC({
     card_number: body.card_number || body.card_token,
     card_token: body.card_token,
@@ -2542,15 +2552,16 @@ app.post('/api/1c/change-accrual/prepare', oneCAuth, (req, res) => {
 
   db.prepare(`INSERT INTO change_accrual_operations(
       id, client_id, card_token, amount_cents, stars_amount, status,
-      receipt_id, receipt_number, store_id, store_name, cash_register, cashier,
+      operation_type, receipt_id, receipt_number, store_id, store_name, cash_register, cashier,
       created_at, updated_at
-    ) VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`)
+    ) VALUES(?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(
       operationId,
       client.id,
       normalizedCard,
       amountCents,
       starsAmount,
+      operationType,
       body.receipt_id || null,
       body.receipt_number || null,
       storeId || null,
@@ -2623,19 +2634,26 @@ app.post('/api/1c/change-accrual/complete', oneCAuth, (req, res) => {
     }
     if (fresh.status !== 'pending') throw new Error(`INVALID_OPERATION_STATUS:${fresh.status}`);
 
+    const isTopup = fresh.operation_type === 'topup';
+    const ledgerType = isTopup ? 'topup' : 'change_accrual';
+    const ledgerSource = isTopup ? '1c_topup' : '1c_change';
+    const ledgerDescription = isTopup
+      ? `+${fresh.stars_amount} ⭐ поповнення`
+      : `+${fresh.stars_amount} ⭐ з решти`;
+
     const nextBalance = awardStars(
       fresh.client_id,
-      'change_accrual',
+      ledgerType,
       fresh.stars_amount,
-      '1c_change',
-      `+${fresh.stars_amount} ⭐ з решти`,
+      ledgerSource,
+      ledgerDescription,
       body.receipt_id || fresh.receipt_id || null,
       null
     );
 
     const ledger = db.prepare(`SELECT id FROM star_ledger
-      WHERE client_id = ? AND type = 'change_accrual' AND source = '1c_change'
-      ORDER BY id DESC LIMIT 1`).get(fresh.client_id);
+      WHERE client_id = ? AND type = ? AND source = ?
+      ORDER BY id DESC LIMIT 1`).get(fresh.client_id, ledgerType, ledgerSource);
 
     db.prepare(`UPDATE change_accrual_operations
       SET status = 'completed', receipt_id = COALESCE(?, receipt_id),
@@ -2730,7 +2748,6 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   if (body.reward_qr_token) rewardTokens.push(String(body.reward_qr_token));
   if (Array.isArray(body.reward_qr_tokens)) rewardTokens.push(...body.reward_qr_tokens.map(String));
   const cleanRewardTokens = rewardTokens.map((t) => String(t || '').trim()).filter(Boolean);
-  const personalCouponCode = String(body.personal_coupon_code || '').trim();
   const isRewardReceipt = cleanRewardTokens.length > 0;
 
   const existing = db.prepare('SELECT * FROM receipts WHERE id = ?').get(body.id);
@@ -2764,8 +2781,6 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   let client = findClientForOneC({ card_number: body.card_number, card_token: body.card_token, phone: body.phone });
 
   // Для чека за зірки клієнта можна визначити напряму через QR, навіть якщо карта не передалась у чеку.
-  if (!client && personalCouponCode) { const row=db.prepare('SELECT c.* FROM personal_coupons pc JOIN clients c ON c.id=pc.client_id WHERE pc.code=? LIMIT 1').get(personalCouponCode); if(row) client=row; }
-
   if (!client && cleanRewardTokens.length) {
     const row = db.prepare('SELECT c.* FROM reward_qrs q JOIN clients c ON c.id = q.client_id WHERE q.token = ? LIMIT 1').get(cleanRewardTokens[0]);
     if (row) client = row;
@@ -2883,12 +2898,6 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     clientId: client.id
   });
 
-  let personalCouponFinalize = null;
-  if (personalCouponCode) {
-    const coupon=db.prepare('SELECT * FROM personal_coupons WHERE code=?').get(personalCouponCode);
-    if(coupon && coupon.status==='active'){db.prepare("UPDATE personal_coupons SET status='used', used_at=? WHERE id=?").run(nowIso(),coupon.id);personalCouponFinalize={ok:true,status:'used',code:personalCouponCode};}
-    else personalCouponFinalize={ok:false,error:coupon?'COUPON_STATUS_'+String(coupon.status).toUpperCase():'COUPON_NOT_FOUND'};
-  }
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
   res.json({
     ok: true,
@@ -2900,8 +2909,7 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     stars_spent: starsSpent,
     balance: fresh.stars_balance,
     change_accrual_completed: changeAccrualCompleted,
-    reward_finalize: finalized,
-    personal_coupon_finalize: personalCouponFinalize
+    reward_finalize: finalized
   });
 });
 
@@ -2924,15 +2932,7 @@ app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
     LEFT JOIN products p ON p.external_id = COALESCE(NULLIF(r.product_external_id, ''), NULLIF(sp.category, '')) OR p.id = COALESCE(NULLIF(r.product_external_id, ''), NULLIF(sp.category, ''))
     WHERE q.token = ?`).get(token);
 
-  if (!row) {
-    const coupon = db.prepare(`SELECT pc.*, c.card_number, c.phone, c.name AS client_name, COALESCE(p.price_cents,0) AS product_price_cents, COALESCE(p.name,pc.product_name) AS product_1c_name
-      FROM personal_coupons pc JOIN clients c ON c.id=pc.client_id LEFT JOIN products p ON p.external_id=pc.product_external_id WHERE pc.code=?`).get(token);
-    if (!coupon) return res.status(404).json({ ok: false, valid: false, error: 'QR_NOT_FOUND' });
-    if (coupon.status !== 'active') return res.status(400).json({ ok:false,valid:false,error:'COUPON_STATUS_'+String(coupon.status).toUpperCase() });
-    if (new Date(coupon.expires_at).getTime() < Date.now()) { db.prepare("UPDATE personal_coupons SET status='expired' WHERE id=?").run(coupon.id); return res.status(400).json({ok:false,valid:false,error:'COUPON_EXPIRED'}); }
-    const original=Math.max(0,Number(coupon.product_price_cents||0)); const discounted=Math.max(0,Math.round(original*(100-Number(coupon.discount_percent||0))/100));
-    return res.json({ok:true,valid:true,status:'active',qr:{code_type:'personal_coupon',source_type:'personal_coupon',token:coupon.code,manual_code:coupon.code,product_external_id:coupon.product_external_id,product_id:coupon.product_external_id,product_name:coupon.product_1c_name||coupon.product_name,qty:1,price_cents:discounted,price_uah:money(discounted),original_price_cents:original,discount_percent:Number(coupon.discount_percent||0),expires_at:coupon.expires_at,client:{card_number:coupon.card_number,phone:coupon.phone,name:coupon.client_name}}});
-  }
+  if (!row) return res.status(404).json({ ok: false, valid: false, error: 'QR_NOT_FOUND' });
   if (row.status !== 'reserved') return res.status(400).json({ ok: false, valid: false, status: row.status, error: 'QR_ALREADY_' + row.status.toUpperCase() });
   if (new Date(row.expires_at).getTime() < Date.now()) {
     db.prepare('UPDATE reward_qrs SET status = ?, canceled_at = ? WHERE id = ?').run('expired', nowIso(), row.id);
@@ -3326,8 +3326,8 @@ app.patch('/api/admin/catalog/rewards/:id', adminAuth, (req, res) => {
   const b = req.body || {};
   const existing = db.prepare('SELECT * FROM reward_products WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ ok: false, error: 'REWARD_NOT_FOUND' });
-  db.prepare(`UPDATE reward_products SET product_external_id = ?, name = ?, image_url = ?, stars_price = ?, store_id = ?, active_from = ?, active_to = ?, total_limit = ?, per_client_limit = ?, conditions = ?, is_active = ?, updated_at = ? WHERE id = ?`)
-    .run(b.product_external_id ?? existing.product_external_id, b.name ?? existing.name, b.image_url ?? existing.image_url, b.stars_price ?? existing.stars_price, b.store_id ?? existing.store_id, b.active_from ?? existing.active_from, b.active_to ?? existing.active_to, b.total_limit ?? existing.total_limit, b.per_client_limit ?? existing.per_client_limit, b.conditions ?? existing.conditions, b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), nowIso(), req.params.id);
+  db.prepare(`UPDATE reward_products SET name = ?, image_url = ?, stars_price = ?, store_id = ?, active_from = ?, active_to = ?, total_limit = ?, per_client_limit = ?, conditions = ?, is_active = ?, updated_at = ? WHERE id = ?`)
+    .run(b.name ?? existing.name, b.image_url ?? existing.image_url, b.stars_price ?? existing.stars_price, b.store_id ?? existing.store_id, b.active_from ?? existing.active_from, b.active_to ?? existing.active_to, b.total_limit ?? existing.total_limit, b.per_client_limit ?? existing.per_client_limit, b.conditions ?? existing.conditions, b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), nowIso(), req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'reward_product_updated', entityType: 'reward_product', entityId: req.params.id, payload: b });
   res.json({ ok: true });
 });
@@ -4238,10 +4238,7 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
   const storeId = String(req.query.store_id || 'all').trim();
   const dateFrom = String(req.query.date_from || '').trim();
   const dateTo = String(req.query.date_to || '').trim();
-  const balanceMode = String(req.query.balance_mode || 'date').trim();
   const balanceDate = String(req.query.balance_date || dateTo || '').trim();
-  const balanceFrom = String(req.query.balance_from || '').trim();
-  const balanceTo = String(req.query.balance_to || '').trim();
   const where = ["r.is_return = 0"]; const params = [];
   if (storeId && storeId !== 'all') { where.push('(r.store_id = ? OR r.store_id IN (SELECT external_id FROM stores WHERE id = ?))'); params.push(storeId, storeId); }
   if (dateFrom) { where.push('r.purchased_at >= ?'); params.push(`${dateFrom}T00:00:00`); }
@@ -4251,14 +4248,12 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
   const active = db.prepare('SELECT COUNT(*) AS c FROM clients WHERE last_purchase_at IS NOT NULL').get().c;
   const receipts = db.prepare(`SELECT COUNT(*) AS c, COALESCE(SUM(r.total_cents),0) total, COALESCE(SUM(r.stars_accrued),0) accrued, COALESCE(SUM(r.stars_spent),0) spent, COALESCE(AVG(r.total_cents),0) avg_total FROM receipts r WHERE ${receiptWhere}`).get(...params);
   const cashAccrued = db.prepare(`SELECT COALESCE(SUM(stars_amount),0) AS s FROM change_accrual_operations WHERE status='completed' ${dateFrom?'AND completed_at >= ?':''} ${dateTo?'AND completed_at <= ?':''}`).get(...([dateFrom?`${dateFrom}T00:00:00`:null,dateTo?`${dateTo}T23:59:59`:null].filter(Boolean))).s;
-  const ledgerWhere=[]; const ledgerParams=[];
-  if(balanceMode==='date' && balanceDate){ledgerWhere.push('created_at <= ?');ledgerParams.push(`${balanceDate}T23:59:59`);}
-  if(balanceMode==='range'){if(balanceFrom){ledgerWhere.push('created_at >= ?');ledgerParams.push(`${balanceFrom}T00:00:00`);}if(balanceTo){ledgerWhere.push('created_at <= ?');ledgerParams.push(`${balanceTo}T23:59:59`);}}
-  const stars = balanceMode==='all' ? db.prepare('SELECT COALESCE(SUM(amount),0) s FROM star_ledger').get().s : db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM star_ledger ${ledgerWhere.length?'WHERE '+ledgerWhere.join(' AND '):''}`).get(...ledgerParams).s;
+  const ledgerWhere=[]; const ledgerParams=[]; if(balanceDate){ledgerWhere.push('created_at <= ?');ledgerParams.push(`${balanceDate}T23:59:59`);}
+  const stars = balanceDate ? db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM star_ledger ${ledgerWhere.length?'WHERE '+ledgerWhere.join(' AND '):''}`).get(...ledgerParams).s : db.prepare('SELECT COALESCE(SUM(stars_balance),0) s FROM clients').get().s;
   const topStores = db.prepare(`SELECT COALESCE(s.name,r.store_id,'Невідомий магазин') name, COUNT(*) receipts, COALESCE(SUM(r.total_cents),0) total_cents FROM receipts r LEFT JOIN stores s ON s.id=r.store_id OR s.external_id=r.store_id WHERE ${receiptWhere} GROUP BY COALESCE(s.name,r.store_id) ORDER BY total_cents DESC LIMIT 5`).all(...params);
   const topProducts = db.prepare(`SELECT i.name, SUM(i.qty) qty, SUM(i.line_total_cents) total_cents FROM receipt_items i JOIN receipts r ON r.id=i.receipt_id WHERE ${receiptWhere} GROUP BY i.name ORDER BY qty DESC LIMIT 5`).all(...params);
-  const stores = db.prepare(`SELECT id, external_id, name, source FROM stores WHERE is_active=1 AND source='1c' ORDER BY name`).all();
-  res.json({ ok:true, stores, filters:{store_id:storeId,date_from:dateFrom,date_to:dateTo,balance_mode:balanceMode,balance_date:balanceDate,balance_from:balanceFrom,balance_to:balanceTo}, summary:{ clients, active, stars, receipts:receipts.c, total_sales_uah:money(receipts.total), average_receipt_uah:money(receipts.avg_total), stars_accrued:Number(receipts.accrued||0), cash_change_stars:Number(cashAccrued||0), stars_spent:Number(receipts.spent||0), rewards_used:db.prepare('SELECT COUNT(*) c FROM reward_qrs WHERE status="used"').get().c, top_stores:topStores.map(x=>({...x,total_uah:money(x.total_cents)})), top_products:topProducts.map(x=>({...x,total_uah:money(x.total_cents)})) } });
+  const stores = db.prepare(`SELECT id, external_id, name FROM stores WHERE is_active=1 ORDER BY CASE WHEN source='1c' THEN 0 ELSE 1 END, name`).all();
+  res.json({ ok:true, stores, filters:{store_id:storeId,date_from:dateFrom,date_to:dateTo,balance_date:balanceDate}, summary:{ clients, active, stars, receipts:receipts.c, total_sales_uah:money(receipts.total), average_receipt_uah:money(receipts.avg_total), stars_accrued:Number(receipts.accrued||0), cash_change_stars:Number(cashAccrued||0), stars_spent:Number(receipts.spent||0), rewards_used:db.prepare('SELECT COUNT(*) c FROM reward_qrs WHERE status="used"').get().c, top_stores:topStores.map(x=>({...x,total_uah:money(x.total_cents)})), top_products:topProducts.map(x=>({...x,total_uah:money(x.total_cents)})) } });
 });
 
 app.get('/api/admin/clients', adminAuth, (req, res) => {
@@ -4333,16 +4328,6 @@ app.post('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {
   const coupon = db.prepare('SELECT * FROM personal_coupons WHERE id = ?').get(r.lastInsertRowid);
   logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'personal_coupon_created', entityType: 'personal_coupon', entityId: String(coupon.id), payload: { client_id: client.id, code, productExternalId, productName, discountPercent } });
   res.json({ ok: true, coupon });
-});
-
-
-app.patch('/api/admin/clients/:id/personal-coupons/:couponId/banner', adminAuth, (req, res) => {
-  const coupon = db.prepare('SELECT * FROM personal_coupons WHERE id = ? AND client_id = ?').get(req.params.couponId, req.params.id);
-  if (!coupon) return res.status(404).json({ ok: false, error: 'COUPON_NOT_FOUND' });
-  const b = req.body || {};
-  db.prepare(`UPDATE personal_coupons SET banner_title=?, banner_text=?, banner_image_url=?, show_as_banner=? WHERE id=?`)
-    .run(String(b.banner_title || coupon.banner_title || '').trim() || null, String(b.banner_text || coupon.banner_text || '').trim() || null, normalizeImageUrl(b.banner_image_url || coupon.banner_image_url || '/assets/star.svg'), b.show_as_banner === false ? 0 : 1, coupon.id);
-  res.json({ ok: true, coupon: db.prepare('SELECT * FROM personal_coupons WHERE id=?').get(coupon.id) });
 });
 
 app.get('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {
