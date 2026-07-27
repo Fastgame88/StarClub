@@ -172,14 +172,13 @@ function openCouponBannerEditor(clientId,coupon,onSaved){
   document.body.appendChild(wrap);const form=wrap.querySelector('#couponBannerEditor');const refresh=()=>{wrap.querySelector('#couponBannerPreviewTitle').textContent=val(form,'banner_title');wrap.querySelector('#couponBannerPreviewText').textContent=val(form,'banner_text');wrap.querySelector('#couponBannerPreviewImage').src=previewImageUrl(val(form,'banner_image_url'));};['banner_title','banner_text','banner_image_url'].forEach(n=>form.elements[n].addEventListener('input',refresh));wrap.querySelectorAll('[data-close-admin-modal]').forEach(x=>x.onclick=()=>wrap.remove());form.onsubmit=async e=>{e.preventDefault();await api(`/api/admin/clients/${clientId}/personal-coupons/${coupon.id}/banner`,{method:'PATCH',body:JSON.stringify({banner_title:val(form,'banner_title'),banner_text:val(form,'banner_text'),banner_image_url:val(form,'banner_image_url')||'/assets/star.svg',show_as_banner:check(form,'show_as_banner')})});wrap.remove();onSaved?.();};
 }
 
-function rewardForm(r={},stores=[],products=[]){
-  const productOptions=['<option value="">Оберіть товар з 1С</option>',...products.map(p=>`<option value="${esc(p.external_id)}" ${String(r.product_external_id||'')===String(p.external_id)?'selected':''}>${esc(p.name)} · ${esc(p.external_id)}</option>`)].join('');
+function rewardForm(r={},stores=[]){
   return `<form id="rewardForm" class="form-grid">
-    <label class="admin-field"><span>Магазин з 1С</span><select name="store_id" id="rewardStoreId">${pricingStoreOptions(stores,r.store_id||'all',true)}</select></label>
-    <label class="admin-field"><span>Товар з 1С</span><select name="product_external_id" id="rewardProductId" required>${productOptions}</select></label>
     <input name="name" placeholder="Назва товару" value="${esc(r.name||'')}" required>
     <input name="stars_price" type="number" placeholder="Ціна у зірках" value="${esc(r.stars_price||'')}" required>
+    <input name="product_external_id" placeholder="Код товару з 1С" value="${esc(r.product_external_id||'')}">
     <input name="image_url" placeholder="Фото URL" value="${esc(r.image_url||'/assets/star.svg')}">
+    <label class="admin-field"><span>Магазин з 1С</span><select name="store_id">${pricingStoreOptions(stores,r.store_id||'all',true)}</select></label>
     <input name="per_client_limit" type="number" placeholder="Ліміт на клієнта" value="${esc(r.per_client_limit||1)}">
     <label class="checkline"><input type="checkbox" name="is_active" ${r.id ? (Number(r.is_active)?'checked':'') : 'checked'}> Активний</label>
     <textarea name="conditions" placeholder="Умови отримання">${esc(r.conditions||'')}</textarea>
@@ -189,12 +188,11 @@ function rewardForm(r={},stores=[],products=[]){
 
 async function rewards(editId=null){
   title.textContent='Товари за зірки';
-  const [{items=[]},{stores=[]},{products=[]}]=await Promise.all([api('/api/admin/catalog/rewards'),api('/api/admin/stores'),api('/api/admin/catalog/products')]);
+  const [{items=[]},{stores=[]}]=await Promise.all([api('/api/admin/catalog/rewards'),api('/api/admin/stores')]);
   const oneCStores=stores.filter(x=>x.source==='1c'&&Number(x.is_active));
   const edit=editId?items.find(x=>String(x.id)===String(editId)):null;
-  content.innerHTML=`<div class="card"><h3>${edit?'Редагувати товар':'Додати товар за зірки'}</h3>${rewardForm(edit||{},oneCStores,products)}</div><div class="card"><table><thead><tr><th>Назва</th><th>Зірки</th><th>1С товар</th><th>Магазин</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${items.map(r=>`<tr><td>${esc(r.name)}</td><td>${num(r.stars_price)} ★</td><td>${esc(r.product_external_id||'—')}</td><td>${esc(r.store_id||'all')}</td><td>${activeText(r.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-reward="${r.id}"`)}${btn('Видалити',`data-delete-reward="${r.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
+  content.innerHTML=`<div class="card"><h3>${edit?'Редагувати товар':'Додати товар за зірки'}</h3>${rewardForm(edit||{},oneCStores)}</div><div class="card"><table><thead><tr><th>Назва</th><th>Зірки</th><th>1С товар</th><th>Магазин</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${items.map(r=>`<tr><td>${esc(r.name)}</td><td>${num(r.stars_price)} ★</td><td>${esc(r.product_external_id||'—')}</td><td>${esc(r.store_id||'all')}</td><td>${activeText(r.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-reward="${r.id}"`)}${btn('Видалити',`data-delete-reward="${r.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
   const form=$('#rewardForm');
-  const productSelect=$('#rewardProductId'); productSelect.onchange=()=>{const p=products.find(x=>String(x.external_id)===String(productSelect.value));if(p&&!form.elements.name.value)form.elements.name.value=p.name||'';};
   form.onsubmit=async ev=>{ev.preventDefault();const body={name:val(form,'name'),stars_price:Number(val(form,'stars_price')),product_external_id:val(form,'product_external_id'),image_url:val(form,'image_url')||'/assets/star.svg',store_id:val(form,'store_id')||'all',per_client_limit:Number(val(form,'per_client_limit')||1),conditions:val(form,'conditions'),is_active:check(form,'is_active')};await api(edit?`/api/admin/catalog/rewards/${edit.id}`:'/api/admin/catalog/rewards',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});rewards();};
   $('#cancelEdit')?.addEventListener('click',()=>rewards());$$('[data-edit-reward]').forEach(b=>b.onclick=()=>rewards(b.dataset.editReward));$$('[data-delete-reward]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити товар за зірки?')){await api(`/api/admin/catalog/rewards/${b.dataset.deleteReward}`,{method:'DELETE'});rewards();}});
 }

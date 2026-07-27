@@ -532,3 +532,5 @@ label.check span{min-width:0}
 .personal-coupon-copy{min-width:0}.personal-coupon-copy b{display:block;font-size:16px}.personal-coupon-copy p,.personal-coupon-copy small{display:block;color:var(--muted);margin:5px 0 0}.personal-coupon-show{white-space:nowrap;min-height:42px;padding:9px 12px}
 .personal-coupon-modal{width:min(94vw,460px)}.personal-coupon-modal-product{display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;background:rgba(226,180,76,.11);margin:14px 0}.personal-coupon-modal-product>span{width:44px;height:44px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,#ffe69b,#c88b20);color:#17130b}.coupon-use-note{text-align:center;margin-top:14px}
 @media(max-width:520px){.personal-coupon-card{grid-template-columns:64px minmax(0,1fr)}.personal-coupon-show{grid-column:1/-1;width:100%}}
+
+.personal-coupon-modal-simple{position:relative;padding-top:54px}.personal-coupon-close{position:absolute;right:18px;top:16px}.personal-coupon-modal-simple .barcode{margin-top:0}.personal-coupon-modal-simple .coupon-use-note{margin:14px 0 4px}

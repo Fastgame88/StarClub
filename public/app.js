@@ -789,7 +789,7 @@ function rewardCodesScreen() {
   return `
     ${header('Мої QR-коди', true)}
     <div class="stack">
-      ${coupons.length ? `<section class="card personal-coupon-list"><div class="section-heading compact"><span>${appIcon('ticket-percent')}</span><div><h3>Персональні знижки</h3><p>Лише для вас · одноразове використання</p></div></div>${coupons.map(c=>`<article class="personal-coupon-card"><span class="personal-coupon-value">−${c.discount_percent}%</span><div class="personal-coupon-copy"><b>${safeHtml(c.product_name||'Персональна пропозиція')}</b><p>Діє до ${new Date(c.expires_at).toLocaleDateString('uk-UA')}</p><small>Знижка застосовується до одного товару один раз</small></div><button type="button" class="btn personal-coupon-show" data-show-personal-coupon="${safeHtml(c.code)}" data-coupon-name="${safeHtml(c.product_name||'Персональна пропозиція')}" data-coupon-percent="${Number(c.discount_percent||0)}" data-coupon-expiry="${safeHtml(c.expires_at||'')}">Показати касиру</button></article>`).join('')}</section>` : ''}
+      ${coupons.length ? `<section class="card personal-coupon-list"><div class="section-heading compact"><span>${appIcon('ticket-percent')}</span><div><h3>Персональні знижки</h3><p>Лише для вас</p></div></div>${coupons.map(c=>`<article class="personal-coupon-card"><span class="personal-coupon-value">−${c.discount_percent}%</span><div class="personal-coupon-copy"><b>${safeHtml(c.product_name||'Персональна пропозиція')}</b><p>Діє до ${new Date(c.expires_at).toLocaleDateString('uk-UA')}</p></div><button type="button" class="btn personal-coupon-show" data-show-personal-coupon="${safeHtml(c.code)}" data-coupon-name="${safeHtml(c.product_name||'Персональна пропозиція')}" data-coupon-percent="${Number(c.discount_percent||0)}" data-coupon-expiry="${safeHtml(c.expires_at||'')}">Показати касиру</button></article>`).join('')}</section>` : ''}
       <section class="card gold-border"><b>Активні</b>${active.length ? active.map(renderQr).join('') : '<div class="empty">Активних кодів немає</div>'}</section>
       <section class="card"><b>Історія</b>${history.length ? history.map(renderQr).join('') : '<div class="empty">Історія кодів порожня</div>'}</section>
     </div>
@@ -1042,17 +1042,14 @@ function showCashierModal(cardNumber) {
 function showPersonalCouponModal(button) {
   const code = String(button?.dataset?.showPersonalCoupon || '').trim();
   if (!code) return;
-  const name = button.dataset.couponName || 'Персональна пропозиція';
-  const percent = Number(button.dataset.couponPercent || 0);
   const expiry = button.dataset.couponExpiry ? new Date(button.dataset.couponExpiry).toLocaleDateString('uk-UA') : '';
   const wrap = document.createElement('div');
   wrap.className = 'modal-backdrop';
-  wrap.innerHTML = `<div class="modal personal-coupon-modal">
-    <div class="modal-heading"><div><p class="eyebrow">ПЕРСОНАЛЬНА ЗНИЖКА</p><h2>−${percent}% на один товар</h2></div><button class="icon-btn compact" data-close-modal>×</button></div>
-    <div class="personal-coupon-modal-product"><span>${appIcon('ticket-percent')}</span><div><b>${safeHtml(name)}</b><p>Покажіть код касиру перед оплатою</p></div></div>
+  wrap.innerHTML = `<div class="modal personal-coupon-modal personal-coupon-modal-simple">
+    <button class="icon-btn compact personal-coupon-close" data-close-modal>×</button>
     <div class="barcode barcode-large"><img src="/api/svg/barcode?text=${encodeURIComponent(code)}" alt="Код персональної знижки"></div>
     <div class="manual-code"><span>Код для касира</span><b>${safeHtml(code)}</b><button type="button" class="mini-copy" data-copy-code="${safeHtml(code)}">Скопіювати</button></div>
-    <p class="small coupon-use-note">Код діє один раз і лише на одну одиницю зазначеного товару${expiry ? ` · до ${expiry}` : ''}.</p>
+    <p class="small coupon-use-note">Код одноразовий${expiry ? ` · діє до ${expiry}` : ''}.</p>
     <div class="modal-actions"><button class="btn" type="button" data-close-modal>Готово</button></div>
   </div>`;
   document.body.appendChild(wrap);

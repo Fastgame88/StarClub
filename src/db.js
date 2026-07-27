@@ -654,6 +654,11 @@ export function migrate() {
   if (!couponColumns.has('show_as_banner')) innerDb.run('ALTER TABLE personal_coupons ADD COLUMN show_as_banner INTEGER DEFAULT 0');
   if (!couponColumns.has('notified_at')) innerDb.run('ALTER TABLE personal_coupons ADD COLUMN notified_at TEXT');
 
+  const changeAccrualInfo = innerDb.exec('PRAGMA table_info(change_accrual_operations)');
+  const changeAccrualColumns = new Set((changeAccrualInfo?.[0]?.values || []).map((row) => row[1]));
+  if (!changeAccrualColumns.has('operation_type')) innerDb.run("ALTER TABLE change_accrual_operations ADD COLUMN operation_type TEXT DEFAULT 'change'");
+  innerDb.run("UPDATE change_accrual_operations SET operation_type = 'change' WHERE operation_type IS NULL OR operation_type = ''");
+
   const rewardQrInfo = innerDb.exec('PRAGMA table_info(reward_qrs)');
   const rewardQrColumns = new Set((rewardQrInfo?.[0]?.values || []).map((row) => row[1]));
   if (!rewardQrColumns.has('source_type')) innerDb.run("ALTER TABLE reward_qrs ADD COLUMN source_type TEXT DEFAULT 'stars'");
