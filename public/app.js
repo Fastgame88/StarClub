@@ -898,7 +898,10 @@ async function showReceiptModal(receiptId) {
       <div class="modal-heading"><div><p class="eyebrow">STAR CLUB RECEIPT</p><h2>${receipt.is_reward_purchase ? 'Покупка за зірки' : 'Чек покупки'}</h2></div><button class="icon-btn compact" data-close-modal>×</button></div>
       <p class="small">${receipt.store_name || receipt.display_title || 'Магазин Star'} · ${new Date(receipt.purchased_at).toLocaleDateString('uk-UA')} ${fmtTime(receipt.purchased_at)}</p>
       <div class="receipt-summary-grid">
-        <div><span>Сума</span><b>${receipt.is_reward_purchase ? '0 грн' : `${receipt.total_uah} грн`}</b></div>
+        <div>
+  <span>Сума</span>
+  <b>${Number(receipt.total_uah || 0).toFixed(2).replace('.', ',')} грн</b>
+</div>
         <div>
   <span>Нараховано за інші товари</span>
   <b>+${fmtStars(receipt.stars_accrued || 0)} ★</b>
