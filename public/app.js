@@ -899,7 +899,10 @@ async function showReceiptModal(receiptId) {
       <p class="small">${receipt.store_name || receipt.display_title || 'Магазин Star'} · ${new Date(receipt.purchased_at).toLocaleDateString('uk-UA')} ${fmtTime(receipt.purchased_at)}</p>
       <div class="receipt-summary-grid">
         <div><span>Сума</span><b>${receipt.is_reward_purchase ? '0 грн' : `${receipt.total_uah} грн`}</b></div>
-        <div><span>${receipt.is_reward_purchase ? 'Списано' : 'Нараховано'}</span><b>${receipt.is_reward_purchase ? `-${fmtStars(receipt.stars_spent)} ★` : `+${fmtStars(receipt.stars_accrued)} ★`}</b></div>
+        <div>
+  <span>Нараховано за інші товари</span>
+  <b>+${fmtStars(receipt.stars_accrued || 0)} ★</b>
+</div>
       </div>
       <div class="receipt-items">
         ${items.length ? items.map((item) => `
@@ -909,8 +912,12 @@ async function showReceiptModal(receiptId) {
           </div>
         `).join('') : '<div class="empty">1С не передала товарні позиції цього чека. Перевірте масив items у відправці чека.</div>'}
       </div>
-      <div class="receipt-total"><span>Разом</span><b>${receipt.is_reward_purchase ? `${fmtStars(receipt.stars_spent)} ★` : `${receipt.total_uah} грн`}</b></div>
-      <div class="modal-actions"><button class="btn" type="button" data-close-modal>Готово</button></div>
+      <div class="receipt-total">
+  <span>${receipt.is_reward_purchase ? 'Нараховано за інші товари' : 'Разом'}</span>
+  <b>${receipt.is_reward_purchase
+    ? `+${fmtStars(receipt.stars_accrued || 0)} ★`
+    : `${receipt.total_uah} грн`}</b>
+</div>
     </div>`;
   document.body.appendChild(wrap);
   wrap.querySelectorAll('[data-close-modal]').forEach((b) => b.onclick = () => wrap.remove());
@@ -928,7 +935,34 @@ function historyScreen() {
     const positive = Number(item.amount) > 0;
     return `${dayLabel}<div class="history-event"><span class="history-event-icon ${positive?'income':'expense'}">${appIcon(positive?'plus':'minus')}</span><div><b>${safeHtml(item.description||item.type)}</b><p>${fmtTime(item.created_at)}</p></div><strong class="${positive?'plus':'minus'}">${positive?'+':''}${fmtStars(item.amount)} ★</strong></div>`;
   }).join('');
-  const receiptRows = receipts.map((r)=>`<button class="receipt-history-row" type="button" data-open-receipt="${r.id}"><span>${appIcon(r.is_reward_purchase?'gift':'receipt-text')}</span><div><b>${r.is_reward_purchase?'Покупка за зірки':safeHtml(r.store_name||r.display_title||'Магазин Star')}</b><p>${new Date(r.purchased_at).toLocaleDateString('uk-UA')} · ${r.items.length} товарів</p></div><strong class="${r.is_reward_purchase?'minus':''}">${r.is_reward_purchase?`-${r.stars_spent} ★`:`${r.total_uah} грн`}</strong></button>`).join('');
+  const receiptRows = receipts.map((r) => `
+  <button
+    class="receipt-history-row"
+    type="button"
+    data-open-receipt="${r.id}"
+  >
+    <span>${appIcon(r.is_reward_purchase ? 'gift' : 'receipt-text')}</span>
+
+    <div>
+      <b>
+        ${r.is_reward_purchase
+          ? 'Покупка за зірки'
+          : safeHtml(r.store_name || r.display_title || 'Магазин Star')}
+      </b>
+
+      <p>
+        ${new Date(r.purchased_at).toLocaleDateString('uk-UA')}
+        · ${(r.items || []).length} товарів
+      </p>
+    </div>
+
+    <strong class="${Number(r.stars_accrued || 0) > 0 ? 'plus' : ''}">
+      ${r.is_reward_purchase
+        ? `+${fmtStars(r.stars_accrued || 0)} ★`
+        : `${r.total_uah} грн`}
+    </strong>
+  </button>
+`).join('');
   return `${header('Історія', true)}<div class="stack"><section class="history-balance-card"><div><p>Ваш баланс</p><div>${fmtStars(state.client.stars_balance)} <span>★</span></div></div><i>${appIcon('circle-star')}</i></section><div class="history-filters">${[['receipts','Чеки'],['income','Нарахування'],['expense','Списання']].map(([v,l])=>`<button type="button" class="${filter===v?'active':''}" data-history-filter="${v}">${l}</button>`).join('')}</div><section class="card history-list-card">${filter==='receipts'?`<div class="section-heading compact"><span>${appIcon('receipt-text')}</span><div><h3>Чеки</h3><p>Без дублювання руху зірок</p></div></div><div class="timeline">${receiptRows||'<div class="empty">Чеків ще немає</div>'}</div>`:`<div class="section-heading compact"><span>${appIcon('history')}</span><div><h3>${filter==='income'?'Нарахування':'Списання'}</h3><p>Тільки операції руху зірок без чеків</p></div></div><div class="history-events">${ledgerRows||'<div class="empty">Операцій немає</div>'}</div>`}</section></div>`;
 }
 
