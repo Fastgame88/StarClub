@@ -2802,14 +2802,74 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     });
   }
 
-  const items = Array.isArray(body.items) ? body.items : [];
-  const totalCents = Math.round(Number(body.total_cents || 0));
-  const eligibleCentsRaw = calculateEligibleCents(items, body.eligible_cents);
-  const eligibleCents = isRewardReceipt ? 0 : eligibleCentsRaw;
-  const excludedCents = Math.max(0, totalCents - eligibleCents);
-  const purchasedAt = body.purchased_at || nowIso();
-  const accrual = isRewardReceipt ? { stars: 0, applied: [] } : calculateAccrualWithOffers(items, storeId, purchasedAt);
-  const starsAccrued = items.length ? accrual.stars : (isRewardReceipt ? 0 : Math.floor(eligibleCents / 100));
+ const items = Array.isArray(body.items) ? body.items : [];
+const totalCents = Math.round(Number(body.total_cents || 0));
+const purchasedAt = body.purchased_at || nowIso();
+
+/*
+ * У чеку з товаром за зірки виключаємо лише сам товар,
+ * позначений no_star_accrual=true.
+ * Інші звичайні товари продовжують нараховувати зірки.
+ */
+const eligibleItems = items.filter((item) => {
+  const flags = item?.flags || item || {};
+
+  return !Boolean(
+    flags.no_star_accrual ||
+    flags.is_alcohol ||
+    flags.is_tobacco ||
+    flags.is_min_margin
+  );
+});
+
+const eligibleCentsFromItems = eligibleItems.reduce(
+  (sum, item) =>
+    sum +
+    Math.max(
+      0,
+      Math.round(
+        Number(
+          item.line_total_cents ??
+          item.total_cents ??
+          0
+        )
+      )
+    ),
+  0
+);
+
+/*
+ * Беремо фактичну суму дозволених позицій.
+ * body.eligible_cents використовуємо як резерв для старих чеків,
+ * у яких немає масиву items.
+ */
+const eligibleCents = items.length
+  ? eligibleCentsFromItems
+  : Math.max(
+      0,
+      Math.round(
+        Number(body.eligible_cents || 0)
+      )
+    );
+
+const excludedCents = Math.max(
+  0,
+  totalCents - eligibleCents
+);
+
+/*
+ * Клубні множники та спеціальні правила застосовуються
+ * тільки до товарів, які дозволяють нарахування.
+ */
+const accrual = calculateAccrualWithOffers(
+  eligibleItems,
+  storeId,
+  purchasedAt
+);
+
+const starsAccrued = eligibleItems.length
+  ? Math.max(0, Number(accrual.stars || 0))
+  : Math.floor(eligibleCents / 100);
 
   let starsSpent = Math.abs(Number(body.stars_spent || 0));
   if (isRewardReceipt && starsSpent === 0) {
@@ -2845,20 +2905,20 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
     const flags = item.flags || item;
     const excludedFromStars = isItemExcludedFromStarAccrual(item, adminExcludedCodes);
     insertItem.run(
-      body.id,
-      item.product_id || null,
-      item.external_product_id || null,
-      item.name || 'Товар',
-      item.category || null,
-      Number(item.qty || 1),
-      Math.round(Number(item.price_cents || 0)),
-      Math.round(Number(item.line_total_cents || item.total_cents || 0)),
-      flags.is_alcohol ? 1 : 0,
-      flags.is_tobacco ? 1 : 0,
-      flags.is_min_margin ? 1 : 0,
-      isRewardReceipt ? 1 : (excludedFromStars ? 1 : 0),
-      isRewardReceipt ? 1 : (flags.no_redeem ? 1 : 0)
-    );
+  body.id,
+  item.product_id || null,
+  item.external_product_id || null,
+  item.name || 'Товар',
+  item.category || null,
+  Number(item.qty || 1),
+  Math.round(Number(item.price_cents || 0)),
+  Math.round(Number(item.line_total_cents || item.total_cents || 0)),
+  flags.is_alcohol ? 1 : 0,
+  flags.is_tobacco ? 1 : 0,
+  flags.is_min_margin ? 1 : 0,
+  excludedFromStars ? 1 : 0,
+  flags.no_redeem ? 1 : 0
+);
   }
 
   if (starsAccrued > 0) {
@@ -2880,11 +2940,21 @@ app.post('/api/1c/receipts', oneCAuth, (req, res) => {
 
   const profileBonusResult = tryAwardProfileBonus(client.id, 'after_first_purchase');
 
-  if (!isRewardReceipt) {
-    addChallengeVisit(client.id, body.id, purchasedAt, totalCents, items);
-    updateStampProgress(client.id, body.id, items);
-  }
+  if (eligibleItems.length > 0) {
+  addChallengeVisit(
+    client.id,
+    body.id,
+    purchasedAt,
+    eligibleCents,
+    eligibleItems
+  );
 
+  updateStampProgress(
+    client.id,
+    body.id,
+    eligibleItems
+  );
+}
   logAudit({
     actorType: '1c',
     actorId: storeId || '1c',
