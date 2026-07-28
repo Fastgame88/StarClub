@@ -2192,7 +2192,29 @@ app.get('/api/client/reward-qrs', clientAuth, (req, res) => {
     WHERE q.client_id = ?
     ORDER BY q.created_at DESC
     LIMIT 100`).all(req.client.id);
-  const coupons = db.prepare(`SELECT id, code, product_external_id, product_name, discount_percent, status, expires_at, created_at, used_at FROM personal_coupons WHERE client_id = ? ORDER BY created_at DESC LIMIT 50`).all(req.client.id);
+  const currentTime = nowIso();
+
+const coupons = db.prepare(`
+  SELECT
+    id,
+    code,
+    product_external_id,
+    product_name,
+    discount_percent,
+    status,
+    expires_at,
+    created_at,
+    used_at
+  FROM personal_coupons
+  WHERE client_id = ?
+    AND status = 'active'
+    AND datetime(expires_at) > datetime(?)
+  ORDER BY created_at DESC
+  LIMIT 50
+`).all(
+  req.client.id,
+  currentTime
+);
   res.json({ ok: true, coupons, qrs: rows.map(formatRewardQr) });
 });
 
@@ -4318,7 +4340,18 @@ function getClientTopProducts(clientId) {
 }
 
 function getClientPersonalCoupons(clientId) {
-  return db.prepare('SELECT * FROM personal_coupons WHERE client_id = ? ORDER BY created_at DESC LIMIT 50').all(clientId);
+  return db.prepare(`
+    SELECT *
+    FROM personal_coupons
+    WHERE client_id = ?
+      AND status = 'active'
+      AND datetime(expires_at) > datetime(?)
+    ORDER BY created_at DESC
+    LIMIT 50
+  `).all(
+    clientId,
+    nowIso()
+  );
 }
 
 // ---------------- Admin API ----------------

@@ -579,8 +579,20 @@ function activityStorageKey() {
 }
 
 function getLatestCouponKey(coupons = []) {
-  const c = [...coupons].sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0))[0];
-  return c ? `${c.id || c.code}:${c.status || 'active'}:${c.created_at || ''}` : '';
+  return [...coupons]
+    .sort(
+      (a, b) =>
+        new Date(b.updated_at || b.used_at || b.created_at || 0) -
+        new Date(a.updated_at || a.used_at || a.created_at || 0)
+    )
+    .map(
+      (coupon) =>
+        `${coupon.id || coupon.code}:` +
+        `${coupon.status || 'active'}:` +
+        `${coupon.used_at || ''}:` +
+        `${coupon.updated_at || ''}`
+    )
+    .join('|');
 }
 
 function getLatestReceiptKey(receipts = []) {
@@ -776,7 +788,15 @@ function rewardsScreen() {
 
 function rewardCodesScreen() {
   const qrs = state.data.rewardQrs || [];
-  const coupons = state.data.personalCoupons || [];
+
+const coupons = (state.data.personalCoupons || []).filter((coupon) => {
+  const status = String(coupon.status || 'active').toLowerCase();
+  const expiresAt = coupon.expires_at
+    ? new Date(coupon.expires_at).getTime()
+    : Number.POSITIVE_INFINITY;
+
+  return status === 'active' && expiresAt > Date.now();
+});
   const active = qrs.filter((q) => q.status === 'reserved');
   const history = qrs.filter((q) => q.status !== 'reserved');
   const statusText = { reserved: 'активний', used: 'використаний', canceled: 'скасований', expired: 'прострочений' };
