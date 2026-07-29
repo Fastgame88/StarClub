@@ -585,6 +585,7 @@ export function migrate() {
       product_external_id TEXT,
       product_name TEXT,
       discount_percent INTEGER NOT NULL,
+      max_units INTEGER NOT NULL DEFAULT 1,
       status TEXT NOT NULL DEFAULT 'active',
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -654,6 +655,8 @@ export function migrate() {
   if (!couponColumns.has('banner_image_url')) innerDb.run('ALTER TABLE personal_coupons ADD COLUMN banner_image_url TEXT');
   if (!couponColumns.has('show_as_banner')) innerDb.run('ALTER TABLE personal_coupons ADD COLUMN show_as_banner INTEGER DEFAULT 0');
   if (!couponColumns.has('notified_at')) innerDb.run('ALTER TABLE personal_coupons ADD COLUMN notified_at TEXT');
+  if (!couponColumns.has('max_units')) innerDb.run('ALTER TABLE personal_coupons ADD COLUMN max_units INTEGER NOT NULL DEFAULT 1');
+  innerDb.run('UPDATE personal_coupons SET max_units = 1 WHERE max_units IS NULL OR max_units < 1');
 
   const changeAccrualInfo = innerDb.exec('PRAGMA table_info(change_accrual_operations)');
   const changeAccrualColumns = new Set((changeAccrualInfo?.[0]?.values || []).map((row) => row[1]));

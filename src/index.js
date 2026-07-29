@@ -3041,7 +3041,7 @@ app.post('/api/1c/reward-qr/validate', oneCAuth, (req, res) => {
     if (coupon.status !== 'active') return res.status(400).json({ ok:false,valid:false,error:'COUPON_STATUS_'+String(coupon.status).toUpperCase() });
     if (new Date(coupon.expires_at).getTime() < Date.now()) { db.prepare("UPDATE personal_coupons SET status='expired' WHERE id=?").run(coupon.id); return res.status(400).json({ok:false,valid:false,error:'COUPON_EXPIRED'}); }
     const original=Math.max(0,Number(coupon.product_price_cents||0)); const discounted=Math.max(0,Math.round(original*(100-Number(coupon.discount_percent||0))/100));
-    return res.json({ok:true,valid:true,status:'active',qr:{code_type:'personal_coupon',source_type:'personal_coupon',token:coupon.code,manual_code:coupon.code,product_external_id:coupon.product_external_id,product_id:coupon.product_external_id,product_name:coupon.product_1c_name||coupon.product_name,qty:1,price_cents:discounted,price_uah:money(discounted),original_price_cents:original,discount_percent:Number(coupon.discount_percent||0),expires_at:coupon.expires_at,client:{card_number:coupon.card_number,phone:coupon.phone,name:coupon.client_name}}});
+    return res.json({ok:true,valid:true,status:'active',qr:{code_type:'personal_coupon',source_type:'personal_coupon',token:coupon.code,manual_code:coupon.code,product_external_id:coupon.product_external_id,product_id:coupon.product_external_id,product_name:coupon.product_1c_name||coupon.product_name,qty:1,max_units:Math.max(1,Number(coupon.max_units||1)),max_discount_units:Math.max(1,Number(coupon.max_units||1)),price_cents:discounted,price_uah:money(discounted),original_price_cents:original,discount_percent:Number(coupon.discount_percent||0),expires_at:coupon.expires_at,client:{card_number:coupon.card_number,phone:coupon.phone,name:coupon.client_name}}});
   }
   if (row.status !== 'reserved') return res.status(400).json({ ok: false, valid: false, status: row.status, error: 'QR_ALREADY_' + row.status.toUpperCase() });
   if (new Date(row.expires_at).getTime() < Date.now()) {
@@ -3342,6 +3342,9 @@ app.post('/api/1c/personal-coupon/validate', oneCAuth, (req, res) => {
   res.json({ ok: true, valid: true, coupon: {
     code: row.code,
     discount_percent: row.discount_percent,
+    max_units: Math.max(1, Number(row.max_units || 1)),
+    max_discount_units: Math.max(1, Number(row.max_units || 1)),
+    qty: 1,
     product_external_id: row.product_external_id,
     product_name: row.product_name,
     expires_at: row.expires_at,
@@ -4441,6 +4444,7 @@ app.post('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {
   const productExternalId = String(req.body?.product_external_id || '').trim();
   const productName = String(req.body?.product_name || req.body?.name || '').trim();
   const discountPercent = Math.min(99, Math.max(1, Math.round(Number(req.body?.discount_percent || 10))));
+  const maxUnits = Math.min(999, Math.max(1, Math.round(Number(req.body?.max_units || 1))));
   if (!productExternalId && !productName) return res.status(400).json({ ok: false, error: 'PRODUCT_REQUIRED' });
   const code = getUniqueCouponCode();
   const days = Math.min(90, Math.max(1, Number(req.body?.valid_days || 7)));
@@ -4449,10 +4453,10 @@ app.post('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {
   const bannerText = String(req.body?.banner_text || `На ${productName || 'обраний товар'}`).trim();
   const bannerImageUrl = normalizeImageUrl(req.body?.banner_image_url || '/assets/star.svg');
   const showAsBanner = req.body?.show_as_banner ? 1 : 0;
-  const r = db.prepare(`INSERT INTO personal_coupons(client_id, code, product_external_id, product_name, discount_percent, status, expires_at, created_at, created_by_admin_id, banner_title, banner_text, banner_image_url, show_as_banner)
-    VALUES(?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`).run(client.id, code, productExternalId || null, productName || null, discountPercent, expiresAt, nowIso(), req.admin?.id || null, bannerTitle, bannerText, bannerImageUrl, showAsBanner);
+  const r = db.prepare(`INSERT INTO personal_coupons(client_id, code, product_external_id, product_name, discount_percent, max_units, status, expires_at, created_at, created_by_admin_id, banner_title, banner_text, banner_image_url, show_as_banner)
+    VALUES(?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)`).run(client.id, code, productExternalId || null, productName || null, discountPercent, maxUnits, expiresAt, nowIso(), req.admin?.id || null, bannerTitle, bannerText, bannerImageUrl, showAsBanner);
   const coupon = db.prepare('SELECT * FROM personal_coupons WHERE id = ?').get(r.lastInsertRowid);
-  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'personal_coupon_created', entityType: 'personal_coupon', entityId: String(coupon.id), payload: { client_id: client.id, code, productExternalId, productName, discountPercent } });
+  logAudit({ actorType: 'admin', actorId: String(req.admin.id), action: 'personal_coupon_created', entityType: 'personal_coupon', entityId: String(coupon.id), payload: { client_id: client.id, code, productExternalId, productName, discountPercent, maxUnits } });
   res.json({ ok: true, coupon });
 });
 
@@ -4465,6 +4469,26 @@ app.patch('/api/admin/clients/:id/personal-coupons/:couponId/banner', adminAuth,
     .run(String(b.banner_title || coupon.banner_title || '').trim() || null, String(b.banner_text || coupon.banner_text || '').trim() || null, normalizeImageUrl(b.banner_image_url || coupon.banner_image_url || '/assets/star.svg'), b.show_as_banner === false ? 0 : 1, coupon.id);
   res.json({ ok: true, coupon: db.prepare('SELECT * FROM personal_coupons WHERE id=?').get(coupon.id) });
 });
+
+app.delete('/api/admin/clients/:id/personal-coupons/:couponId', adminAuth, (req, res) => {
+  const clientId = Number(req.params.id);
+  const couponId = Number(req.params.couponId);
+  const coupon = db.prepare('SELECT * FROM personal_coupons WHERE id = ? AND client_id = ?').get(couponId, clientId);
+  if (!coupon) return res.status(404).json({ ok: false, error: 'COUPON_NOT_FOUND' });
+
+  db.prepare('DELETE FROM personal_coupons WHERE id = ? AND client_id = ?').run(couponId, clientId);
+  logAudit({
+    actorType: 'admin',
+    actorId: String(req.admin?.id || 'admin'),
+    action: 'personal_coupon_deleted',
+    entityType: 'personal_coupon',
+    entityId: String(couponId),
+    payload: { client_id: clientId, code: coupon.code, product_external_id: coupon.product_external_id }
+  });
+
+  res.json({ ok: true, deleted: true, coupon_id: couponId });
+});
+
 
 app.get('/api/admin/clients/:id/personal-coupons', adminAuth, (req, res) => {
   const client = db.prepare('SELECT id FROM clients WHERE id = ?').get(req.params.id);
