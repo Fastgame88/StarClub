@@ -56,13 +56,18 @@ function activeText(v){return Number(v) ? 'активний' : 'вимкнени
 function btn(label, attrs=''){ return `<button type="button" ${attrs}>${label}</button>`; }
 
 const liveState = { signature: '', busy: false, interval: null };
-const clientListState = { q: '' };
+const clientListState = { q: '', sort: 'newest', store_id: 'all', date_from: '', date_to: '' };
 let clientDetailState = null;
 let offerAdminSection = 'pricing';
 function hasFocusedEditor(){ return Boolean(document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]')); }
 function routeCanAutoRefresh(){ return ['dashboard','clients','qrs','support','audit'].includes(tab) || Boolean(clientDetailState?.id); }
-function compactClient(c){
-  return `<div class="client-card-main"><div><b>${esc(c.name||'Без імені')}</b><p class="small">${esc(c.phone||'Телефон не вказано')}</p></div><button type="button" data-client="${c.id}">Детально</button></div>`;
+function compactClient(c, metric='newest'){
+  const metrics = {
+    receipt_count: `<span class="client-card-metric"><small>Кількість чеків</small><b>${num(c.receipts_count)} чеків</b></span>`,
+    receipt_total: `<span class="client-card-metric"><small>Сума чеків</small><b>${money(c.receipts_total_uah)}</b></span>`,
+    average_receipt: `<span class="client-card-metric"><small>Середня сума чека</small><b>${money(c.average_receipt_uah)}</b></span>`
+  };
+  return `<div class="client-card-main"><div class="client-card-identity"><b>${esc(c.name||'Без імені')}</b><p class="small">${esc(c.phone||'Телефон не вказано')}</p>${metrics[metric]||''}</div><button type="button" data-client="${c.id}">Детально</button></div>`;
 }
 function receiptItemsHtml(receipt){
   const items = receipt.items || [];
@@ -109,21 +114,33 @@ async function dashboard(){
 async function clients(){
   clientDetailState = null;
   title.textContent='Клієнти';
-  const q = clientListState.q || '';
-  const {clients: clientItems}=await api(`/api/admin/clients${q?`?q=${encodeURIComponent(q)}`:''}`);
+  const state = clientListState;
+  const params = new URLSearchParams();
+  if(state.q) params.set('q', state.q);
+  params.set('sort', state.sort || 'newest');
+  if(state.store_id && state.store_id !== 'all') params.set('store_id', state.store_id);
+  if(state.date_from) params.set('date_from', state.date_from);
+  if(state.date_to) params.set('date_to', state.date_to);
+  const data=await api(`/api/admin/clients?${params.toString()}`);
+  const clientItems=data.clients||[];
+  const filters=data.filters||state;
+  const storeOptions=['<option value="all">Усі магазини</option>',...(data.stores||[]).map(store=>`<option value="${esc(store.id)}" ${String(filters.store_id||'all')===String(store.id)?'selected':''}>${esc(store.name)}</option>`)].join('');
   content.innerHTML=`<div class="card client-search-card">
-      <form id="clientSearchForm" class="client-search-form">
-        <input name="q" placeholder="Пошук за імʼям, телефоном або номером картки" value="${esc(q)}">
-        <button class="primary">Знайти</button>
-        ${q?'<button type="button" id="clearClientSearch">Скинути</button>':''}
+      <form id="clientSearchForm" class="client-search-form client-filter-form">
+        <label class="client-filter-search"><span>Пошук</span><input name="q" placeholder="Імʼя, телефон або номер картки" value="${esc(filters.q||'')}"></label>
+        <label><span>Сортування</span><select name="sort"><option value="newest" ${filters.sort==='newest'?'selected':''}>Нові клієнти</option><option value="receipt_count" ${filters.sort==='receipt_count'?'selected':''}>Топ за кількістю чеків</option><option value="receipt_total" ${filters.sort==='receipt_total'?'selected':''}>Топ за сумою чеків</option><option value="average_receipt" ${filters.sort==='average_receipt'?'selected':''}>Топ за середньою сумою чека</option></select></label>
+        <label><span>Магазин</span><select name="store_id">${storeOptions}</select></label>
+        <label><span>Період від</span><input type="date" name="date_from" value="${esc(filters.date_from||'')}"></label>
+        <label><span>Період до</span><input type="date" name="date_to" value="${esc(filters.date_to||'')}"></label>
+        <button class="primary">Застосувати</button>
+        <button type="button" id="clearClientSearch">Скинути</button>
       </form>
-      <p class="small">У списку показуємо тільки імʼя та номер. Баланс, картка, чеки, історія та аналітика відкриваються кнопкою «Детально».</p>
     </div>
     <div class="client-list-grid">
-      ${clientItems.map(compactClient).join('') || '<div class="card">Клієнтів не знайдено</div>'}
+      ${clientItems.map(c=>compactClient(c,filters.sort)).join('') || '<div class="card">Клієнтів не знайдено</div>'}
     </div>`;
-  $('#clientSearchForm').onsubmit=async e=>{e.preventDefault();clientListState.q=String(new FormData(e.currentTarget).get('q')||'').trim();await clients();};
-  $('#clearClientSearch')?.addEventListener('click',async()=>{clientListState.q='';await clients();});
+  $('#clientSearchForm').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);clientListState.q=String(fd.get('q')||'').trim();clientListState.sort=String(fd.get('sort')||'newest');clientListState.store_id=String(fd.get('store_id')||'all');clientListState.date_from=String(fd.get('date_from')||'');clientListState.date_to=String(fd.get('date_to')||'');await clients();};
+  $('#clearClientSearch').onclick=async()=>{Object.assign(clientListState,{q:'',sort:'newest',store_id:'all',date_from:'',date_to:''});await clients();};
   $$('[data-client]').forEach(b=>b.onclick=()=>clientDetails(b.dataset.client));
 }
 async function clientDetails(id, opts={}){

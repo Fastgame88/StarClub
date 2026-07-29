@@ -4387,10 +4387,79 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
 
 app.get('/api/admin/clients', adminAuth, (req, res) => {
   const q = String(req.query.q || '').trim();
-  const rows = q
-    ? db.prepare('SELECT * FROM clients WHERE phone LIKE ? OR name LIKE ? OR card_number LIKE ? ORDER BY created_at DESC LIMIT 200').all(`%${q}%`, `%${q}%`, `%${q}%`)
-    : db.prepare('SELECT * FROM clients ORDER BY created_at DESC LIMIT 200').all();
-  res.json({ ok: true, clients: rows.map(formatClient) });
+  const requestedSort = String(req.query.sort || 'newest').trim();
+  const sort = ['newest', 'receipt_count', 'receipt_total', 'average_receipt'].includes(requestedSort) ? requestedSort : 'newest';
+  const storeId = String(req.query.store_id || 'all').trim();
+  const dateFrom = String(req.query.date_from || '').trim();
+  const dateTo = String(req.query.date_to || '').trim();
+
+  const receiptWhere = ['r.is_return = 0'];
+  const receiptParams = [];
+  if (storeId && storeId !== 'all') {
+    receiptWhere.push('(r.store_id = ? OR r.store_id IN (SELECT external_id FROM stores WHERE id = ?))');
+    receiptParams.push(storeId, storeId);
+  }
+  if (dateFrom) {
+    receiptWhere.push('r.purchased_at >= ?');
+    receiptParams.push(`${dateFrom}T00:00:00`);
+  }
+  if (dateTo) {
+    receiptWhere.push('r.purchased_at <= ?');
+    receiptParams.push(`${dateTo}T23:59:59`);
+  }
+
+  const clientWhere = [];
+  const clientParams = [];
+  if (q) {
+    clientWhere.push('(c.phone LIKE ? OR c.name LIKE ? OR c.card_number LIKE ?)');
+    clientParams.push(`%${q}%`, `%${q}%`, `%${q}%`);
+  }
+  const hasReceiptFilter = (storeId && storeId !== 'all') || dateFrom || dateTo;
+  if (hasReceiptFilter) clientWhere.push('COALESCE(ra.receipts_count, 0) > 0');
+
+  const orderBy = {
+    newest: 'c.created_at DESC',
+    receipt_count: 'COALESCE(ra.receipts_count, 0) DESC, COALESCE(ra.receipts_total_cents, 0) DESC, c.created_at DESC',
+    receipt_total: 'COALESCE(ra.receipts_total_cents, 0) DESC, COALESCE(ra.receipts_count, 0) DESC, c.created_at DESC',
+    average_receipt: 'COALESCE(ra.average_receipt_cents, 0) DESC, COALESCE(ra.receipts_count, 0) DESC, c.created_at DESC'
+  }[sort];
+
+  const sql = `
+    WITH receipt_analytics AS (
+      SELECT
+        r.client_id,
+        COUNT(*) AS receipts_count,
+        COALESCE(SUM(r.total_cents), 0) AS receipts_total_cents,
+        COALESCE(AVG(r.total_cents), 0) AS average_receipt_cents
+      FROM receipts r
+      WHERE ${receiptWhere.join(' AND ')}
+      GROUP BY r.client_id
+    )
+    SELECT
+      c.*,
+      COALESCE(ra.receipts_count, 0) AS receipts_count,
+      COALESCE(ra.receipts_total_cents, 0) AS receipts_total_cents,
+      COALESCE(ra.average_receipt_cents, 0) AS average_receipt_cents
+    FROM clients c
+    LEFT JOIN receipt_analytics ra ON ra.client_id = c.id
+    ${clientWhere.length ? `WHERE ${clientWhere.join(' AND ')}` : ''}
+    ORDER BY ${orderBy}
+    LIMIT 200
+  `;
+
+  const rows = db.prepare(sql).all(...receiptParams, ...clientParams);
+  const stores = db.prepare(`SELECT id, external_id, name FROM stores WHERE is_active = 1 AND source = '1c' ORDER BY name`).all();
+  res.json({
+    ok: true,
+    stores,
+    filters: { q, sort, store_id: storeId, date_from: dateFrom, date_to: dateTo },
+    clients: rows.map(row => ({
+      ...formatClient(row),
+      receipts_count: Number(row.receipts_count || 0),
+      receipts_total_uah: money(row.receipts_total_cents || 0),
+      average_receipt_uah: money(row.average_receipt_cents || 0)
+    }))
+  });
 });
 
 app.get('/api/admin/clients/:id', adminAuth, (req, res) => {

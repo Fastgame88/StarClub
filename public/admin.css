@@ -186,3 +186,15 @@ html,body{max-width:100%;overflow-x:hidden}
 .admin-modal-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(4,6,10,.78);backdrop-filter:blur(12px)}
 .admin-modal{width:min(720px,96vw);max-height:92vh;overflow:auto;padding:22px;border-radius:24px;background:#121720;border:1px solid var(--line);box-shadow:0 30px 90px rgba(0,0,0,.5)}
 .admin-modal [data-close-admin-modal]{min-width:42px}.coupon-banner-modal .banner-admin-preview{min-height:170px}
+
+
+/* Client ranking and receipt filters */
+.client-filter-form{grid-template-columns:minmax(240px,2fr) repeat(4,minmax(145px,1fr)) auto auto;align-items:end}
+.client-filter-form label{display:grid;gap:6px;font-size:11px;color:var(--muted)}
+.client-filter-form input,.client-filter-form select{width:100%;min-width:0}
+.client-card-identity{min-width:0;display:grid;gap:4px}
+.client-card-metric{display:flex;align-items:baseline;gap:8px;margin-top:7px;color:var(--gold-2)}
+.client-card-metric small{color:var(--muted);font-size:11px}
+.client-card-metric b{font-size:15px}
+@media(max-width:1250px){.client-filter-form{grid-template-columns:repeat(3,minmax(160px,1fr))}.client-filter-search{grid-column:span 2}}
+@media(max-width:760px){.client-filter-form{grid-template-columns:1fr}.client-filter-search{grid-column:auto}}
