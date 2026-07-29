@@ -73,7 +73,7 @@ function receiptCard(r){
   return `<article class="receipt-admin-card"><div class="receipt-head"><div><b>Чек #${esc(r.id)}</b><p class="small">${dt(r.purchased_at)} · ${esc(r.store_id||'магазин не вказано')}</p></div><span class="pill">${num((r.total_cents||0)/100)} грн</span></div>${receiptItemsHtml(r)}<div class="small">Нараховано: ${num(r.stars_accrued||0)} ★</div></article>`;
 }
 function ledgerRow(l){ return `<tr><td>${dt(l.created_at)}</td><td>${esc(l.description||l.type)}</td><td>${l.amount>0?'+':''}${num(l.amount)} ★</td></tr>`; }
-function couponCard(c){ return `<article class="coupon-card" data-coupon-id="${c.id}"><div><b>${esc(c.code)}</b><p class="small">${esc(c.product_name||c.product_external_id||'товар')} · ${num(c.discount_percent)}% · до ${dt(c.expires_at)} · максимум ${num(c.max_units||1)} шт.</p></div><div class="coupon-actions"><button type="button" data-coupon-banner="${c.id}">${Number(c.show_as_banner)?'Редагувати банер':'Додати в банер'}</button><button type="button" data-delete-coupon="${c.id}">Видалити код</button></div></article>`; }
+function couponCard(c){ return `<article class="coupon-card" data-coupon-id="${c.id}"><div><b>${esc(c.code)}</b><p class="small">${esc(c.product_name||c.product_external_id||'товар')} · ${num(c.discount_percent)}% · до ${dt(c.expires_at)}</p></div><div class="coupon-actions"><button type="button" data-coupon-banner="${c.id}">${Number(c.show_as_banner)?'Редагувати банер':'Додати в банер'}</button><button type="button" data-delete-coupon="${c.id}">Видалити код</button></div></article>`; }
 async function refreshIfChanged(){
   if(liveState.busy || !adminToken && !key() || !routeCanAutoRefresh() || hasFocusedEditor()) return;
   liveState.busy = true;
