@@ -4366,6 +4366,22 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
   const balanceDate = String(req.query.balance_date || dateTo || '').trim();
   const balanceFrom = String(req.query.balance_from || '').trim();
   const balanceTo = String(req.query.balance_to || '').trim();
+
+  // Гнучкі фільтри блоку «Топ товарів».
+  // Старі параметри аналітики не видаляємо — лише додаємо нові.
+  const requestedTopProductSort = String(req.query.top_product_sort || 'qty').trim();
+  const topProductSort = ['qty', 'sum'].includes(requestedTopProductSort) ? requestedTopProductSort : 'qty';
+  const requestedTobaccoFilter = String(req.query.top_product_tobacco || 'all').trim();
+  const topProductTobacco = ['all', 'with', 'without'].includes(requestedTobaccoFilter) ? requestedTobaccoFilter : 'all';
+  const requestedAlcoholFilter = String(req.query.top_product_alcohol || 'all').trim();
+  const topProductAlcohol = ['all', 'with', 'without'].includes(requestedAlcoholFilter) ? requestedAlcoholFilter : 'all';
+  const topProductMinQty = Math.max(0, Number(req.query.top_product_min_qty || 0) || 0);
+  const topProductMinTotalUah = Math.max(0, Number(req.query.top_product_min_total || 0) || 0);
+  const topProductMinReceipts = Math.max(0, Math.trunc(Number(req.query.top_product_min_receipts || 0) || 0));
+  const requestedTopProductLimit = Math.trunc(Number(req.query.top_product_limit || 5) || 5);
+  const topProductLimit = Math.min(100, Math.max(1, requestedTopProductLimit));
+  const topProductSearch = String(req.query.top_product_search || '').trim();
+
   const where = ["r.is_return = 0"]; const params = [];
   if (storeId && storeId !== 'all') { where.push('(r.store_id = ? OR r.store_id IN (SELECT external_id FROM stores WHERE id = ?))'); params.push(storeId, storeId); }
   if (dateFrom) { where.push('r.purchased_at >= ?'); params.push(`${dateFrom}T00:00:00`); }
@@ -4380,9 +4396,91 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
   if(balanceMode==='range'){if(balanceFrom){ledgerWhere.push('created_at >= ?');ledgerParams.push(`${balanceFrom}T00:00:00`);}if(balanceTo){ledgerWhere.push('created_at <= ?');ledgerParams.push(`${balanceTo}T23:59:59`);}}
   const stars = balanceMode==='all' ? db.prepare('SELECT COALESCE(SUM(amount),0) s FROM star_ledger').get().s : db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM star_ledger ${ledgerWhere.length?'WHERE '+ledgerWhere.join(' AND '):''}`).get(...ledgerParams).s;
   const topStores = db.prepare(`SELECT COALESCE(s.name,r.store_id,'Невідомий магазин') name, COUNT(*) receipts, COALESCE(SUM(r.total_cents),0) total_cents FROM receipts r LEFT JOIN stores s ON s.id=r.store_id OR s.external_id=r.store_id WHERE ${receiptWhere} GROUP BY COALESCE(s.name,r.store_id) ORDER BY total_cents DESC LIMIT 5`).all(...params);
-  const topProducts = db.prepare(`SELECT i.name, SUM(i.qty) qty, SUM(i.line_total_cents) total_cents FROM receipt_items i JOIN receipts r ON r.id=i.receipt_id WHERE ${receiptWhere} GROUP BY i.name ORDER BY qty DESC LIMIT 5`).all(...params);
+
+  const topProductWhere = [receiptWhere];
+  const topProductParams = [...params];
+  if (topProductTobacco === 'with') topProductWhere.push('i.is_tobacco = 1');
+  if (topProductTobacco === 'without') topProductWhere.push('COALESCE(i.is_tobacco, 0) = 0');
+  if (topProductAlcohol === 'with') topProductWhere.push('i.is_alcohol = 1');
+  if (topProductAlcohol === 'without') topProductWhere.push('COALESCE(i.is_alcohol, 0) = 0');
+  if (topProductSearch) {
+    topProductWhere.push('(LOWER(i.name) LIKE LOWER(?) OR LOWER(COALESCE(i.category, "")) LIKE LOWER(?))');
+    topProductParams.push(`%${topProductSearch}%`, `%${topProductSearch}%`);
+  }
+
+  const topProductHaving = [];
+  const topProductHavingParams = [];
+  if (topProductMinQty > 0) {
+    topProductHaving.push('SUM(i.qty) >= ?');
+    topProductHavingParams.push(topProductMinQty);
+  }
+  if (topProductMinTotalUah > 0) {
+    topProductHaving.push('SUM(i.line_total_cents) >= ?');
+    topProductHavingParams.push(Math.round(topProductMinTotalUah * 100));
+  }
+  if (topProductMinReceipts > 0) {
+    topProductHaving.push('COUNT(DISTINCT i.receipt_id) >= ?');
+    topProductHavingParams.push(topProductMinReceipts);
+  }
+
+  const topProductOrder = topProductSort === 'sum'
+    ? 'total_cents DESC, qty DESC, receipts_count DESC'
+    : 'qty DESC, total_cents DESC, receipts_count DESC';
+
+  const topProducts = db.prepare(`
+    SELECT
+      i.name,
+      COALESCE(i.category, '') category,
+      SUM(i.qty) qty,
+      COUNT(DISTINCT i.receipt_id) receipts_count,
+      SUM(i.line_total_cents) total_cents,
+      MAX(COALESCE(i.is_tobacco, 0)) is_tobacco,
+      MAX(COALESCE(i.is_alcohol, 0)) is_alcohol
+    FROM receipt_items i
+    JOIN receipts r ON r.id = i.receipt_id
+    WHERE ${topProductWhere.join(' AND ')}
+    GROUP BY i.name, COALESCE(i.category, '')
+    ${topProductHaving.length ? `HAVING ${topProductHaving.join(' AND ')}` : ''}
+    ORDER BY ${topProductOrder}
+    LIMIT ?
+  `).all(...topProductParams, ...topProductHavingParams, topProductLimit);
+
   const stores = db.prepare(`SELECT id, external_id, name, source FROM stores WHERE is_active=1 AND source='1c' ORDER BY name`).all();
-  res.json({ ok:true, stores, filters:{store_id:storeId,date_from:dateFrom,date_to:dateTo,balance_mode:balanceMode,balance_date:balanceDate,balance_from:balanceFrom,balance_to:balanceTo}, summary:{ clients, active, stars, receipts:receipts.c, total_sales_uah:money(receipts.total), average_receipt_uah:money(receipts.avg_total), stars_accrued:Number(receipts.accrued||0), cash_change_stars:Number(cashAccrued||0), stars_spent:Number(receipts.spent||0), rewards_used:db.prepare('SELECT COUNT(*) c FROM reward_qrs WHERE status="used"').get().c, top_stores:topStores.map(x=>({...x,total_uah:money(x.total_cents)})), top_products:topProducts.map(x=>({...x,total_uah:money(x.total_cents)})) } });
+  res.json({
+    ok:true,
+    stores,
+    filters:{
+      store_id:storeId,
+      date_from:dateFrom,
+      date_to:dateTo,
+      balance_mode:balanceMode,
+      balance_date:balanceDate,
+      balance_from:balanceFrom,
+      balance_to:balanceTo,
+      top_product_sort:topProductSort,
+      top_product_tobacco:topProductTobacco,
+      top_product_alcohol:topProductAlcohol,
+      top_product_min_qty:topProductMinQty,
+      top_product_min_total:topProductMinTotalUah,
+      top_product_min_receipts:topProductMinReceipts,
+      top_product_limit:topProductLimit,
+      top_product_search:topProductSearch
+    },
+    summary:{
+      clients,
+      active,
+      stars,
+      receipts:receipts.c,
+      total_sales_uah:money(receipts.total),
+      average_receipt_uah:money(receipts.avg_total),
+      stars_accrued:Number(receipts.accrued||0),
+      cash_change_stars:Number(cashAccrued||0),
+      stars_spent:Number(receipts.spent||0),
+      rewards_used:db.prepare('SELECT COUNT(*) c FROM reward_qrs WHERE status="used"').get().c,
+      top_stores:topStores.map(x=>({...x,total_uah:money(x.total_cents)})),
+      top_products:topProducts.map(x=>({...x,total_uah:money(x.total_cents)}))
+    }
+  });
 });
 
 app.get('/api/admin/clients', adminAuth, (req, res) => {

@@ -106,9 +106,104 @@ function scrollAdminFormIntoView(){
 }
 
 async function dashboard(){
-  title.textContent='Аналітика';const today=new Date().toISOString().slice(0,10);const saved=window.__analyticsFilters||{date_from:today.slice(0,8)+'01',date_to:today,balance_mode:'date',balance_date:today,balance_from:today.slice(0,8)+'01',balance_to:today,store_id:'all'};const params=new URLSearchParams(saved);const {summary,stores,filters}=await api('/api/admin/summary?'+params.toString());const oneCStores=stores.filter(x=>x.source==='1c');const storeOptions=['<option value="all">Усі магазини</option>',...oneCStores.map(x=>`<option value="${esc(x.id)}" ${String(filters.store_id)===String(x.id)?'selected':''}>${esc(x.name)}</option>`)].join('');const mode=filters.balance_mode||'date';
-  content.innerHTML=`<form id="analyticsFilters" class="card analytics-filters"><label>Магазин<select name="store_id">${storeOptions}</select></label><label>Чеки від<input type="date" name="date_from" value="${esc(filters.date_from)}"></label><label>Чеки до<input type="date" name="date_to" value="${esc(filters.date_to)}"></label><label>Баланс<select name="balance_mode" id="balanceMode"><option value="date" ${mode==='date'?'selected':''}>На конкретну дату</option><option value="range" ${mode==='range'?'selected':''}>За проміжок</option><option value="all" ${mode==='all'?'selected':''}>За весь час</option></select></label><label data-balance-date>Дата<input type="date" name="balance_date" value="${esc(filters.balance_date||today)}"></label><label data-balance-range>Баланс від<input type="date" name="balance_from" value="${esc(filters.balance_from||'')}"></label><label data-balance-range>Баланс до<input type="date" name="balance_to" value="${esc(filters.balance_to||'')}"></label><button class="primary">Застосувати</button></form><div class="grid analytics-grid"><div class="card metric"><span>Клієнти</span><b>${num(summary.clients)}</b></div><div class="card metric"><span>Активні клієнти</span><b>${num(summary.active)}</b></div><div class="card metric"><span>Баланс зірок</span><b>${num(summary.stars)} ★</b></div><div class="card metric"><span>Нараховано за покупки</span><b>${num(summary.stars_accrued)} ★</b></div><div class="card metric"><span>Нараховано «з решти»/поповнення</span><b>${num(summary.cash_change_stars)} ★</b></div><div class="card metric"><span>Використано зірок</span><b>${num(summary.stars_spent)} ★</b></div><div class="card metric"><span>Сума чеків</span><b>${money(summary.total_sales_uah)}</b></div><div class="card metric"><span>Середній чек</span><b>${money(summary.average_receipt_uah)}</b></div><div class="card metric"><span>Кількість чеків</span><b>${num(summary.receipts)}</b></div><div class="card metric"><span>Використано QR</span><b>${num(summary.rewards_used)}</b></div></div><div class="analytics-lists"><section class="card"><h3>Топ магазинів</h3>${summary.top_stores.map(x=>`<div class="analytics-row"><span>${esc(x.name)}</span><b>${num(x.receipts)} чеків · ${money(x.total_uah)}</b></div>`).join('')||'<p class="small">Немає даних</p>'}</section><section class="card"><h3>Топ товарів</h3>${summary.top_products.map(x=>`<div class="analytics-row"><span>${esc(x.name)}</span><b>${num(x.qty)} шт · ${money(x.total_uah)}</b></div>`).join('')||'<p class="small">Немає даних</p>'}</section></div>`;
-  const form=$('#analyticsFilters'),modeSelect=$('#balanceMode');const toggle=()=>{document.querySelectorAll('[data-balance-date]').forEach(x=>x.hidden=modeSelect.value!=='date');document.querySelectorAll('[data-balance-range]').forEach(x=>x.hidden=modeSelect.value!=='range');};modeSelect.onchange=toggle;toggle();form.onsubmit=async e=>{e.preventDefault();window.__analyticsFilters=Object.fromEntries(new FormData(e.currentTarget));await dashboard();};
+  title.textContent='Аналітика';
+  const today=new Date().toISOString().slice(0,10);
+  const saved=window.__analyticsFilters||{
+    date_from:today.slice(0,8)+'01',
+    date_to:today,
+    balance_mode:'date',
+    balance_date:today,
+    store_id:'all',
+    top_product_sort:'qty',
+    top_product_tobacco:'all',
+    top_product_alcohol:'all',
+    top_product_min_qty:'',
+    top_product_min_total:'',
+    top_product_min_receipts:'',
+    top_product_limit:'5',
+    top_product_search:''
+  };
+  const params=new URLSearchParams(saved);
+  const {summary,stores,filters}=await api('/api/admin/summary?'+params.toString());
+  const oneCStores=stores.filter(x=>x.source==='1c');
+  const storeOptions=['<option value="all">Усі магазини</option>',...oneCStores.map(x=>`<option value="${esc(x.id)}" ${String(filters.store_id)===String(x.id)?'selected':''}>${esc(x.name)}</option>`)].join('');
+  const mode=filters.balance_mode||'date';
+  const productTypeLabel=(x)=>{
+    const labels=[];
+    if(Number(x.is_tobacco||0)) labels.push('сигарети');
+    if(Number(x.is_alcohol||0)) labels.push('алкоголь');
+    return labels.length?`<small>${labels.join(' · ')}</small>`:'';
+  };
+  content.innerHTML=`
+    <form id="analyticsFilters" class="card analytics-filters">
+      <label>Магазин<select name="store_id">${storeOptions}</select></label>
+      <label>Чеки від<input type="date" name="date_from" value="${esc(filters.date_from)}"></label>
+      <label>Чеки до<input type="date" name="date_to" value="${esc(filters.date_to)}"></label>
+      <label>Баланс<select name="balance_mode" id="balanceMode"><option value="date" ${mode==='date'?'selected':''}>На конкретну дату</option><option value="all" ${mode==='all'?'selected':''}>За весь час</option></select></label>
+      <label data-balance-date>Дата<input type="date" name="balance_date" value="${esc(filters.balance_date||today)}"></label>
+      <button class="primary">Застосувати</button>
+    </form>
+
+    <div class="grid analytics-grid">
+      <div class="card metric"><span>Клієнти</span><b>${num(summary.clients)}</b></div>
+      <div class="card metric"><span>Активні клієнти</span><b>${num(summary.active)}</b></div>
+      <div class="card metric"><span>Баланс зірок</span><b>${num(summary.stars)} ★</b></div>
+      <div class="card metric"><span>Нараховано за покупки</span><b>${num(summary.stars_accrued)} ★</b></div>
+      <div class="card metric"><span>Нараховано «з решти»/поповнення</span><b>${num(summary.cash_change_stars)} ★</b></div>
+      <div class="card metric"><span>Використано зірок</span><b>${num(summary.stars_spent)} ★</b></div>
+      <div class="card metric"><span>Сума чеків</span><b>${money(summary.total_sales_uah)}</b></div>
+      <div class="card metric"><span>Середній чек</span><b>${money(summary.average_receipt_uah)}</b></div>
+      <div class="card metric"><span>Кількість чеків</span><b>${num(summary.receipts)}</b></div>
+      <div class="card metric"><span>Використано QR</span><b>${num(summary.rewards_used)}</b></div>
+    </div>
+
+    <div class="analytics-lists">
+      <section class="card">
+        <h3>Топ магазинів</h3>
+        ${summary.top_stores.map(x=>`<div class="analytics-row"><span>${esc(x.name)}</span><b>${num(x.receipts)} чеків · ${money(x.total_uah)}</b></div>`).join('')||'<p class="small">Немає даних</p>'}
+      </section>
+
+      <section class="card top-products-panel">
+        <div class="top-products-heading">
+          <div><h3>Топ товарів</h3><p class="small">Сортування та фільтри застосовуються до вибраного магазину й періоду чеків.</p></div>
+        </div>
+        <div class="top-products-filters">
+          <label>Сортувати за<select name="top_product_sort" form="analyticsFilters"><option value="qty" ${filters.top_product_sort==='qty'?'selected':''}>Кількістю, шт</option><option value="sum" ${filters.top_product_sort==='sum'?'selected':''}>Сумою продажів</option></select></label>
+          <label>Сигарети<select name="top_product_tobacco" form="analyticsFilters"><option value="all" ${filters.top_product_tobacco==='all'?'selected':''}>Без фільтра</option><option value="with" ${filters.top_product_tobacco==='with'?'selected':''}>Тільки сигарети</option><option value="without" ${filters.top_product_tobacco==='without'?'selected':''}>Без сигарет</option></select></label>
+          <label>Алкоголь<select name="top_product_alcohol" form="analyticsFilters"><option value="all" ${filters.top_product_alcohol==='all'?'selected':''}>Без фільтра</option><option value="with" ${filters.top_product_alcohol==='with'?'selected':''}>Тільки алкоголь</option><option value="without" ${filters.top_product_alcohol==='without'?'selected':''}>Без алкоголю</option></select></label>
+          <label>Мін. кількість, шт<input name="top_product_min_qty" form="analyticsFilters" type="number" min="0" step="1" value="${esc(filters.top_product_min_qty||'')}" placeholder="Без фільтра"></label>
+          <label>Продажі від, грн<input name="top_product_min_total" form="analyticsFilters" type="number" min="0" step="0.01" value="${esc(filters.top_product_min_total||'')}" placeholder="Без фільтра"></label>
+          <label>Мін. чеків<input name="top_product_min_receipts" form="analyticsFilters" type="number" min="0" step="1" value="${esc(filters.top_product_min_receipts||'')}" placeholder="Без фільтра"></label>
+          <label>Пошук товару<input name="top_product_search" form="analyticsFilters" value="${esc(filters.top_product_search||'')}" placeholder="Назва або категорія"></label>
+          <label>Показувати<select name="top_product_limit" form="analyticsFilters"><option value="5" ${Number(filters.top_product_limit)===5?'selected':''}>5 товарів</option><option value="10" ${Number(filters.top_product_limit)===10?'selected':''}>10 товарів</option><option value="20" ${Number(filters.top_product_limit)===20?'selected':''}>20 товарів</option><option value="50" ${Number(filters.top_product_limit)===50?'selected':''}>50 товарів</option><option value="100" ${Number(filters.top_product_limit)===100?'selected':''}>100 товарів</option></select></label>
+          <button type="submit" form="analyticsFilters" class="primary top-products-apply">Застосувати до топу</button>
+          <button type="button" id="resetTopProductFilters">Без фільтрів</button>
+        </div>
+        <div class="top-products-list">
+          ${summary.top_products.map((x,index)=>`<div class="analytics-row top-product-row"><span><i>${index+1}</i><span><b>${esc(x.name)}</b>${x.category?`<small>${esc(x.category)}</small>`:''}${productTypeLabel(x)}</span></span><b>${num(x.qty)} шт · ${num(x.receipts_count)} чеків · ${money(x.total_uah)}</b></div>`).join('')||'<p class="small">За вибраними фільтрами товарів немає.</p>'}
+        </div>
+      </section>
+    </div>`;
+
+  const form=$('#analyticsFilters'),modeSelect=$('#balanceMode');
+  const toggle=()=>{document.querySelectorAll('[data-balance-date]').forEach(x=>x.hidden=modeSelect.value!=='date');};
+  modeSelect.onchange=toggle;
+  toggle();
+  form.onsubmit=async e=>{e.preventDefault();window.__analyticsFilters=Object.fromEntries(new FormData(e.currentTarget));await dashboard();};
+  $('#resetTopProductFilters').onclick=async()=>{
+    window.__analyticsFilters={
+      ...Object.fromEntries(new FormData(form)),
+      top_product_sort:'qty',
+      top_product_tobacco:'all',
+      top_product_alcohol:'all',
+      top_product_min_qty:'',
+      top_product_min_total:'',
+      top_product_min_receipts:'',
+      top_product_limit:'5',
+      top_product_search:''
+    };
+    await dashboard();
+  };
 }
 
 async function clients(){
