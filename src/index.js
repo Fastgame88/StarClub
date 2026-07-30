@@ -4400,19 +4400,67 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
   const topProductWhere = [receiptWhere];
   const topProductParams = [...params];
 
-  // У старих чеках 1С ознака «підакцизний товар» могла записати
-  // сигарети як алкоголь (is_alcohol=1, is_tobacco=0). Для аналітики
-  // уточнюємо тип за назвою/категорією, не змінюючи збережені чеки.
-  const tobaccoAnalyticsExpr = `(
-    COALESCE(i.is_tobacco, 0) = 1
-    OR LOWER(COALESCE(i.name, '')) LIKE '%сигар%'
-    OR LOWER(COALESCE(i.category, '')) LIKE '%сигар%'
-    OR LOWER(COALESCE(i.name, '')) LIKE '%цигар%'
-    OR LOWER(COALESCE(i.category, '')) LIKE '%цигар%'
-    OR LOWER(COALESCE(i.name, '')) LIKE '%тютюн%'
-    OR LOWER(COALESCE(i.category, '')) LIKE '%тютюн%'
-    OR LOWER(COALESCE(i.name, '')) LIKE '%табак%'
-    OR LOWER(COALESCE(i.category, '')) LIKE '%табак%'
+  // Для аналітики тип підакцизного товару визначаємо за групою 1С:
+  // ЕКА/ЭКА «А» — сигарети, ЕКА/ЭКА «Б» — алкоголь.
+  // Старі прапорці та назви залишаємо як резерв, але група має пріоритет.
+  const analyticsGroupTextExpr = `(
+    COALESCE(i.category, '') || ' ' ||
+    COALESCE(p.category, '') || ' ' ||
+    COALESCE(p.group_name, '') || ' ' ||
+    COALESCE(p.name, '')
+  )`;
+
+  const ekaATobaccoExpr = `(
+    INSTR(${analyticsGroupTextExpr}, 'ЭКА "А"') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЭКА «А»') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЭКА А') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЕКА "А"') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЕКА «А»') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЕКА А') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'эка "а"') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'эка «а»') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'эка а') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ека "а"') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ека «а»') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ека а') > 0
+  )`;
+
+  const ekaBAlcoholExpr = `(
+    INSTR(${analyticsGroupTextExpr}, 'ЭКА "Б"') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЭКА «Б»') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЭКА Б') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЕКА "Б"') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЕКА «Б»') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ЕКА Б') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'эка "б"') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'эка «б»') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'эка б') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ека "б"') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ека «б»') > 0
+    OR INSTR(${analyticsGroupTextExpr}, 'ека б') > 0
+  )`;
+
+  const tobaccoNameFallbackExpr = `(
+    INSTR(COALESCE(i.name, ''), 'Сигар') > 0
+    OR INSTR(COALESCE(i.category, ''), 'Сигар') > 0
+    OR INSTR(COALESCE(p.name, ''), 'Сигар') > 0
+    OR INSTR(COALESCE(p.group_name, ''), 'Сигар') > 0
+    OR INSTR(COALESCE(i.name, ''), 'сигар') > 0
+    OR INSTR(COALESCE(i.category, ''), 'сигар') > 0
+    OR INSTR(COALESCE(p.name, ''), 'сигар') > 0
+    OR INSTR(COALESCE(p.group_name, ''), 'сигар') > 0
+    OR INSTR(COALESCE(i.name, ''), 'Цигар') > 0
+    OR INSTR(COALESCE(i.category, ''), 'Цигар') > 0
+    OR INSTR(COALESCE(i.name, ''), 'цигар') > 0
+    OR INSTR(COALESCE(i.category, ''), 'цигар') > 0
+    OR INSTR(COALESCE(i.name, ''), 'Тютюн') > 0
+    OR INSTR(COALESCE(i.category, ''), 'Тютюн') > 0
+    OR INSTR(COALESCE(i.name, ''), 'тютюн') > 0
+    OR INSTR(COALESCE(i.category, ''), 'тютюн') > 0
+    OR INSTR(COALESCE(i.name, ''), 'Табак') > 0
+    OR INSTR(COALESCE(i.category, ''), 'Табак') > 0
+    OR INSTR(COALESCE(i.name, ''), 'табак') > 0
+    OR INSTR(COALESCE(i.category, ''), 'табак') > 0
     OR LOWER(COALESCE(i.name, '')) LIKE '%tobacco%'
     OR LOWER(COALESCE(i.category, '')) LIKE '%tobacco%'
     OR LOWER(COALESCE(i.name, '')) LIKE '%cigarette%'
@@ -4420,9 +4468,29 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
     OR LOWER(COALESCE(i.name, '')) LIKE '%heets%'
     OR LOWER(COALESCE(i.name, '')) LIKE '%terea%'
   )`;
+
+  const tobaccoAnalyticsExpr = `(
+    ${ekaATobaccoExpr}
+    OR (
+      NOT ${ekaBAlcoholExpr}
+      AND (
+        COALESCE(i.is_tobacco, 0) = 1
+        OR COALESCE(p.is_tobacco, 0) = 1
+        OR ${tobaccoNameFallbackExpr}
+      )
+    )
+  )`;
+
   const alcoholAnalyticsExpr = `(
-    COALESCE(i.is_alcohol, 0) = 1
-    AND NOT ${tobaccoAnalyticsExpr}
+    ${ekaBAlcoholExpr}
+    OR (
+      NOT ${ekaATobaccoExpr}
+      AND NOT ${tobaccoNameFallbackExpr}
+      AND (
+        COALESCE(i.is_alcohol, 0) = 1
+        OR COALESCE(p.is_alcohol, 0) = 1
+      )
+    )
   )`;
 
   if (topProductTobacco === 'with') topProductWhere.push(tobaccoAnalyticsExpr);
@@ -4464,6 +4532,9 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
       MAX(CASE WHEN ${alcoholAnalyticsExpr} THEN 1 ELSE 0 END) is_alcohol
     FROM receipt_items i
     JOIN receipts r ON r.id = i.receipt_id
+    LEFT JOIN products p
+      ON p.external_id = i.external_product_id
+      OR p.id = i.product_id
     WHERE ${topProductWhere.join(' AND ')}
     GROUP BY i.name, COALESCE(i.category, '')
     ${topProductHaving.length ? `HAVING ${topProductHaving.join(' AND ')}` : ''}
