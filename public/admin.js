@@ -286,9 +286,9 @@ function openCouponBannerEditor(clientId,coupon,onSaved){
 
 function rewardForm(r={},stores=[]){
   return `<form id="rewardForm" class="form-grid">
-    <input name="name" placeholder="Назва товару" value="${esc(r.name||'')}" required>
+    <label class="admin-field"><span>Код товару з 1С</span><input name="product_external_id" placeholder="Наприклад, ЦБ000008264" value="${esc(r.product_external_id||'')}" autocomplete="off"></label>
+    <label class="admin-field"><span>Назва товару</span><input name="name" placeholder="Підтягнеться автоматично з 1С" value="${esc(r.name||'')}" required><small id="rewardProductLookupStatus" class="small"></small></label>
     <input name="stars_price" type="number" placeholder="Ціна у зірках" value="${esc(r.stars_price||'')}" required>
-    <input name="product_external_id" placeholder="Код товару з 1С" value="${esc(r.product_external_id||'')}">
     <input name="image_url" placeholder="Фото URL" value="${esc(r.image_url||'/assets/star.svg')}">
     <label class="admin-field"><span>Магазин з 1С</span><select name="store_id">${pricingStoreOptions(stores,r.store_id||'all',true)}</select></label>
     <input name="per_client_limit" type="number" placeholder="Ліміт на клієнта" value="${esc(r.per_client_limit||1)}">
@@ -305,7 +305,67 @@ async function rewards(editId=null){
   const edit=editId?items.find(x=>String(x.id)===String(editId)):null;
   content.innerHTML=`<div class="card"><h3>${edit?'Редагувати товар':'Додати товар за зірки'}</h3>${rewardForm(edit||{},oneCStores)}</div><div class="card"><table><thead><tr><th>Назва</th><th>Зірки</th><th>1С товар</th><th>Магазин</th><th>Статус</th><th>Дії</th></tr></thead><tbody>${items.map(r=>`<tr><td>${esc(r.name)}</td><td>${num(r.stars_price)} ★</td><td>${esc(r.product_external_id||'—')}</td><td>${esc(r.store_id||'all')}</td><td>${activeText(r.is_active)}</td><td class="actions">${btn('Редагувати',`data-edit-reward="${r.id}"`)}${btn('Видалити',`data-delete-reward="${r.id}"`)}</td></tr>`).join('')}</tbody></table></div>`;
   const form=$('#rewardForm');
-  form.onsubmit=async ev=>{ev.preventDefault();const body={name:val(form,'name'),stars_price:Number(val(form,'stars_price')),product_external_id:val(form,'product_external_id'),image_url:val(form,'image_url')||'/assets/star.svg',store_id:val(form,'store_id')||'all',per_client_limit:Number(val(form,'per_client_limit')||1),conditions:val(form,'conditions'),is_active:check(form,'is_active')};await api(edit?`/api/admin/catalog/rewards/${edit.id}`:'/api/admin/catalog/rewards',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});rewards();};
+  const codeInput=form.elements.product_external_id;
+  const nameInput=form.elements.name;
+  const storeInput=form.elements.store_id;
+  const lookupStatus=$('#rewardProductLookupStatus');
+  let lookupTimer=null;
+  let lastResolvedCode=normalizeAdminOneCCode(codeInput.value);
+
+  const resolveRewardProductName=async({silent=false}={})=>{
+    const code=normalizeAdminOneCCode(codeInput.value);
+    if(!code){
+      lastResolvedCode='';
+      if(lookupStatus) lookupStatus.textContent='Введіть код товару з 1С — назва підтягнеться автоматично.';
+      return null;
+    }
+    if(lookupStatus) lookupStatus.textContent='Шукаємо товар у синхронізації 1С…';
+    try{
+      const storeId=String(storeInput?.value||'').trim();
+      const data=await api(`/api/admin/catalog/products?q=${encodeURIComponent(code)}${storeId&&storeId!=='all'?`&store_id=${encodeURIComponent(storeId)}`:''}`);
+      const exact=(data.products||[]).find(product=>normalizeAdminOneCCode(product.external_id)===code);
+      if(!exact){
+        lastResolvedCode='';
+        if(lookupStatus) lookupStatus.textContent='Товар з таким кодом не знайдено. Виконайте синхронізацію номенклатури з 1С.';
+        if(!silent) nameInput.value='';
+        return null;
+      }
+      nameInput.value=String(exact.name||'').trim();
+      lastResolvedCode=code;
+      if(lookupStatus) lookupStatus.textContent=`Знайдено в 1С: ${exact.name||code}`;
+      return exact;
+    }catch(error){
+      lastResolvedCode='';
+      if(lookupStatus) lookupStatus.textContent='Не вдалося отримати назву товару з 1С.';
+      if(!silent) throw error;
+      return null;
+    }
+  };
+
+  const scheduleRewardProductLookup=()=>{
+    clearTimeout(lookupTimer);
+    lookupTimer=setTimeout(()=>resolveRewardProductName({silent:true}),350);
+  };
+  codeInput.addEventListener('input',scheduleRewardProductLookup);
+  codeInput.addEventListener('change',()=>resolveRewardProductName({silent:true}));
+  storeInput?.addEventListener('change',()=>resolveRewardProductName({silent:true}));
+  if(codeInput.value) resolveRewardProductName({silent:true});
+
+  form.onsubmit=async ev=>{
+    ev.preventDefault();
+    const code=normalizeAdminOneCCode(codeInput.value);
+    if(code&&lastResolvedCode!==code){
+      const product=await resolveRewardProductName();
+      if(!product){
+        alert('Товар із таким кодом не знайдено у синхронізованій номенклатурі 1С.');
+        codeInput.focus();
+        return;
+      }
+    }
+    const body={name:val(form,'name'),stars_price:Number(val(form,'stars_price')),product_external_id:code,image_url:val(form,'image_url')||'/assets/star.svg',store_id:val(form,'store_id')||'all',per_client_limit:Number(val(form,'per_client_limit')||1),conditions:val(form,'conditions'),is_active:check(form,'is_active')};
+    await api(edit?`/api/admin/catalog/rewards/${edit.id}`:'/api/admin/catalog/rewards',{method:edit?'PATCH':'POST',body:JSON.stringify(body)});
+    rewards();
+  };
   $('#cancelEdit')?.addEventListener('click',()=>rewards());$$('[data-edit-reward]').forEach(b=>b.onclick=()=>rewards(b.dataset.editReward));$$('[data-delete-reward]').forEach(b=>b.onclick=async()=>{if(confirm('Видалити товар за зірки?')){await api(`/api/admin/catalog/rewards/${b.dataset.deleteReward}`,{method:'DELETE'});rewards();}});
 }
 

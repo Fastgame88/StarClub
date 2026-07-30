@@ -3411,13 +3411,26 @@ app.get('/api/admin/catalog/rewards', adminAuth, (req, res) => {
   res.json({ ok: true, items: db.prepare('SELECT * FROM reward_products ORDER BY id DESC').all() });
 });
 
+function resolveRewardProductFromOneC(productExternalId) {
+  const code = normalizeOneCCode(productExternalId);
+  if (!code) return null;
+  return db.prepare(`SELECT external_id, name, image_url
+    FROM products
+    WHERE external_id = ?
+    LIMIT 1`).get(code) || null;
+}
+
 app.post('/api/admin/catalog/rewards', adminAuth, (req, res) => {
   const b = req.body || {};
-  if (!b.name || !Number(b.stars_price)) return res.status(400).json({ ok: false, error: 'NAME_AND_STARS_REQUIRED' });
+  const productCode = normalizeOneCCode(b.product_external_id);
+  const syncedProduct = productCode ? resolveRewardProductFromOneC(productCode) : null;
+  if (productCode && !syncedProduct) return res.status(400).json({ ok: false, error: 'PRODUCT_NOT_FOUND_IN_1C_SYNC' });
+  const resolvedName = String(syncedProduct?.name || b.name || '').trim();
+  if (!resolvedName || !Number(b.stars_price)) return res.status(400).json({ ok: false, error: 'NAME_AND_STARS_REQUIRED' });
   const t = nowIso();
   const row = {
-    product_external_id: b.product_external_id || null,
-    name: String(b.name).trim(),
+    product_external_id: productCode || null,
+    name: resolvedName,
     image_url: b.image_url || '/assets/star.svg',
     stars_price: Math.round(Number(b.stars_price)),
     store_id: b.store_id || 'all',
@@ -3439,8 +3452,12 @@ app.patch('/api/admin/catalog/rewards/:id', adminAuth, (req, res) => {
   const b = req.body || {};
   const existing = db.prepare('SELECT * FROM reward_products WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ ok: false, error: 'REWARD_NOT_FOUND' });
+  const productCode = normalizeOneCCode(b.product_external_id ?? existing.product_external_id);
+  const syncedProduct = productCode ? resolveRewardProductFromOneC(productCode) : null;
+  if (productCode && !syncedProduct) return res.status(400).json({ ok: false, error: 'PRODUCT_NOT_FOUND_IN_1C_SYNC' });
+  const resolvedName = String(syncedProduct?.name || b.name || existing.name || '').trim();
   db.prepare(`UPDATE reward_products SET product_external_id = ?, name = ?, image_url = ?, stars_price = ?, store_id = ?, active_from = ?, active_to = ?, total_limit = ?, per_client_limit = ?, conditions = ?, is_active = ?, updated_at = ? WHERE id = ?`)
-    .run(b.product_external_id ?? existing.product_external_id, b.name ?? existing.name, b.image_url ?? existing.image_url, b.stars_price ?? existing.stars_price, b.store_id ?? existing.store_id, b.active_from ?? existing.active_from, b.active_to ?? existing.active_to, b.total_limit ?? existing.total_limit, b.per_client_limit ?? existing.per_client_limit, b.conditions ?? existing.conditions, b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), nowIso(), req.params.id);
+    .run(productCode || null, resolvedName, b.image_url ?? existing.image_url, b.stars_price ?? existing.stars_price, b.store_id ?? existing.store_id, b.active_from ?? existing.active_from, b.active_to ?? existing.active_to, b.total_limit ?? existing.total_limit, b.per_client_limit ?? existing.per_client_limit, b.conditions ?? existing.conditions, b.is_active === undefined ? existing.is_active : (b.is_active ? 1 : 0), nowIso(), req.params.id);
   logAudit({ actorType: 'admin', actorId: 'admin', action: 'reward_product_updated', entityType: 'reward_product', entityId: req.params.id, payload: b });
   res.json({ ok: true });
 });
