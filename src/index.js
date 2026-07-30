@@ -4399,10 +4399,36 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
 
   const topProductWhere = [receiptWhere];
   const topProductParams = [...params];
-  if (topProductTobacco === 'with') topProductWhere.push('i.is_tobacco = 1');
-  if (topProductTobacco === 'without') topProductWhere.push('COALESCE(i.is_tobacco, 0) = 0');
-  if (topProductAlcohol === 'with') topProductWhere.push('i.is_alcohol = 1');
-  if (topProductAlcohol === 'without') topProductWhere.push('COALESCE(i.is_alcohol, 0) = 0');
+
+  // У старих чеках 1С ознака «підакцизний товар» могла записати
+  // сигарети як алкоголь (is_alcohol=1, is_tobacco=0). Для аналітики
+  // уточнюємо тип за назвою/категорією, не змінюючи збережені чеки.
+  const tobaccoAnalyticsExpr = `(
+    COALESCE(i.is_tobacco, 0) = 1
+    OR LOWER(COALESCE(i.name, '')) LIKE '%сигар%'
+    OR LOWER(COALESCE(i.category, '')) LIKE '%сигар%'
+    OR LOWER(COALESCE(i.name, '')) LIKE '%цигар%'
+    OR LOWER(COALESCE(i.category, '')) LIKE '%цигар%'
+    OR LOWER(COALESCE(i.name, '')) LIKE '%тютюн%'
+    OR LOWER(COALESCE(i.category, '')) LIKE '%тютюн%'
+    OR LOWER(COALESCE(i.name, '')) LIKE '%табак%'
+    OR LOWER(COALESCE(i.category, '')) LIKE '%табак%'
+    OR LOWER(COALESCE(i.name, '')) LIKE '%tobacco%'
+    OR LOWER(COALESCE(i.category, '')) LIKE '%tobacco%'
+    OR LOWER(COALESCE(i.name, '')) LIKE '%cigarette%'
+    OR LOWER(COALESCE(i.category, '')) LIKE '%cigarette%'
+    OR LOWER(COALESCE(i.name, '')) LIKE '%heets%'
+    OR LOWER(COALESCE(i.name, '')) LIKE '%terea%'
+  )`;
+  const alcoholAnalyticsExpr = `(
+    COALESCE(i.is_alcohol, 0) = 1
+    AND NOT ${tobaccoAnalyticsExpr}
+  )`;
+
+  if (topProductTobacco === 'with') topProductWhere.push(tobaccoAnalyticsExpr);
+  if (topProductTobacco === 'without') topProductWhere.push(`NOT ${tobaccoAnalyticsExpr}`);
+  if (topProductAlcohol === 'with') topProductWhere.push(alcoholAnalyticsExpr);
+  if (topProductAlcohol === 'without') topProductWhere.push(`NOT ${alcoholAnalyticsExpr}`);
   if (topProductSearch) {
     topProductWhere.push('(LOWER(i.name) LIKE LOWER(?) OR LOWER(COALESCE(i.category, "")) LIKE LOWER(?))');
     topProductParams.push(`%${topProductSearch}%`, `%${topProductSearch}%`);
@@ -4434,8 +4460,8 @@ app.get('/api/admin/summary', adminAuth, (req, res) => {
       SUM(i.qty) qty,
       COUNT(DISTINCT i.receipt_id) receipts_count,
       SUM(i.line_total_cents) total_cents,
-      MAX(COALESCE(i.is_tobacco, 0)) is_tobacco,
-      MAX(COALESCE(i.is_alcohol, 0)) is_alcohol
+      MAX(CASE WHEN ${tobaccoAnalyticsExpr} THEN 1 ELSE 0 END) is_tobacco,
+      MAX(CASE WHEN ${alcoholAnalyticsExpr} THEN 1 ELSE 0 END) is_alcohol
     FROM receipt_items i
     JOIN receipts r ON r.id = i.receipt_id
     WHERE ${topProductWhere.join(' AND ')}
