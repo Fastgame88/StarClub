@@ -842,3 +842,226 @@ label.check span{min-width:0}
   .home-live-stars img{width:18px;height:18px;}.home-live-cups img{width:18px;height:14px;}
   .home-route .bottom-nav .nav-card{transform:translateY(-12px);}
 }
+
+/* v35 — requested fixes only: compact bottom menu, shorter hero banner, clean spacing */
+.home-route .bottom-nav{
+  height:calc(74px + var(--safe-bottom));
+  min-height:calc(74px + var(--safe-bottom));
+  padding:5px 8px calc(5px + var(--safe-bottom));
+  gap:3px;
+  overflow:visible;
+}
+.home-route .bottom-nav button{
+  min-height:52px;
+  height:52px;
+  padding:2px 1px;
+  border-radius:15px;
+  gap:2px;
+  transform:none!important;
+  align-self:center;
+  justify-self:stretch;
+  width:auto;
+  max-width:66px;
+}
+.home-route .bottom-nav button small{
+  font-size:9px;
+  line-height:1;
+}
+.home-route .bottom-nav .nav-icon-shell{
+  width:28px;
+  height:28px;
+  border-radius:12px;
+}
+.home-route .bottom-nav .nav-icon-shell .app-icon{
+  width:21px;
+  height:21px;
+}
+.home-route .bottom-nav button.active:not(.nav-card){
+  width:62px;
+  max-width:62px;
+  min-height:54px;
+  height:54px;
+  justify-self:center;
+  border-radius:16px;
+}
+.home-route .bottom-nav .nav-card{
+  transform:translateY(-7px)!important;
+  overflow:visible!important;
+}
+.home-route .bottom-nav .nav-card .nav-icon-shell{
+  width:54px;
+  height:54px;
+  margin:0;
+  border-width:4px;
+}
+.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{
+  width:25px;
+  height:25px;
+}
+.home-route .screen{
+  height:calc(100dvh - 74px - var(--safe-bottom));
+  max-height:calc(100dvh - 74px - var(--safe-bottom));
+}
+
+/* the grid owns heights so cards can never overlap adjacent rows */
+.home-live-v2{
+  grid-template-rows:124px 150px 116px 100px 100px;
+  gap:11px;
+}
+.home-banner-v2,
+.home-live-balance,
+.home-live-program{
+  height:100%;
+  min-height:0;
+}
+
+/* shorter first banner, matching the marked height in the reference */
+.home-banner-copy-v2{
+  width:52%;
+  padding:12px 0 17px 18px;
+}
+.home-banner-copy-v2 span{
+  padding:4px 10px;
+  font-size:9.5px;
+}
+.home-banner-copy-v2 h2{
+  margin:8px 0 5px;
+  font-size:19px;
+  line-height:1.08;
+  letter-spacing:-.45px;
+}
+.home-banner-copy-v2 p{
+  font-size:11px;
+  line-height:1.2;
+}
+.home-banner-dots-v2{
+  bottom:7px;
+}
+.home-banner-dots-v2 i{
+  width:6px;
+  height:6px;
+}
+.home-banner-dots-v2 i.active{
+  width:22px;
+}
+.home-banner-generated-bg{
+  width:73%;
+  object-position:right center;
+}
+
+/* balance/program spacing and internal fit */
+.home-live-balance{
+  padding:12px 17px;
+}
+.home-live-balance-copy>span{
+  margin-bottom:7px;
+}
+.home-live-balance-copy strong{
+  font-size:49px;
+}
+.home-live-balance-copy strong b{
+  font-size:41px;
+}
+.home-live-balance-copy small{
+  margin-top:7px;
+  font-size:11px;
+}
+.home-live-balance-star{
+  width:90px;
+  height:90px;
+  top:10px;
+}
+.home-live-program{
+  grid-template-columns:56px minmax(0,1fr);
+  gap:11px;
+  padding:10px 13px;
+}
+.home-live-program-icon{
+  width:56px;
+  height:56px;
+  border-radius:17px;
+}
+.home-live-program-icon img{
+  width:34px;
+  height:34px;
+}
+.home-live-program-title{
+  font-size:15px;
+  margin-bottom:3px;
+}
+.home-live-program-subtitle{
+  font-size:10.5px;
+  margin-bottom:6px;
+}
+.home-live-program-count{
+  right:12px;
+  top:10px;
+  min-width:49px;
+  height:32px;
+  border-radius:14px;
+  font-size:13px;
+}
+.home-live-program-title,
+.home-live-program-subtitle{
+  padding-right:52px;
+}
+.home-live-steps{
+  height:22px;
+  min-height:22px;
+  padding:2px 6px;
+  gap:5px;
+}
+.home-live-stars img{
+  width:18px;
+  height:18px;
+}
+.home-live-cups img{
+  width:18px;
+  height:14px;
+}
+
+@media (max-width:390px){
+  .home-live-v2{
+    grid-template-rows:116px 142px 110px 94px 94px;
+    gap:9px;
+  }
+  .home-banner-copy-v2{padding:10px 0 15px 16px;width:54%;}
+  .home-banner-copy-v2 h2{font-size:18px;margin:7px 0 4px;}
+  .home-banner-copy-v2 p{font-size:10.5px;}
+  .home-live-balance-copy strong{font-size:46px;}
+  .home-live-balance-copy strong b{font-size:38px;}
+  .home-route .bottom-nav button{max-width:62px;}
+  .home-route .bottom-nav button.active:not(.nav-card){width:58px;max-width:58px;}
+}
+
+@media (max-height:820px){
+  .home-route .bottom-nav{
+    height:calc(70px + var(--safe-bottom));
+    min-height:calc(70px + var(--safe-bottom));
+    padding:4px 7px calc(4px + var(--safe-bottom));
+  }
+  .home-route .screen{
+    height:calc(100dvh - 70px - var(--safe-bottom));
+    max-height:calc(100dvh - 70px - var(--safe-bottom));
+  }
+  .home-route .bottom-nav button{height:49px;min-height:49px;}
+  .home-route .bottom-nav button.active:not(.nav-card){height:51px;min-height:51px;}
+  .home-route .bottom-nav .nav-card{transform:translateY(-5px)!important;}
+  .home-route .bottom-nav .nav-card .nav-icon-shell{width:50px;height:50px;}
+  .home-live-v2{
+    grid-template-rows:104px 134px 100px 86px 86px;
+    gap:8px;
+  }
+  .home-live-balance-copy strong{font-size:43px;}
+  .home-live-balance-copy strong b{font-size:36px;}
+  .home-live-program{grid-template-columns:50px minmax(0,1fr);padding:8px 11px;gap:9px;}
+  .home-live-program-icon{width:50px;height:50px;border-radius:15px;}
+  .home-live-program-icon img{width:30px;height:30px;}
+  .home-live-program-title{font-size:13.5px;}
+  .home-live-program-subtitle{font-size:9.5px;margin-bottom:5px;}
+  .home-live-program-count{right:10px;top:8px;min-width:46px;height:29px;font-size:12px;}
+  .home-live-program-title,.home-live-program-subtitle{padding-right:48px;}
+  .home-live-steps{height:19px;min-height:19px;padding:1px 5px;gap:4px;}
+  .home-live-stars img{width:16px;height:16px;}
+  .home-live-cups img{width:16px;height:13px;}
+}
