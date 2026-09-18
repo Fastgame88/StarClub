@@ -1210,3 +1210,128 @@ label.check span{min-width:0}
   .home-live-balance-copy strong b{font-size:41px;}
   .home-live-program{height:93px !important;min-height:93px !important;}
 }
+
+/* v37 pixel-fit pass for home screen requested tweaks */
+.home-live-script{
+  width:118px !important;
+  justify-self:end;
+  align-self:start;
+  margin-top:2px;
+  margin-right:10px;
+  font-size:22px !important;
+  line-height:.93 !important;
+  transform:rotate(-7deg) translateY(3px) !important;
+}
+.home-live-welcome-row{
+  grid-template-columns:50px minmax(0,1fr) 118px !important;
+}
+
+.home-live-program-icon{
+  width:64px !important;
+  height:64px !important;
+  border-radius:18px !important;
+}
+.home-live-program-icon img{
+  width:38px !important;
+  height:38px !important;
+}
+.home-live-program{
+  grid-template-columns:64px minmax(0,1fr) !important;
+  gap:14px !important;
+}
+.home-live-program-main{
+  padding-right:58px !important;
+}
+.home-live-program-title,
+.home-live-program-subtitle{
+  padding-right:58px !important;
+}
+.home-live-steps{
+  width:100%;
+  max-width:305px;
+  gap:6px !important;
+  padding:0 !important;
+}
+.home-live-stars img{
+  width:22px !important;
+  height:22px !important;
+}
+.home-live-cups img{
+  width:22px !important;
+  height:17px !important;
+}
+
+.home-live-balance{
+  background-image:url('/assets/design/home-balance-bg.svg') !important;
+  background-size:cover !important;
+  background-position:center !important;
+  background-repeat:no-repeat !important;
+}
+.home-live-balance::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,0));
+  pointer-events:none;
+}
+.home-live-balance-star{
+  opacity:0 !important;
+}
+
+.home-route .bottom-nav{
+  min-height:86px !important;
+  height:86px !important;
+  padding:8px 10px calc(9px + var(--safe-bottom)) !important;
+  gap:6px !important;
+  background:rgba(7,10,14,.98) !important;
+}
+.home-route .bottom-nav button{
+  min-height:58px !important;
+  height:58px !important;
+  border-radius:18px !important;
+  gap:4px !important;
+}
+.home-route .bottom-nav button small{
+  font-size:9px !important;
+}
+.home-route .bottom-nav .nav-icon-shell{
+  width:31px !important;
+  height:31px !important;
+  border-radius:14px !important;
+}
+.home-route .bottom-nav .nav-icon-shell .app-icon{
+  width:23px !important;
+  height:23px !important;
+}
+.home-route .bottom-nav button.active:not(.nav-card){
+  width:68px !important;
+  max-width:68px !important;
+  border-radius:18px !important;
+  background:linear-gradient(145deg,#78521a,#281b0d) !important;
+  box-shadow:inset 0 0 0 1px rgba(237,189,82,.62),0 6px 18px rgba(0,0,0,.22)!important;
+}
+.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell{
+  background:transparent !important;
+  box-shadow:none !important;
+}
+.home-route .bottom-nav .nav-card{
+  transform:none !important;
+}
+.home-route .bottom-nav .nav-card .nav-icon-shell{
+  width:60px !important;
+  height:60px !important;
+  margin-top:-24px !important;
+  border-width:4px !important;
+}
+.home-route .bottom-nav .nav-card small{
+  font-size:9px !important;
+}
+
+@media (max-width:390px){
+  .home-live-script{width:108px !important;font-size:20px !important;margin-right:6px;}
+  .home-live-welcome-row{grid-template-columns:46px minmax(0,1fr) 108px !important;}
+  .home-live-program-icon{width:60px !important;height:60px !important;}
+  .home-live-program-icon img{width:36px !important;height:36px !important;}
+  .home-live-steps{max-width:270px;}
+  .home-route .bottom-nav button.active:not(.nav-card){width:64px !important;max-width:64px !important;}
+}
