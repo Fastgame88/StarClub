@@ -535,64 +535,295 @@ label.check span{min-width:0}
 
 .personal-coupon-modal-simple{position:relative;padding-top:54px}.personal-coupon-close{position:absolute;right:18px;top:16px}.personal-coupon-modal-simple .barcode{margin-top:0}.personal-coupon-modal-simple .coupon-use-note{margin:14px 0 4px}
 
-/* v30 — reference-matched StarClub mobile visual system (design only) */
-:root{--ref-gold:#efb847;--ref-gold2:#ffd36f;--ref-bg:#05080c;--ref-panel:#0c1118;--ref-muted:#a5a8ad}
-html,body{background:#03070b!important}
-body:before{background:radial-gradient(circle at 88% 9%,rgba(238,181,65,.13),transparent 24%),linear-gradient(180deg,#05090d 0%,#03070b 100%)!important}
-.app-shell{max-width:590px!important;border:0!important;background:radial-gradient(circle at 82% 8%,rgba(234,172,48,.11),transparent 25%),linear-gradient(180deg,#070b10 0%,#03070b 100%)!important}
-.screen{padding:14px 20px calc(118px + var(--safe-bottom))!important}
-.stack{gap:14px}
-.card{border-radius:24px!important;border-color:rgba(236,184,74,.34)!important;background:radial-gradient(circle at 100% 0%,rgba(233,175,54,.09),transparent 36%),linear-gradient(145deg,#11161d,#080c11 70%)!important;box-shadow:0 14px 36px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.035)!important}
-.small{color:#aeb1b6!important}
-
-.topbar{position:relative!important;top:auto!important;margin:0 0 16px!important;padding:0!important;min-height:68px;background:transparent!important;backdrop-filter:none!important;display:grid!important;grid-template-columns:112px minmax(0,1fr) 56px!important;align-items:center!important;gap:10px!important}
-.topbar-left-slot{display:flex;justify-content:flex-start;align-items:center}
-.topbar-title-wrap{text-align:center;min-width:0}
-.topbar-title-wrap h2{font-size:24px!important;line-height:1.04!important;font-weight:900!important;letter-spacing:-.025em!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.topbar-title-wrap p{margin:5px 0 0;color:#a7a9ad;font-size:13px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.back-button{height:50px!important;min-width:112px!important;border-radius:17px!important;border-color:rgba(239,184,71,.45)!important;background:linear-gradient(135deg,rgba(46,36,21,.74),rgba(13,16,20,.88))!important;color:#f4d38c!important;font-size:15px!important}
-.back-button .app-icon{width:22px!important;height:22px!important;filter:sepia(1) saturate(1.6) brightness(1.2)}
-.notification-btn{width:54px!important;height:54px!important;border-radius:18px!important;border-color:rgba(239,184,71,.55)!important;background:radial-gradient(circle at 50% 40%,rgba(239,184,71,.15),rgba(9,13,18,.95) 65%)!important;box-shadow:0 0 22px rgba(225,160,35,.15)!important}
-.notification-btn .app-icon{width:27px!important;height:27px!important}
-.notification-badge{right:-4px!important;top:-6px!important;min-width:22px!important;height:22px!important;font-size:12px!important;background:#f0444b!important}
-.topbar-brand-mark{width:54px!important;height:54px!important;border-radius:18px!important}
-
-.home-brand-row{height:44px;display:flex;align-items:center;margin-bottom:2px}
-.home-brand{display:flex;align-items:center;gap:10px;font-size:27px;font-weight:900;letter-spacing:-.03em;color:#f6d07e}
-.home-brand-star{font-size:37px;line-height:1;background:linear-gradient(180deg,#fff2b5,#df9e2f);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 10px rgba(238,183,72,.28));transform:rotate(-10deg)}
-.home-topbar{grid-template-columns:minmax(0,1fr) 56px!important;min-height:72px!important;margin-bottom:10px!important}
-.home-heading{gap:14px!important}.home-heading>span{width:54px!important;height:54px!important;border-radius:50%!important;background:rgba(13,18,24,.9)!important;border-color:rgba(239,184,71,.6)!important;box-shadow:0 0 18px rgba(239,184,71,.12)}
-.home-heading .app-icon{width:28px!important;height:28px!important}.home-heading>div{min-width:0}.home-heading h1{font-size:22px!important;margin:0!important}.home-heading p{margin:5px 0 0;color:#b2b5b9;font-size:13px;line-height:1.2}
-
-.home-banner{margin-bottom:12px!important}.home-banner-rail{border-radius:26px!important}.home-banner-slide{height:250px!important;border-radius:26px!important;grid-template-columns:55% 45%!important;border-color:rgba(240,187,77,.55)!important;background:radial-gradient(circle at 78% 50%,rgba(242,185,65,.2),transparent 26%),linear-gradient(130deg,#171008,#0a0d11 70%)!important}
-.home-banner-slide:after{content:"";position:absolute;right:-12px;bottom:-26px;width:195px;height:195px;background:url('/assets/decor-star.svg') center/contain no-repeat;opacity:.52;filter:drop-shadow(0 0 18px rgba(244,184,53,.23));pointer-events:none}
-.home-banner-copy{padding:24px 8px 22px 28px!important}.home-banner-copy span{display:inline-flex;width:max-content;padding:7px 13px;border:1px solid rgba(239,184,71,.55);border-radius:999px;background:rgba(122,81,17,.24);font-size:11px!important}.home-banner-copy h2{font-size:30px!important;line-height:1.08!important;margin:14px 0 11px!important}.home-banner-copy p{font-size:16px!important;line-height:1.28!important;color:#c5c6c9!important}.home-banner-media{background:transparent!important;z-index:1}.home-banner-media img{object-fit:contain!important;padding:15px 8px;filter:drop-shadow(0 12px 20px rgba(0,0,0,.6))}.home-banner-dots{margin-top:-30px;position:relative;z-index:4}.home-banner-dots i{width:8px!important;height:8px!important}.home-banner-dots i.active{width:30px!important;background:#efb847!important}
-
-.balance-card{min-height:150px!important;padding:22px 28px!important;border-radius:25px!important;background:radial-gradient(circle at 78% 43%,rgba(239,184,71,.22),transparent 22%),linear-gradient(135deg,#141a22,#0a0e13)!important}
-.balance-card:after{content:""!important;display:block!important;position:absolute;right:24px;top:18px;width:118px;height:118px;background:url('/assets/decor-star.svg') center/contain no-repeat;opacity:.35!important;font-size:0!important}
-.balance-card .label{font-size:15px!important}.balance{font-size:54px!important;position:relative;z-index:2}.balance .star{font-size:.85em!important}
-.home-progress-grid{gap:12px!important}.home-progress-card{min-height:128px!important;padding:18px 20px!important;grid-template-columns:58px minmax(0,1fr) 58px!important;border-radius:25px!important}.home-progress-icon{width:58px!important;height:58px!important;border-radius:17px!important}.home-progress-icon .app-icon{width:31px!important;height:31px!important}.home-progress-card b{font-size:19px!important}.home-progress-card small{font-size:13px!important;margin-top:5px}.home-progress-card strong{font-size:16px!important;min-width:54px!important;border-radius:15px!important;background:rgba(239,184,71,.08)!important}
-
-.bottom-nav{width:min(590px,100%)!important;min-height:104px!important;padding:15px 12px calc(12px + var(--safe-bottom))!important;background:linear-gradient(180deg,rgba(7,10,14,.97),#05080c)!important;border-top-color:rgba(255,255,255,.08)!important;box-shadow:0 -12px 34px rgba(0,0,0,.42)!important}
-.bottom-nav button{min-height:72px!important;border-radius:20px!important;justify-content:center!important;gap:8px!important;color:#a6a8ad!important}.bottom-nav button small{font-size:12px!important}.bottom-nav .nav-icon-shell{width:36px!important;height:34px!important}.bottom-nav .nav-icon-shell .app-icon{width:29px!important;height:29px!important;opacity:.7!important}.bottom-nav button.active:not(.nav-card){border:1px solid rgba(239,184,71,.58)!important;background:radial-gradient(circle at 50% 15%,rgba(239,184,71,.22),rgba(239,184,71,.06))!important;color:#f4c967!important;box-shadow:0 0 22px rgba(239,184,71,.12),inset 0 0 18px rgba(239,184,71,.05)!important}.bottom-nav .nav-card .nav-icon-shell{width:72px!important;height:72px!important;margin-top:-38px!important;border-radius:24px!important;border-width:6px!important;background:linear-gradient(145deg,#ffd775,#d79227)!important}.bottom-nav .nav-card .nav-icon-shell .app-icon{width:34px!important;height:34px!important}.bottom-nav .nav-card small{font-size:12px!important}
-
-.card-visual{min-height:294px!important;padding:34px 28px 22px!important;border-radius:28px!important;position:relative;overflow:hidden;background:radial-gradient(circle at 85% 35%,rgba(239,184,71,.15),transparent 25%),linear-gradient(135deg,#11161b,#070a0d 68%)!important;box-shadow:inset 0 0 0 1px rgba(239,184,71,.5),0 18px 40px rgba(0,0,0,.34)}
-.card-visual:after{content:"";position:absolute;right:-42px;bottom:-54px;width:238px;height:238px;background:url('/assets/decor-star.svg') center/contain no-repeat;opacity:.78}.card-visual .logo-mark{width:78px!important;height:78px!important;margin:0 auto 10px!important;border-radius:24px!important}.card-visual .logo-star{width:45px!important;height:45px!important}.card-visual .club-logo{font-size:17px!important;letter-spacing:.25em!important;margin-bottom:24px!important}.card-visual h3{font-size:28px;margin:0 0 12px;position:relative;z-index:2}.card-visual .small{font-size:15px!important;position:relative;z-index:2}.card-visual .gold{font-size:20px}.card-slogan{position:absolute;right:54px;top:66px;color:#d9b872;font-family:Georgia,serif;font-style:italic;font-size:16px;line-height:1.25;transform:rotate(-4deg);text-align:center;opacity:.9}
-.card-balance-actions{min-height:218px!important;padding:24px 28px!important;gap:20px!important}.card-balance-actions .small{font-size:16px!important}.card-balance-actions .balance{font-size:55px!important}.card-balance-actions .btn{min-height:64px!important;border-radius:18px!important;font-size:18px!important}
-
-.more-grid{gap:10px!important}.more-grid button{min-height:180px!important;border-radius:24px!important;padding:18px 20px!important;position:relative;overflow:hidden;border-color:rgba(239,184,71,.35)!important;background:radial-gradient(circle at 80% 25%,rgba(239,184,71,.14),transparent 32%),linear-gradient(145deg,#11161d,#080c11)!important}.more-grid button:after{content:"›";position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:38px;font-weight:200;color:#f5e3bd}.more-grid b{width:62px!important;height:62px!important;border-radius:18px!important}.more-grid b .app-icon{width:33px!important;height:33px!important}.more-grid span{font-size:18px!important;padding-right:20px}
-
-.tabs{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;overflow:visible!important}.tabs button{min-height:62px!important;border-radius:24px!important;font-size:18px!important;border-color:rgba(255,255,255,.08)!important;background:#12171f!important}.tabs button.active{background:linear-gradient(145deg,#ffd46f,#d9952f)!important;color:#17120a!important;box-shadow:0 8px 22px rgba(222,154,41,.2)}
-.offers-store-note{min-height:58px!important;border-radius:20px!important;padding:0 18px!important;font-size:13px!important;border-color:rgba(239,184,71,.35)!important}.offers-store-note b{font-size:13px!important}
-.offer-compact-card{min-height:240px!important;grid-template-columns:minmax(0,1fr) 190px!important;border-radius:28px!important}.offer-compact-card .promo-feed-card__body{padding:20px 12px 20px 25px!important}.offer-compact-card .promo-feed-card__media{width:190px!important;min-height:240px!important;background:radial-gradient(circle at 50% 45%,rgba(238,181,65,.2),transparent 55%)!important}.offer-compact-card .promo-feed-card__media img{padding:22px!important;filter:drop-shadow(0 12px 16px rgba(0,0,0,.45))}.offer-compact-meta>span{font-size:12px!important;padding:7px 12px!important}.offer-compact-meta>small{font-size:13px!important}.offer-compact-card h3{font-size:24px!important;margin:13px 0 8px!important}.offer-compact-card .promo-feed-description{font-size:15px!important;-webkit-line-clamp:2!important}.offer-compact-prices{margin-top:18px!important}.offer-compact-prices strong{font-size:31px!important;color:#f0bf5e!important}.offer-compact-prices s{font-size:14px!important}
-
-.rewards-hero{min-height:180px!important;padding:25px!important;background:radial-gradient(circle at 86% 45%,rgba(239,184,71,.25),transparent 32%),linear-gradient(135deg,#181108,#0a0d11 68%)!important}.rewards-hero:after{content:""!important;display:block!important;position:absolute;right:2px;bottom:-28px;width:190px;height:160px;background:url('/assets/decor-gift.svg') center/contain no-repeat;opacity:.92!important;font-size:0!important}.rewards-hero b{font-size:27px;line-height:1.15;max-width:65%;position:relative;z-index:2}.rewards-hero b span{color:#f4c25b}.rewards-hero p{font-size:15px!important;position:relative;z-index:2}
-.product{grid-template-columns:150px minmax(0,1fr) 126px!important;gap:12px!important;min-height:136px!important;padding:10px 14px!important;border-radius:24px!important;background:linear-gradient(145deg,#11161d,#080c11)!important;color:#fff!important;border:1px solid rgba(239,184,71,.34)!important}.product img{width:145px!important;height:115px!important;object-fit:contain!important;background:transparent!important}.product h3{font-size:17px!important}.product .price{font-size:27px!important;color:#efbd58!important}.product .small{color:#aeb1b6!important;font-size:12px!important}.product .mini-btn{min-height:54px!important;border-radius:16px!important;font-size:15px!important;background:linear-gradient(145deg,#ffd46f,#d9962e)!important}
-
-.progress-hero{min-height:188px!important;grid-template-columns:82px minmax(0,1fr)!important;padding:24px!important;border-radius:26px!important;background:radial-gradient(circle at 86% 42%,rgba(239,184,71,.24),transparent 30%),linear-gradient(135deg,#171006,#0a0e13 66%)!important}.progress-hero:after{content:"";position:absolute;right:-5px;bottom:-24px;width:150px;height:150px;background:url('/assets/decor-star.svg') center/contain no-repeat;opacity:.58}.progress-hero>span{width:82px!important;height:82px!important;border-radius:22px!important}.progress-hero>span .app-icon{width:42px!important;height:42px!important}.progress-hero h2{font-size:24px!important}.progress-hero p{font-size:14px!important;max-width:85%}.section-heading{padding:4px 0!important}.section-heading>span{width:62px!important;height:62px!important;border-radius:18px!important}.section-heading>span .app-icon{width:31px!important;height:31px!important}.section-heading h3{font-size:22px!important}.section-heading p{font-size:13px!important}.challenge-card,.stamp-program-card{padding:20px 22px!important;border-radius:24px!important}.challenge-card-head{grid-template-columns:52px minmax(0,1fr) auto!important}.challenge-card-head>span{width:52px!important;height:52px!important;border-radius:16px!important}.challenge-card-head b{font-size:19px!important}.challenge-card-head p{font-size:13px!important}.challenge-card-head strong{font-size:18px!important}.progressbar{height:13px!important;background:#20252b!important}.progressbar>span{background:linear-gradient(90deg,#c68418,#ffd372)!important}
-
-.modal-backdrop{background:rgba(0,0,0,.78)!important;backdrop-filter:blur(6px)}.modal{border-radius:30px!important;padding:30px 28px!important;background:radial-gradient(circle at 80% 0%,rgba(239,184,71,.14),transparent 25%),linear-gradient(145deg,#151a21,#080c10)!important}.modal h2{font-size:29px;margin-top:0}.barcode-large{padding:24px!important;border-radius:18px!important}.manual-code{min-height:90px!important;border-radius:20px!important}.manual-code b{font-size:24px!important}.modal .btn{min-height:64px!important;border-radius:18px!important;font-size:18px!important}
-
-@media(max-width:480px){
-  .screen{padding-left:15px!important;padding-right:15px!important}.topbar{grid-template-columns:104px minmax(0,1fr) 52px!important}.back-button{min-width:104px!important}.topbar-title-wrap h2{font-size:20px!important}.topbar-title-wrap p{font-size:11px}.notification-btn{width:50px!important;height:50px!important}.home-banner-slide{height:210px!important}.home-banner-copy{padding-left:20px!important}.home-banner-copy h2{font-size:24px!important}.home-banner-copy p{font-size:13px!important}.balance{font-size:48px!important}.home-progress-card b{font-size:16px!important}.more-grid button{min-height:150px!important}.more-grid span{font-size:16px!important}.offer-compact-card{grid-template-columns:minmax(0,1fr) 120px!important;min-height:190px!important}.offer-compact-card .promo-feed-card__media{width:120px!important;min-height:190px!important}.offer-compact-card h3{font-size:19px!important}.offer-compact-prices strong{font-size:24px!important}.product{grid-template-columns:92px minmax(0,1fr) 90px!important}.product img{width:88px!important;height:94px!important}.product .mini-btn{font-size:12px!important;padding:0 10px!important}.rewards-hero b{font-size:22px}.card-slogan{right:35px;font-size:13px}
+/* =============================================================
+   v30 — StarClub visual port from 18.09 reference screenshots
+   Visual layer only: API/data/auth/1C behavior is unchanged.
+   ============================================================= */
+:root{
+  --sc-bg:#05080c;
+  --sc-panel:#0c1016;
+  --sc-panel-2:#11161d;
+  --sc-gold:#e4ad45;
+  --sc-gold-light:#ffd574;
+  --sc-gold-soft:#a56d24;
+  --sc-line:rgba(231,179,77,.48);
+  --sc-line-soft:rgba(255,255,255,.105);
+  --sc-text:#f6f5f2;
+  --sc-muted:#989ca7;
 }
+html,body{background:#05080c!important;color:var(--sc-text)}
+body:before{
+  background:
+    radial-gradient(circle at 82% 7%,rgba(211,151,44,.12),transparent 20%),
+    radial-gradient(circle at 12% 40%,rgba(228,173,69,.055),transparent 32%),
+    linear-gradient(180deg,#06090d 0%,#04070a 100%)!important;
+}
+.app-shell{
+  max-width:590px;
+  background:
+    radial-gradient(circle at 93% 0%,rgba(220,162,51,.1),transparent 25%),
+    linear-gradient(180deg,#070a0f 0%,#04070b 82%)!important;
+  border:0!important;
+}
+.screen{padding:14px 16px calc(106px + var(--safe-bottom));}
+.stack{gap:14px}
+.card{border-radius:22px;background:linear-gradient(145deg,rgba(19,24,31,.97),rgba(7,10,14,.98));border-color:var(--sc-line-soft)}
+.gold-border{border-color:var(--sc-line)!important}
+.small{color:var(--sc-muted)}
+.gold{color:var(--sc-gold-light)}
+
+/* Forms: force real editable controls above every decorative layer. */
+#loginForm,#registerForm,#telegramPasswordForm,.supportReplyForm,#supportForm{position:relative;z-index:5;pointer-events:auto!important}
+#loginForm .input,#registerForm .input,#telegramPasswordForm .input,#supportForm .input,.supportReplyForm .input,
+input.input,textarea.input,select.input{
+  position:relative!important;
+  z-index:6!important;
+  pointer-events:auto!important;
+  touch-action:auto!important;
+  user-select:text!important;
+  -webkit-user-select:text!important;
+  -webkit-touch-callout:default!important;
+  opacity:1!important;
+  caret-color:#ffd36d;
+}
+input.input,select.input{min-height:54px}
+.input{
+  background:#10151c!important;
+  border:1px solid rgba(255,255,255,.12)!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff;
+}
+.input:focus{border-color:#dca643!important;box-shadow:0 0 0 3px rgba(220,166,67,.12)!important}
+.input::placeholder{color:#777d88!important;-webkit-text-fill-color:#777d88}
+.registration-store-field{z-index:6}
+.registration-store-field select{position:relative;z-index:7}
+.input-field{position:relative;z-index:6;pointer-events:auto!important;background:#10151c;border-color:rgba(255,255,255,.12)}
+.input-field .input{z-index:7!important}
+label.check{position:relative;z-index:7;pointer-events:auto!important}
+label.check input{position:relative;z-index:8;pointer-events:auto!important}
+
+/* Shared reference header */
+.topbar.star-header{
+  position:relative!important;
+  top:auto!important;
+  z-index:45;
+  display:grid;
+  grid-template-columns:92px minmax(0,1fr) 52px;
+  align-items:center;
+  gap:8px;
+  min-height:64px;
+  margin:-2px 0 10px!important;
+  padding:2px 0 4px!important;
+  background:transparent!important;
+  backdrop-filter:none!important;
+}
+.star-header-copy{text-align:center;min-width:0}
+.star-header-copy h2{margin:0;font-size:21px!important;line-height:1.08;font-weight:900;letter-spacing:-.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.star-header-copy p{margin:5px -20px 0;color:#a5a8b0;font-size:12px;line-height:1.2;white-space:nowrap}
+.back-button{
+  min-width:88px;width:max-content;height:46px;padding:0 13px 0 11px;
+  border-radius:17px;border:1px solid rgba(232,179,71,.5)!important;
+  background:linear-gradient(145deg,rgba(35,29,18,.78),rgba(9,11,15,.88))!important;
+  box-shadow:inset 0 0 22px rgba(214,151,40,.055),0 8px 28px rgba(0,0,0,.22);
+  font-size:14px;font-weight:850;color:#f7f5ef;
+}
+.back-button .app-icon{width:20px;height:20px;filter:sepia(1) saturate(1.8) brightness(1.15)}
+.topbar-brand-mark{
+  width:48px;height:48px;border-radius:16px;border-color:rgba(232,179,71,.58)!important;
+  background:radial-gradient(circle at 50% 45%,rgba(242,192,83,.22),transparent 68%),#0b0f14!important;
+  box-shadow:0 0 22px rgba(221,161,45,.08),inset 0 0 18px rgba(229,171,54,.06);
+}
+.topbar-brand-mark .app-icon{width:27px;height:27px;filter:sepia(1) saturate(2) brightness(1.24)}
+.icon-btn.notification-btn{
+  width:48px;height:48px;border-radius:17px;border-color:rgba(232,179,71,.56)!important;
+  background:linear-gradient(145deg,#101319,#090c10)!important;
+  box-shadow:0 0 20px rgba(211,151,43,.08),inset 0 0 18px rgba(236,181,68,.05);
+}
+.notification-btn .app-icon{width:24px;height:24px;filter:brightness(1.65)}
+.notification-badge{right:-4px;top:-6px;min-width:22px;height:22px;font-size:11px;border-width:2px;background:#f0444d}
+
+/* Bottom navigation */
+.bottom-nav{
+  width:min(590px,100%);
+  min-height:92px;
+  padding:9px 10px calc(10px + var(--safe-bottom));
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:4px;
+  background:linear-gradient(180deg,rgba(4,7,10,.97),rgba(6,9,13,.995))!important;
+  border-top:1px solid rgba(255,255,255,.1)!important;
+  box-shadow:0 -12px 30px rgba(0,0,0,.38);
+}
+.bottom-nav button{min-height:67px;padding:6px 2px 4px;border-radius:17px;justify-content:center!important;color:#9398a2;background:transparent!important}
+.bottom-nav button small{font-size:10px!important;font-weight:650;letter-spacing:-.01em}
+.bottom-nav .nav-icon-shell{width:38px;height:36px}
+.bottom-nav .nav-icon-shell .app-icon{width:26px;height:26px;opacity:.65;filter:grayscale(1) brightness(1.65)}
+.bottom-nav button.active:not(.nav-card){
+  color:#f5cf74!important;
+  background:radial-gradient(circle at 50% 40%,rgba(226,169,64,.15),transparent 68%)!important;
+  box-shadow:inset 0 0 0 1px rgba(231,178,72,.55),0 0 24px rgba(219,155,45,.09)!important;
+}
+.bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{filter:sepia(1) saturate(2.1) brightness(1.25)!important;opacity:1}
+.bottom-nav .nav-card .nav-icon-shell{
+  width:66px;height:66px;margin-top:-30px;margin-bottom:1px;border-radius:22px;
+  border:6px solid #05080b!important;
+  background:linear-gradient(145deg,#ffe08a,#d99830 64%,#b16e20)!important;
+  box-shadow:0 0 0 1px rgba(244,192,83,.32),0 13px 28px rgba(0,0,0,.52),0 0 24px rgba(222,161,49,.18)!important;
+}
+.bottom-nav .nav-card .nav-icon-shell .app-icon{width:32px;height:32px;filter:brightness(.15)!important}
+.bottom-nav .nav-card small{color:#f6ca69!important;font-size:10px!important;font-weight:850}
+
+/* Home */
+.home-top{display:grid;gap:13px;margin:-1px 0 13px}
+.home-brand-row{min-height:39px;display:flex;align-items:center}
+.home-brand{display:flex;align-items:center;gap:8px;font-size:27px;font-weight:900;letter-spacing:-.035em}
+.home-brand img{width:34px;height:34px;object-fit:contain;filter:drop-shadow(0 0 10px rgba(227,169,60,.26))}
+.home-brand strong{background:linear-gradient(90deg,#fff3c9,#e3aa45 60%,#fff1ba);-webkit-background-clip:text;background-clip:text;color:transparent}
+.home-welcome-row{display:grid;grid-template-columns:52px minmax(0,1fr) 50px;gap:12px;align-items:center}
+.home-user-icon{width:48px;height:48px;border:1px solid rgba(231,178,72,.64);border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle,rgba(234,177,69,.15),transparent 70%)}
+.home-user-icon .app-icon{width:25px;height:25px;filter:sepia(1) saturate(1.7) brightness(1.25)}
+.home-welcome-copy h1{margin:0;font-size:19px;font-weight:900;letter-spacing:-.02em}
+.home-welcome-copy p{margin:4px 0 0;color:#9b9fa8;font-size:12px;line-height:1.34}
+.home-banner{margin:0 0 15px}
+.home-banner-rail{border-radius:25px}
+.home-banner-slide{height:207px;grid-template-columns:minmax(0,55%) minmax(125px,45%);border-radius:25px;border-color:rgba(232,179,72,.58);background:radial-gradient(circle at 70% 40%,rgba(224,161,49,.18),transparent 45%),linear-gradient(135deg,#1d1710,#0c1015 64%,#06090d)}
+.home-banner-copy{padding:21px 10px 20px 20px}
+.home-banner-copy span{font-size:10px;color:#f4cc70;border:1px solid rgba(235,184,77,.48);border-radius:9px;padding:5px 8px;align-self:flex-start;letter-spacing:.08em}
+.home-banner-copy h2{font-size:24px;line-height:1.06;margin:11px 0 9px}
+.home-banner-copy p{font-size:13px;line-height:1.4;color:#b2b4b9}
+.home-banner-media{background:radial-gradient(circle at 45% 55%,rgba(224,162,50,.24),transparent 60%)}
+.home-banner-media img{object-fit:contain!important;padding:8px 8px 4px 0;filter:drop-shadow(0 15px 18px rgba(0,0,0,.35))}
+.home-banner-dots{height:19px;margin-top:-7px;position:relative;z-index:4}
+.home-banner-dots i{width:7px;height:7px}.home-banner-dots i.active{width:23px;background:#e6b34e}
+.home-stack{gap:14px}
+.home-balance-card{
+  min-height:151px;position:relative;overflow:hidden;display:grid;grid-template-columns:1fr 128px;align-items:center;
+  border:1px solid rgba(230,179,73,.4);border-radius:25px;padding:18px 18px 18px 23px;
+  background:radial-gradient(circle at 84% 38%,rgba(228,167,57,.21),transparent 31%),linear-gradient(140deg,#171b22,#0b0e13 65%);
+}
+.home-balance-card:after{content:"";position:absolute;inset:0;background:url('/assets/starclub-shine.svg') right bottom/115% auto no-repeat;opacity:.25;pointer-events:none}
+.home-balance-card>div{position:relative;z-index:2;display:grid;gap:4px}
+.home-balance-card p{margin:0;color:#9ca0a9;font-size:13px}
+.home-balance-card strong{font-size:47px;line-height:.98;letter-spacing:-.045em;color:#fff;font-weight:900}
+.home-balance-card strong span{color:#f0b74d;font-size:.82em}
+.home-balance-card small{font-size:12px;color:#a8abb1}
+.home-balance-card>img{position:absolute;z-index:1;right:20px;top:6px;width:135px;height:135px;opacity:.38;filter:drop-shadow(0 0 18px rgba(229,169,55,.18))}
+.home-balance-arrow{position:absolute;right:14px;bottom:23px;z-index:3;width:34px;height:34px;display:grid;place-items:center;border-radius:50%;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);font-size:28px;color:#bbb}
+.home-profile-progress{padding:14px}
+.home-challenge-card{
+  width:100%;min-height:128px;display:grid;grid-template-columns:70px minmax(0,1fr) 51px;gap:14px;align-items:center;
+  padding:14px 14px 14px 13px;text-align:left;color:#fff;border:1px solid rgba(231,178,72,.32);border-radius:24px;
+  background:linear-gradient(145deg,#13171d,#090c11);position:relative;overflow:hidden;
+}
+.home-challenge-card:after{content:"";position:absolute;right:-32px;top:-28px;width:145px;height:145px;background:radial-gradient(circle,rgba(222,160,49,.13),transparent 68%);pointer-events:none}
+.home-progress-icon{width:66px;height:66px;border-radius:19px;border:1px solid rgba(232,181,76,.43);background:radial-gradient(circle at 50% 45%,rgba(229,171,60,.16),transparent 70%);display:grid;place-items:center}
+.home-progress-icon .app-icon{width:37px;height:37px;filter:sepia(1) saturate(2) brightness(1.3)}
+.home-challenge-copy{display:grid;gap:5px;min-width:0}
+.home-challenge-copy b{font-size:16px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-challenge-copy small{color:#9da1aa;font-size:11px;line-height:1.3}
+.home-challenge-card>strong{align-self:start;margin-top:4px;min-width:49px;padding:8px 7px;border-radius:12px;background:rgba(226,168,58,.13);color:#f2c35d;font-size:15px;text-align:center}
+.home-stepbar{display:block;height:14px;border-radius:999px;background:rgba(255,255,255,.06);position:relative;overflow:hidden;margin-top:3px}
+.home-stepbar em{display:block;height:100%;width:var(--progress);background:linear-gradient(90deg,#be7f27,#efbb54);border-radius:inherit;box-shadow:0 0 16px rgba(225,166,58,.2)}
+
+/* My card */
+.star-card-page{gap:15px}
+.member-card{height:296px;position:relative;overflow:hidden;border:1px solid rgba(231,178,72,.59);border-radius:27px;padding:28px;background:radial-gradient(circle at 85% 25%,rgba(216,155,44,.15),transparent 38%),linear-gradient(145deg,#11151a,#06090d 72%);box-shadow:inset 0 0 40px rgba(222,165,55,.035),0 15px 38px rgba(0,0,0,.33)}
+.member-card:before{content:"";position:absolute;inset:0;background:url('/assets/starclub-shine.svg') right bottom/115% auto no-repeat;opacity:.66}
+.member-card-logo{position:relative;z-index:2;width:150px;margin:0 auto;text-align:center;display:grid;gap:13px;place-items:center}
+.member-card-logo .member-star{width:76px;height:76px;display:grid;place-items:center;border:1px solid rgba(230,178,72,.35);border-radius:25px;background:#0b0e12;color:#fff;font-size:48px;line-height:1}
+.member-card-logo b{font-size:16px;letter-spacing:.27em;color:#dcb05a;font-weight:500}
+.member-card-slogan{position:absolute;z-index:2;right:76px;top:35px;margin:0;color:#d2aa67;font-family:"Segoe Script","Brush Script MT",cursive;font-size:15px;line-height:1.25;transform:rotate(-2deg)}
+.member-card h3{position:absolute;z-index:2;left:28px;bottom:64px;margin:0;font-size:28px;letter-spacing:-.03em}
+.member-card-number{position:absolute;z-index:2;left:28px;bottom:21px;margin:0;color:#9fa3ac;font-size:12px;line-height:1.42}
+.member-card-number span{font-size:18px;color:#d7ad58;letter-spacing:.035em}
+.member-card-star{position:absolute;right:-36px;bottom:-46px;width:245px;height:245px;opacity:.85;filter:drop-shadow(0 0 26px rgba(220,160,45,.17))}
+.member-balance-card{position:relative;overflow:hidden;border:1px solid rgba(231,179,72,.43);border-radius:26px;padding:22px;background:radial-gradient(circle at 92% 15%,rgba(220,160,46,.15),transparent 40%),linear-gradient(145deg,#141922,#080c11)}
+.member-balance-card:before{content:"";position:absolute;inset:0;background:url('/assets/starclub-shine.svg') right center/110% auto no-repeat;opacity:.37;pointer-events:none}
+.member-balance-card>p{position:relative;z-index:2;margin:0;color:#9da1aa;font-size:14px}
+.member-balance-card>strong{position:relative;z-index:2;display:block;margin:6px 0 13px;font-size:48px;line-height:1;font-weight:900;letter-spacing:-.05em}
+.member-balance-card>strong span{color:#efb84e}
+.member-balance-card>small{position:relative;z-index:2;display:flex;gap:9px;align-items:center;color:#a5a8ae;font-size:12px}
+.member-balance-card>small .app-icon{width:20px;height:20px;filter:sepia(1) saturate(2) brightness(1.2)}
+.cashier-button{position:relative;z-index:2;margin-top:20px;display:grid;grid-template-columns:26px 1fr 20px;align-items:center;color:#17120a;font-size:16px}
+.cashier-button .app-icon{width:25px;height:25px;filter:brightness(.25)}
+.cashier-button b{font-size:27px;font-weight:400}
+.member-gift-banner{min-height:224px;position:relative;overflow:hidden;border:1px solid rgba(231,179,72,.4);border-radius:26px;padding:26px 20px;background:radial-gradient(circle at 79% 52%,rgba(227,166,52,.24),transparent 40%),linear-gradient(145deg,#171b20,#090c10 65%)}
+.member-gift-banner:before{content:"";position:absolute;inset:0;background:url('/assets/starclub-shine.svg') right bottom/130% auto no-repeat;opacity:.6}
+.member-gift-banner>div{position:relative;z-index:2;width:58%}.gift-crown{font-size:26px;color:#f2c35c}.member-gift-banner h2{margin:5px 0 11px;font-size:25px;line-height:1.1}.member-gift-banner p{margin:0;color:#a3a6ae;font-size:13px;line-height:1.45}
+.member-gift-banner>img{position:absolute;z-index:1;right:-35px;bottom:-26px;width:270px;height:230px;object-fit:contain}
+
+/* Rewards */
+.rewards-page{gap:12px}.rewards-hero{height:186px;position:relative;overflow:hidden;border:1px solid rgba(232,179,73,.55);border-radius:25px;padding:22px 20px;background:radial-gradient(circle at 76% 44%,rgba(235,174,55,.25),transparent 45%),linear-gradient(135deg,#15130f,#0b0f14 68%)}
+.rewards-hero:before{content:"";position:absolute;inset:0;background:url('/assets/starclub-shine.svg') right bottom/130% auto no-repeat;opacity:.47}
+.rewards-hero>div{position:relative;z-index:2;width:62%}.rewards-hero h2{margin:0 0 13px;font-size:23px;line-height:1.1}.rewards-hero h2 span{color:#e5b450}.rewards-hero p{margin:0;color:#aaaeb6;font-size:14px;line-height:1.35}.rewards-hero>img{position:absolute;z-index:1;right:-27px;top:-12px;width:260px;height:210px;object-fit:contain}
+.rewards-search-fake{height:54px;border:1px solid rgba(129,147,173,.35);border-radius:18px;background:#0a1119;display:flex;align-items:center;gap:14px;padding:0 18px;color:#858b95;font-size:14px}.rewards-search-fake .app-icon{width:22px;height:22px;filter:none}
+.reward-product{min-height:123px;display:grid;grid-template-columns:108px minmax(0,1fr) 112px;gap:11px;align-items:center;padding:9px 12px 9px 8px;border:1px solid rgba(230,178,71,.4);border-radius:20px;background:linear-gradient(145deg,#11151b,#090c10);overflow:hidden}
+.reward-product-image{width:104px;height:103px;display:grid;place-items:center;overflow:hidden;border-radius:15px;background:radial-gradient(circle,rgba(225,165,52,.08),transparent 70%)}
+.reward-product-image img{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 9px 8px rgba(0,0,0,.32))}
+.reward-product-copy{min-width:0}.reward-product-copy h3{margin:0 0 3px;font-size:14px;line-height:1.18}.reward-product-copy strong{display:block;color:#e7b249;font-size:23px;line-height:1.05}.reward-product-copy strong span{font-size:.9em}.reward-product-copy p{margin:5px 0 0;color:#9499a3;font-size:10px;line-height:1.24;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.reward-get-btn{min-height:48px;border-radius:14px;padding:0 13px;background:linear-gradient(135deg,#ffd97b,#d99b34);color:#20170c;font-size:13px;font-weight:900}.reward-get-btn:disabled{opacity:.4}
+.active-reward-codes{padding:14px}.reward-codes-link{padding:14px!important}
+
+/* Offers */
+.offers-page{position:relative}.offers-crown{position:absolute;top:-70px;left:50%;transform:translateX(-50%);width:26px;height:22px;object-fit:contain;z-index:50;pointer-events:none}.offer-tabs{display:grid!important;grid-template-columns:1fr 1fr;gap:8px;overflow:visible;padding:0}.offer-tabs button{height:58px;display:flex;align-items:center;justify-content:center;gap:10px;border-radius:999px;background:#12161c;border:1px solid rgba(255,255,255,.08);color:#9ea2ab;font-size:15px;font-weight:850}.offer-tabs button .app-icon{width:22px;height:22px;filter:grayscale(1) brightness(1.4)}.offer-tabs button.active{background:linear-gradient(135deg,#f4c75f,#e6a943)!important;color:#17110a!important;border-color:#f3c660!important}.offer-tabs button.active .app-icon{filter:brightness(.2)}
+.offers-store-note{min-height:58px;grid-template-columns:25px minmax(0,1fr) auto 13px!important;padding:0 17px!important;border-radius:18px!important;border-color:rgba(231,178,72,.36)!important;background:linear-gradient(145deg,#12171e,#090d12)!important;font-size:12px!important}.offers-store-note .app-icon{width:22px;height:22px!important}.offers-store-note span{color:#b0b3ba}.offers-store-note b{max-width:125px!important;color:#e2b24e!important;font-size:11px}.offers-store-note i{font-size:26px;color:#ddd;font-style:normal}
+.offer-reference-card{min-height:210px;display:grid;grid-template-columns:minmax(0,1fr) 132px;overflow:hidden;border:1px solid rgba(231,178,72,.46);border-radius:24px;background:linear-gradient(145deg,#13171e,#080b10)}
+.offer-reference-copy{min-width:0;padding:18px 11px 17px 18px;display:flex;flex-direction:column;justify-content:center}.offer-reference-meta{display:flex;align-items:center;gap:10px;min-width:0}.offer-reference-meta span{padding:6px 10px;border:1px solid rgba(231,178,72,.47);border-radius:999px;background:rgba(218,157,43,.1);color:#e6b34f;font-size:10px;font-weight:900}.offer-reference-meta small{color:#b0b2b8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.offer-reference-card h3{margin:12px 0 6px;font-size:18px;line-height:1.14}.offer-reference-copy>p{margin:0;color:#9b9fa8;font-size:12px;line-height:1.3}.offer-reference-prices{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-top:15px}.offer-reference-prices strong{color:#eab64e;font-size:28px;line-height:1;font-weight:900}.offer-reference-prices s{color:#8c9098;font-size:11px}.offer-reference-prices em{padding:3px 7px;border-radius:999px;background:rgba(227,166,55,.13);color:#f0c261;font-size:9px;font-style:normal;font-weight:850}.offer-reference-rule{margin-top:9px;color:#e3b04c;font-size:10px}
+.offer-reference-media{position:relative;min-height:210px;border-left:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:13px 9px 10px;background:radial-gradient(circle at 50% 43%,rgba(229,168,54,.17),transparent 64%)}.offer-reference-media img{width:122px;height:132px;object-fit:contain;filter:drop-shadow(0 12px 13px rgba(0,0,0,.4))}.offer-reference-media small{text-align:center;color:#979ba4;font-size:10px;line-height:1.25}.offer-percent{position:absolute;right:10px;top:10px;width:33px;height:33px;display:grid;place-items:center;border-radius:9px;background:#e7b249;color:#17120c;font-size:19px;font-weight:900;transform:rotate(8deg)}
+
+/* Progress */
+.progress-reference-page{gap:14px}.progress-reference-hero{height:184px;position:relative;overflow:hidden;display:grid;grid-template-columns:82px minmax(0,1fr);gap:16px;align-items:center;padding:20px;border:1px solid rgba(231,179,73,.55);border-radius:27px;background:radial-gradient(circle at 82% 42%,rgba(228,164,50,.18),transparent 42%),linear-gradient(145deg,#17150f,#090c11 72%)}
+.progress-reference-hero:before{content:"";position:absolute;inset:0;background:url('/assets/starclub-shine.svg') right bottom/130% auto no-repeat;opacity:.35}.progress-medal-wrap{position:relative;z-index:2;width:75px;height:75px;border-radius:19px;background:linear-gradient(145deg,#f1c15b,#b87825);display:grid;place-items:center}.progress-medal-wrap img{width:58px;height:58px}.progress-reference-hero>div{position:relative;z-index:2}.progress-reference-hero h2{margin:5px 0 5px;font-size:19px}.progress-reference-hero p{margin:0;color:#9fa3aa;font-size:12px;line-height:1.4}.progress-hero-star{position:absolute;right:-25px;bottom:-40px;width:220px;height:220px;opacity:.54}.progress-group-card{min-height:90px;display:grid;grid-template-columns:58px minmax(0,1fr) 18px;gap:13px;align-items:center;padding:14px 16px;border:1px solid rgba(231,178,72,.31);border-radius:23px;background:linear-gradient(145deg,#12161c,#080b0f)}.progress-group-card>span{width:51px;height:51px;display:grid;place-items:center;border:1px solid rgba(231,178,72,.38);border-radius:16px;background:rgba(222,161,48,.08)}.progress-group-card>span .app-icon{width:29px;height:29px;filter:sepia(1) saturate(2) brightness(1.18)}.progress-group-card h3,.progress-group-card p{margin:0}.progress-group-card h3{font-size:17px}.progress-group-card p{margin-top:5px;color:#969ba4;font-size:11px}.progress-group-card>b{font-size:30px;color:#ddd;font-weight:400}.challenge-reference-card{min-height:177px;position:relative;overflow:hidden;padding:17px;border:1px solid rgba(231,178,72,.32);border-radius:23px;background:linear-gradient(145deg,#15191e,#090c10)}.challenge-reference-card:after{content:"";position:absolute;right:-15px;top:-5px;width:120px;height:120px;background:radial-gradient(circle,rgba(227,165,52,.12),transparent 70%)}.challenge-card-head{position:relative;z-index:2}.challenge-card-head>span{border-color:rgba(231,178,72,.35);background:rgba(220,159,47,.09)}.challenge-card-head strong{font-size:16px}.challenge-card-head b{font-size:17px}.challenge-card-head p{font-size:11px}.challenge-reference-card .progressbar{position:relative;z-index:2;height:11px;margin-top:19px;background:#20252d}.challenge-reference-card .progressbar span{background:linear-gradient(90deg,#c9872b,#ffd06b)}.challenge-reward{position:relative;z-index:2;margin:10px 0 0;color:#8f949d;font-size:11px}.challenge-reward b{color:#e7b34f}.progress-stamp-card{border-radius:23px;background:linear-gradient(145deg,#12171d,#090c10)}
+
+/* More */
+.more-reference-grid{grid-template-columns:1fr 1fr;gap:10px}.more-reference-grid button{min-height:180px;position:relative;overflow:hidden;display:block!important;padding:16px 15px;text-align:left!important;border-radius:23px!important;border:1px solid rgba(231,178,72,.32)!important;background:radial-gradient(circle at 75% 20%,rgba(225,164,50,.11),transparent 38%),linear-gradient(145deg,#11161c,#080b0f)!important;color:#fff!important}.more-reference-grid button>b{position:relative;z-index:3;width:55px;height:55px;border-radius:17px;border:1px solid rgba(231,178,72,.56);background:rgba(221,160,47,.07);display:grid;place-items:center}.more-reference-grid button>b .app-icon{width:30px;height:30px;filter:sepia(1) saturate(2) brightness(1.28)}.more-reference-grid button>span{position:absolute;z-index:3;left:15px;right:32px;bottom:18px;display:grid;gap:6px}.more-reference-grid button>span strong{font-size:16px;line-height:1.1}.more-reference-grid button>span small{color:#969ba5;font-size:11px;line-height:1.35;font-weight:500}.more-reference-grid button>i{position:absolute;z-index:1;right:10px;top:18px;width:93px;height:93px;display:grid;place-items:center;opacity:.12}.more-reference-grid button>i .app-icon{width:82px;height:82px;filter:sepia(1) saturate(1.8) brightness(1.1)}.more-reference-grid button>em{position:absolute;z-index:3;right:13px;bottom:39px;color:#eee;font-style:normal;font-size:31px;font-weight:300}.more-reference-grid .more-static{cursor:default}
+
+/* Cashier barcode panel */
+.cashier-backdrop{z-index:25!important;top:0;bottom:calc(86px + var(--safe-bottom));background:transparent!important;padding:0!important;align-items:end center!important;pointer-events:none!important}
+.cashier-sheet{pointer-events:auto;position:relative;width:min(590px,100%);max-height:68vh;margin:0;border-radius:31px 31px 0 0!important;border:1px solid rgba(231,178,72,.5)!important;border-bottom:0!important;background:radial-gradient(circle at 84% 8%,rgba(225,164,49,.12),transparent 36%),linear-gradient(145deg,#151a21,#080c11)!important;padding:40px 27px 24px!important;box-shadow:0 -20px 60px rgba(0,0,0,.5),inset 0 0 35px rgba(219,158,45,.03)!important}.cashier-sheet:before{content:"";position:absolute;inset:0;background:url('/assets/starclub-shine.svg') right bottom/150% auto no-repeat;opacity:.25;pointer-events:none}.cashier-handle{position:absolute;top:18px;left:50%;transform:translateX(-50%);width:64px;height:6px;border-radius:999px;background:linear-gradient(90deg,#b77a25,#f1c45f);box-shadow:0 0 13px rgba(230,174,65,.22)}.cashier-sheet h2{position:relative;z-index:2;margin:0;font-size:28px;letter-spacing:-.02em}.cashier-subtitle{position:relative;z-index:2;margin:13px 0 24px;color:#a0a4ad;font-size:16px}.cashier-sheet .barcode-large{position:relative;z-index:2;margin:0 0 18px;padding:18px;border-radius:18px;background:#fff}.cashier-sheet .barcode-large img{height:94px;max-height:94px}.cashier-manual{position:relative;z-index:2;display:grid;grid-template-columns:52px minmax(0,1fr) 52px;align-items:center;gap:10px;margin:0 0 18px;padding:16px;border:1px dashed rgba(231,178,72,.4);background:rgba(219,158,45,.04);text-align:left}.cashier-manual>span{display:grid;place-items:center;color:#aaa}.cashier-manual>span:first-child{width:48px;height:48px;border:1px solid rgba(231,178,72,.33);border-radius:14px}.cashier-manual .app-icon{width:24px;height:24px}.cashier-manual span i{display:none}.cashier-manual b{font-size:21px;letter-spacing:.055em;text-align:center;color:#e8b652}.cashier-sheet .modal-actions{position:relative;z-index:2}.cashier-sheet .modal-actions .btn{font-size:18px}
+
+/* Registration / auth remain functionally untouched but visually consistent. */
+body[data-route="register"] .screen,body[data-route="login"] .screen,body[data-route="telegramPassword"] .screen{padding-bottom:32px}
+body[data-route="register"] .topbar,body[data-route="login"] .topbar,body[data-route="telegramPassword"] .topbar{margin-bottom:14px!important}
+body[data-route="register"] .bottom-nav,body[data-route="login"] .bottom-nav,body[data-route="telegramPassword"] .bottom-nav{display:none!important}
+#registerForm,#loginForm,#telegramPasswordForm{gap:12px}
+#registerForm>.input,#loginForm>.input,#telegramPasswordForm>.input,#registerForm .registration-store-field .input{border-radius:16px;background:#10151c!important}
+.registration-privacy-card{background:#0e1319}
+
+@media(max-width:430px){
+  .screen{padding-left:14px;padding-right:14px}
+  .topbar.star-header{grid-template-columns:88px minmax(0,1fr) 48px}
+  .star-header-copy h2{font-size:19px!important}.star-header-copy p{font-size:11px}
+  .home-banner-slide{height:190px}.home-banner-copy h2{font-size:21px}
+  .home-balance-card strong{font-size:42px}.home-balance-card>img{right:9px;width:123px;height:123px}
+  .member-card{height:278px;padding:24px}.member-card-slogan{right:58px}.member-card-star{width:225px;height:225px}
+  .member-card h3{left:24px}.member-card-number{left:24px}
+  .reward-product{grid-template-columns:92px minmax(0,1fr) 91px}.reward-product-image{width:89px;height:92px}.reward-get-btn{padding:0 8px;font-size:12px}
+  .offer-reference-card{grid-template-columns:minmax(0,1fr) 118px}.offer-reference-media img{width:108px}.offer-reference-prices strong{font-size:24px}
+  .more-reference-grid button{min-height:166px}.more-reference-grid button>span strong{font-size:15px}
+  .cashier-sheet{padding-left:22px!important;padding-right:22px!important}.cashier-sheet h2{font-size:26px}.cashier-subtitle{font-size:14px}
+}
+@media(max-width:370px){
+  .star-header-copy p{display:none}.topbar.star-header{grid-template-columns:82px minmax(0,1fr) 46px}.back-button{min-width:80px;padding-left:8px;padding-right:10px}
+  .home-welcome-row{grid-template-columns:46px minmax(0,1fr) 48px;gap:9px}.home-user-icon{width:44px;height:44px}.home-welcome-copy h1{font-size:17px}
+  .home-banner-slide{height:175px;grid-template-columns:minmax(0,61%) minmax(0,39%)}.home-banner-copy{padding-left:16px}.home-banner-copy h2{font-size:18px}
+  .home-challenge-card{grid-template-columns:57px minmax(0,1fr) 43px;gap:9px}.home-progress-icon{width:56px;height:56px}.home-progress-icon .app-icon{width:30px;height:30px}.home-challenge-copy b{font-size:14px}
+  .member-card-slogan{display:none}.member-gift-banner>div{width:64%}.member-gift-banner>img{right:-65px}
+  .reward-product{grid-template-columns:76px minmax(0,1fr) 78px;gap:8px}.reward-product-image{width:74px;height:82px}.reward-product-copy h3{font-size:12px}.reward-product-copy strong{font-size:19px}.reward-get-btn{font-size:10px;min-height:44px}
+  .offer-reference-card{grid-template-columns:minmax(0,1fr) 102px}.offer-reference-copy{padding-left:14px}.offer-reference-media img{width:94px}.offer-reference-card h3{font-size:16px}
+  .more-reference-grid{gap:8px}.more-reference-grid button{min-height:154px;padding:13px 12px}.more-reference-grid button>b{width:48px;height:48px}.more-reference-grid button>span{left:12px;bottom:14px}.more-reference-grid button>span small{font-size:10px}
+}
+
+/* final alignment polish against supplied mobile references */
+.topbar.star-header{grid-template-columns:88px minmax(0,1fr) 88px}
+.notification-wrap{justify-self:end}
+body[data-route="more"] .screen:after{
+  content:"";position:absolute;left:-8%;right:-8%;bottom:72px;height:180px;z-index:0;pointer-events:none;
+  background:url('/assets/starclub-shine.svg') center bottom/120% auto no-repeat;opacity:.26;
+}
+body[data-route="more"] .screen:before{
+  content:"";position:absolute;right:-52px;bottom:82px;width:170px;height:170px;z-index:0;pointer-events:none;
+  background:url('/assets/starclub-gold-star.svg') center/contain no-repeat;opacity:.12;
+}
+body[data-route="more"] .topbar,body[data-route="more"] .more-reference-grid{position:relative;z-index:2}
+@media(max-width:430px){.topbar.star-header{grid-template-columns:84px minmax(0,1fr) 84px}.star-header-copy h2{font-size:18px!important}}
+@media(max-width:370px){.topbar.star-header{grid-template-columns:78px minmax(0,1fr) 78px}.back-button{min-width:76px}.star-header-copy h2{font-size:16.5px!important}}

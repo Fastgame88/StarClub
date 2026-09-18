@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 420">
+  <defs>
+    <linearGradient id="box" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20242c"/><stop offset=".55" stop-color="#0e1116"/><stop offset="1" stop-color="#050608"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff0a6"/><stop offset=".4" stop-color="#e8ad43"/><stop offset="1" stop-color="#8f5515"/></linearGradient>
+    <radialGradient id="glow"><stop offset="0" stop-color="#ffd76b" stop-opacity=".78"/><stop offset="1" stop-color="#ffd76b" stop-opacity="0"/></radialGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#000" flood-opacity=".7"/></filter>
+  </defs>
+  <ellipse cx="300" cy="258" rx="185" ry="140" fill="url(#glow)" opacity=".55"/>
+  <g filter="url(#shadow)">
+    <rect x="132" y="150" width="252" height="210" rx="28" fill="url(#box)" stroke="#9a6d2a" stroke-width="5"/>
+    <rect x="244" y="150" width="34" height="210" fill="url(#gold)"/>
+    <rect x="110" y="126" width="296" height="62" rx="18" fill="url(#box)" stroke="#a3762d" stroke-width="5"/>
+    <rect x="243" y="126" width="36" height="62" fill="url(#gold)"/>
+    <path d="M258 122c-35-62-97-76-118-42-16 28 19 65 118 73-5-13-5-19 0-31z" fill="url(#gold)"/>
+    <path d="M267 122c35-62 97-76 118-42 16 28-19 65-118 73 5-13 5-19 0-31z" fill="url(#gold)"/>
+    <circle cx="261" cy="126" r="24" fill="#f5c557"/>
+  </g>
+  <path d="M322 205l14 36 39 3-30 25 9 38-32-21-32 21 9-38-30-25 39-3z" fill="url(#gold)"/>
+  <g fill="#ffe287"><circle cx="87" cy="83" r="5"/><circle cx="432" cy="98" r="7"/><circle cx="452" cy="212" r="4"/><circle cx="72" cy="260" r="4"/></g>
+</svg>
