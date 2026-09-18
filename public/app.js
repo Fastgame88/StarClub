@@ -433,33 +433,42 @@ function privacyScreen() {
 
 function homeBanner() {
   const bannerData = state.data.banners || { enabled: false, items: [] };
-  const slides = bannerData.enabled === false ? [] : (bannerData.items || []).slice(0, 8);
-  if (!slides.length) return '';
+  const remoteSlides = bannerData.enabled === false ? [] : (bannerData.items || []).slice(0, 7);
+  const slides = [
+    {
+      tag: 'НОВИНКА',
+      title: 'Сезонний раф «Карамельний горіх»',
+      text: 'Спробуйте новий смак цієї осені.',
+      image_url: '/assets/design/home-banner-coffee.png',
+      link_route: 'offers',
+      home_generated: true
+    },
+    ...remoteSlides
+  ];
   return `
-    <section class="home-banner" aria-label="Банери Star Club">
-      <div class="home-banner-rail">
+    <section class="home-banner-v2" aria-label="Банери Star Club">
+      <div class="home-banner-rail-v2">
         ${slides.map((item) => `
-          <button class="home-banner-slide" type="button" ${item.link_route && item.link_route !== 'none' ? `data-route="${safeHtml(item.link_route)}"` : ''}>
-            <div class="home-banner-copy">
+          <button class="home-banner-slide-v2" type="button" ${item.link_route && item.link_route !== 'none' ? `data-route="${safeHtml(item.link_route)}"` : ''}>
+            ${item.home_generated
+              ? `<img class="home-banner-generated-bg" src="${safeHtml(item.image_url)}" alt="">`
+              : `<div class="home-banner-remote-bg"><img src="${safeHtml(item.image_url || '/assets/star.svg')}" alt="" onerror="this.onerror=null;this.src='/assets/star.svg'"></div>`}
+            <div class="home-banner-copy-v2">
               <span>${safeHtml(item.tag || 'STAR CLUB')}</span>
               <h2>${safeHtml(item.title || 'Новини Star Club')}</h2>
               <p>${safeHtml(item.text || '')}</p>
             </div>
-            <div class="home-banner-media">
-              <img src="${safeHtml(item.image_url || '/assets/star.svg')}" alt="" onerror="this.onerror=null;this.src='/assets/star.svg'">
-            </div>
           </button>
         `).join('')}
       </div>
-      <div class="home-banner-dots" aria-hidden="true">${slides.map((_, index) => `<i class="${index === 0 ? 'active' : ''}"></i>`).join('')}</div>
+      <div class="home-banner-dots-v2" aria-hidden="true">${slides.map((_, index) => `<i class="${index === 0 ? 'active' : ''}"></i>`).join('')}</div>
     </section>`;
 }
 
 function bindHomeBannerCarousel() {
-  const rail = document.querySelector('.home-banner-rail');
-  const dots = [...document.querySelectorAll('.home-banner-dots i')];
+  const rail = document.querySelector('.home-banner-rail-v2');
+  const dots = [...document.querySelectorAll('.home-banner-dots-v2 i')];
   if (!rail || dots.length < 2) return;
-
   let frame = 0;
   const syncDots = () => {
     frame = 0;
@@ -474,24 +483,90 @@ function bindHomeBannerCarousel() {
   syncDots();
 }
 
+function renderHomeStepIcons(progress, total, type) {
+  const safeTotal = Math.max(1, Math.min(12, Number(total || 1)));
+  const safeProgress = Math.max(0, Math.min(Number(progress || 0), safeTotal));
+  return Array.from({ length: safeTotal }, (_, index) => {
+    const active = index < safeProgress;
+    const icon = type === 'cup'
+      ? (active ? 'home-step-cup-on.svg' : 'home-step-cup-off.svg')
+      : (active ? 'home-step-star-on.svg' : 'home-step-star-off.svg');
+    return `<img src="/assets/icons/${icon}" alt="" aria-hidden="true">`;
+  }).join('');
+}
+
 function homeScreen() {
-  ensureNotificationsLoaded();
+  const c = state.client || {};
+  const live = state.data.progress || { stamps: [], challenges: [] };
+  const challenge = live.challenges?.[0] || {};
+  const stamp = live.stamps?.[0] || {};
+  const challengeRequired = Math.max(1, Number(challenge.required_visits || 7));
+  const challengeProgress = Math.max(0, Math.min(Number(challenge.progress || 0), challengeRequired));
+  const challengeReward = Number(challenge.reward_stars || 1000);
+  const challengeLeft = Math.max(0, challengeRequired - challengeProgress);
+  const stampRequired = Math.max(1, Number(stamp.required_qty || 9));
+  const stampProgress = Math.max(0, Math.min(Number(stamp.progress || 0), stampRequired));
+  const stampLeft = Math.max(0, stampRequired - stampProgress);
+  const unread = unreadNotificationsCount();
   return `
-    <section class="home-exact-layout" aria-label="Головний екран Star Club">
-      <div class="home-exact-canvas">
-        <img class="home-exact-image" src="/assets/design/home-exact-top.png" alt="Головний екран Star Club">
-        <button type="button" class="home-hotspot home-hit-profile" data-route="profile" aria-label="Профіль"></button>
-        <button type="button" class="home-hotspot home-hit-notification" data-toggle-notifications aria-label="Повідомлення"></button>
-        <button type="button" class="home-hotspot home-hit-banner" data-route="offers" aria-label="Банер з акціями"></button>
-        <button type="button" class="home-hotspot home-hit-balance" data-route="card" aria-label="Моя карта"></button>
-        <button type="button" class="home-hotspot home-hit-progress-1" data-route="progress" aria-label="7 днів зі Star"></button>
-        <button type="button" class="home-hotspot home-hit-progress-2" data-route="progress" aria-label="10-та кава"></button>
-        ${state.notificationPanelOpen ? `<div class="home-exact-notification-panel">${renderNotificationPanel()}</div>` : ''}
-      </div>
+    <section class="home-live-v2">
+      <header class="home-live-header">
+        <img class="home-live-mountains" src="/assets/design/home-header-mountains.png" alt="" aria-hidden="true">
+        <div class="home-live-brand-row">
+          <div class="home-live-brand">
+            <img class="home-live-brand-star" src="/assets/design/home-brand-star.svg" alt="" aria-hidden="true">
+            <span>StarClub</span>
+          </div>
+        </div>
+        <div class="home-live-welcome-row">
+          <div class="home-live-user-icon">${appIcon('user-round')}</div>
+          <div class="home-live-welcome-copy">
+            <h1>Вітаємо, ${safeHtml(c.name || 'Denys')}!</h1>
+            <p>Кожна покупка наближає<br>до нових можливостей!</p>
+          </div>
+          <div class="home-live-script">Більше<br>ніж покупки ♡</div>
+          <button type="button" class="home-live-bell" data-toggle-notifications aria-label="Повідомлення">
+            ${appIcon(icons.notification)}
+            ${unread ? `<span class="home-live-bell-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
+          </button>
+        </div>
+        ${state.notificationPanelOpen ? `<div class="home-live-notification-panel">${renderNotificationPanel()}</div>` : ''}
+      </header>
+
+      ${homeBanner()}
+
+      <button class="home-live-balance" type="button" data-route="card">
+        <div class="home-live-balance-copy">
+          <span>Ваш баланс</span>
+          <strong>${fmtStars(c.stars_balance)} <b>★</b></strong>
+          <small>Більше зірок — більше можливостей!</small>
+        </div>
+        <img class="home-live-balance-star" src="/assets/design/home-brand-star.svg" alt="" aria-hidden="true">
+        <i>›</i>
+      </button>
+
+      <button class="home-live-program" type="button" data-route="progress">
+        <span class="home-live-program-icon"><img src="/assets/icons/home-trophy.svg" alt="" aria-hidden="true"></span>
+        <div class="home-live-program-main">
+          <div class="home-live-program-title">${safeHtml(challenge.name || '7 днів зі Star')}</div>
+          <div class="home-live-program-subtitle">Ще ${challengeLeft} днів до бонусу ${fmtStars(challengeReward)} ★</div>
+          <div class="home-live-steps home-live-stars">${renderHomeStepIcons(challengeProgress, challengeRequired, 'star')}</div>
+        </div>
+        <span class="home-live-program-count">${challengeProgress}/${challengeRequired}</span>
+      </button>
+
+      <button class="home-live-program" type="button" data-route="progress">
+        <span class="home-live-program-icon"><img src="/assets/icons/home-coffee.svg" alt="" aria-hidden="true"></span>
+        <div class="home-live-program-main">
+          <div class="home-live-program-title">${safeHtml(stamp.name || '10-та кава')}</div>
+          <div class="home-live-program-subtitle">Ще ${stampLeft} до безкоштовного коду</div>
+          <div class="home-live-steps home-live-cups">${renderHomeStepIcons(stampProgress, stampRequired, 'cup')}</div>
+        </div>
+        <span class="home-live-program-count">${stampProgress}/${stampRequired}</span>
+      </button>
     </section>
   `;
 }
-
 
 async function refreshClient() {
   const me = await api('/api/client/me');
@@ -1123,7 +1198,7 @@ function showRewardModal(qr) {
 
 async function render() {
   renderNav();
-  $app.className = "screen";
+  document.body.classList.toggle('home-route', state.route === 'home' && Boolean(state.client?.registered));
   if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
     $app.innerHTML = startScreen();
     bindEvents();
@@ -1145,7 +1220,7 @@ async function render() {
     else if (state.route === 'privacy') $app.innerHTML = privacyScreen();
     else if (state.route === 'register') $app.innerHTML = registerScreen();
     else if (state.route === 'login') $app.innerHTML = loginScreen();
-    else { await Promise.all([loadProgress(), loadBanners()]); $app.className = 'screen screen-home-exact'; $app.innerHTML = homeScreen(); }
+    else { await Promise.all([loadProgress(), loadBanners()]); $app.innerHTML = homeScreen(); }
   } catch (e) {
     if (e.code === 'CLIENT_UNAUTHORIZED' || e.message === 'CLIENT_UNAUTHORIZED') {
       localStorage.removeItem('starclub_session');
