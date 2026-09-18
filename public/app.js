@@ -1452,20 +1452,22 @@ $nav.addEventListener('click', (event) => {
 });
 
 function setupMobileKeyboardUX() {
+  // Keep native form controls completely native. Older global pointer/focus
+  // handlers could make Android/Telegram WebView open and immediately close
+  // the keyboard. We only track focus for layout and never blur/refocus fields.
   const editableSelector = 'input, textarea, select';
   document.addEventListener('focusin', (event) => {
-    if (!event.target.matches(editableSelector)) return;
+    if (!event.target.matches?.(editableSelector)) return;
     document.body.classList.add('keyboard-open');
-    window.setTimeout(() => {
-      if (document.activeElement === event.target) event.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }, 220);
   });
   document.addEventListener('focusout', () => {
     window.setTimeout(() => {
-      if (!document.activeElement?.matches?.(editableSelector)) document.body.classList.remove('keyboard-open');
-    }, 120);
+      if (!document.activeElement?.matches?.(editableSelector)) {
+        document.body.classList.remove('keyboard-open');
+      }
+    }, 250);
   });
-  window.Telegram?.WebApp?.expand?.();
+  try { window.Telegram?.WebApp?.expand?.(); } catch {}
 }
 
 setupMobileKeyboardUX();

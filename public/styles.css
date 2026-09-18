@@ -827,3 +827,91 @@ body[data-route="more"] .screen:before{
 body[data-route="more"] .topbar,body[data-route="more"] .more-reference-grid{position:relative;z-index:2}
 @media(max-width:430px){.topbar.star-header{grid-template-columns:84px minmax(0,1fr) 84px}.star-header-copy h2{font-size:18px!important}}
 @media(max-width:370px){.topbar.star-header{grid-template-columns:78px minmax(0,1fr) 78px}.back-button{min-width:76px}.star-header-copy h2{font-size:16.5px!important}}
+
+/* v31 — Android/Telegram registration input reliability + final reference polish */
+#registerForm,#loginForm,#telegramPasswordForm{
+  position:relative;
+  z-index:60;
+  pointer-events:auto!important;
+  isolation:isolate;
+}
+#registerForm input,#registerForm select,#registerForm textarea,
+#loginForm input,#loginForm select,#loginForm textarea,
+#telegramPasswordForm input,#telegramPasswordForm select,#telegramPasswordForm textarea{
+  position:relative;
+  z-index:62;
+  pointer-events:auto!important;
+  touch-action:manipulation;
+  -webkit-user-select:text!important;
+  user-select:text!important;
+  -webkit-touch-callout:default;
+  opacity:1!important;
+}
+#registerForm label,#registerForm .input-field,#registerForm .registration-store-field{
+  position:relative;
+  z-index:61;
+  pointer-events:auto!important;
+}
+#registerForm .registration-field-chevron{z-index:63;pointer-events:none!important}
+#registerForm .input,#loginForm .input,#telegramPasswordForm .input{
+  min-height:54px;
+  line-height:normal;
+  -webkit-appearance:none;
+  appearance:none;
+}
+#registerForm select.input{-webkit-appearance:none;appearance:none}
+#registerForm input[type="date"].input{
+  -webkit-appearance:auto;
+  appearance:auto;
+  min-height:34px;
+}
+#registerForm input[type="checkbox"]{
+  -webkit-appearance:auto;
+  appearance:auto;
+  min-height:18px;
+}
+body[data-route="register"] .screen:before,
+body[data-route="register"] .screen:after,
+body[data-route="login"] .screen:before,
+body[data-route="login"] .screen:after,
+body[data-route="telegramPassword"] .screen:before,
+body[data-route="telegramPassword"] .screen:after{pointer-events:none!important}
+body.keyboard-open #registerForm,body.keyboard-open #loginForm,body.keyboard-open #telegramPasswordForm{z-index:200}
+body.keyboard-open .screen{overflow:visible}
+
+/* closer to the supplied black/gold StarClub references */
+body:before{
+  background:
+    radial-gradient(circle at 82% 10%,rgba(221,158,42,.075),transparent 24%),
+    radial-gradient(circle at 15% 38%,rgba(210,148,34,.035),transparent 26%),
+    linear-gradient(180deg,#080c10 0%,#05080c 52%,#06090d 100%);
+}
+.app-shell{max-width:590px;background:linear-gradient(180deg,#080c10,#05080c 66%,#070b0f)}
+.screen{padding-top:14px}
+.home-top{position:relative;padding-top:1px;isolation:isolate}
+.home-top:before{
+  content:"";position:absolute;z-index:-1;left:-14px;right:-14px;top:-14px;height:104px;
+  background:url('/assets/starclub-mountain-bg.svg') right top/auto 104px no-repeat;
+  opacity:.42;pointer-events:none;
+}
+.home-brand-row{position:relative;z-index:2}
+.home-brand strong{font-size:28px}
+.home-welcome-copy h1{font-size:20px}
+.home-welcome-copy p{font-size:12.5px}
+.home-banner-slide,.home-balance-card,.home-challenge-card,.member-card,.member-balance-card,.member-gift-banner,
+.rewards-hero,.reward-product,.offer-reference-card,.progress-reference-hero,.progress-group-card,.challenge-reference-card,
+.more-reference-grid button{box-shadow:inset 0 0 0 1px rgba(255,223,150,.015),0 12px 28px rgba(0,0,0,.26)}
+.home-challenge-card{min-height:122px}
+.home-progress-icon{box-shadow:inset 0 0 22px rgba(231,172,53,.06)}
+.member-card-logo .member-star{font-family:Arial,sans-serif;text-shadow:0 0 16px rgba(255,255,255,.12)}
+.reward-product{background:radial-gradient(circle at 13% 50%,rgba(220,155,37,.09),transparent 26%),linear-gradient(145deg,#11161c,#080c11)}
+.offer-reference-media{background:radial-gradient(circle at 50% 44%,rgba(229,168,54,.20),transparent 64%),linear-gradient(180deg,rgba(214,148,30,.025),rgba(0,0,0,.04))}
+.progress-reference-hero,.rewards-hero{box-shadow:inset 0 0 40px rgba(221,159,42,.035),0 13px 30px rgba(0,0,0,.28)}
+.more-reference-grid button:active,.home-challenge-card:active,.reward-get-btn:active,.offer-tabs button:active{transform:scale(.985)}
+
+@media(max-width:430px){
+  #registerForm .input,#loginForm .input,#telegramPasswordForm .input{font-size:16px!important}
+  .home-brand strong{font-size:25px}
+  .home-top:before{height:94px;background-size:auto 94px}
+  .member-gift-banner{min-height:205px}
+}
