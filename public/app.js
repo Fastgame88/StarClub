@@ -248,12 +248,28 @@ async function bootstrap() {
 }
 
 function header(title, back = false) {
+  const subtitles = {
+    'Моя карта': 'Ваш Star Club завжди з вами',
+    'За зірки': 'Обирайте, отримуйте, насолоджуйтесь',
+    'Клубні пропозиції': 'Вигідніше з кожною покупкою',
+    'Оптові пропозиції': 'Більші обсяги — більша вигода',
+    'Прогрес і активність': 'Купуйте більше — отримуйте більше!',
+    'Ще': 'Зручні функції в одному місці',
+    'Історія': 'Ваші покупки та нараховані зірки',
+    'Магазини': 'Адреси, графік, контакти',
+    'Новини': 'Акції, новинки та спеціальні пропозиції',
+    'Профіль': 'Ваші дані та налаштування',
+    'Підтримка': 'Ми завжди на зв’язку',
+    'Мої QR-коди': 'Активні коди та історія використання'
+  };
   return `
     <div class="topbar">
+      <div class="topbar-left-slot">
       ${back
         ? `<button class="back-button" type="button" data-back="1">${appIcon('arrow-left')}<span>Назад</span></button>`
         : `<span class="topbar-brand-mark" aria-hidden="true">${appIcon('circle-star')}</span>`}
-      <h2>${title}</h2>
+      </div>
+      <div class="topbar-title-wrap"><h2>${title}</h2>${subtitles[title] ? `<p>${subtitles[title]}</p>` : ''}</div>
       ${notificationButton()}
     </div>
   `;
@@ -490,8 +506,9 @@ function homeScreen() {
   const challengeLeft = challenge ? Math.max(0, challenge.required_visits - challenge.progress) : 0;
   const stampLeft = stamp ? Math.max(0, stamp.required_qty - stamp.progress) : 0;
   return `
-    <div class="topbar">
-      <div class="home-heading"><span>${appIcon('sparkles')}</span><h1>Вітаємо, ${safeHtml(c.name || 'друже')}!</h1></div>
+    <div class="home-brand-row"><div class="home-brand"><span class="home-brand-star">★</span><strong>StarClub</strong></div></div>
+    <div class="topbar home-topbar">
+      <div class="home-heading"><span>${appIcon('user-round')}</span><div><h1>Вітаємо, ${safeHtml(c.name || 'друже')}!</h1><p>Кожна покупка наближає до нових можливостей!</p></div></div>
       ${notificationButton()}
     </div>
     ${homeBanner()}
@@ -743,7 +760,7 @@ async function cardScreen() {
     <div class="stack">
       <section class="card-visual">
         <div class="logo-mark" style="width:62px;height:62px;margin:0 auto 8px"><div class="logo-star" style="width:34px;height:34px"></div></div>
-        <div class="club-logo">STAR CLUB</div>
+        <div class="club-logo">STAR CLUB</div><div class="card-slogan">Разом<br>до більших<br>можливостей</div>
         <h3>${card.name}</h3>
         <p class="small">№ картки<br><span class="gold">${card.card_number}</span></p>
       </section>
@@ -765,8 +782,8 @@ function rewardsScreen() {
   return `
     ${header('За зірки', true)}
     <div class="stack">
-      <section class="card gold-border spark">
-        <b>Оберіть улюблені нагороди за зірки</b>
+      <section class="card gold-border spark rewards-hero">
+        <b>Обирайте улюблені<br><span>нагороди за зірки</span></b>
         <p class="small">Доступно: ${fmtStars(data?.available_stars || 0)} ★</p>
       </section>
       ${active.length ? `<section class="card gold-border"><b>Активні коди</b><p class="small">У вас є активний QR-код. Його можна повторно відкрити.</p>${active.map((q)=>`<button class="reward-code-row" data-open-reward-code="${q.token}"><span>${q.reward.name}</span><b>${q.manual_code}</b></button>`).join('')}</section>` : ''}
@@ -1157,6 +1174,7 @@ function showRewardModal(qr) {
 }
 
 async function render() {
+  document.body.dataset.route = state.route || 'home';
   renderNav();
   if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
     $app.innerHTML = startScreen();
