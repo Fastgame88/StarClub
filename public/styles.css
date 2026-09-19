@@ -1823,3 +1823,50 @@ label.check span{min-width:0}
   .home-route .bottom-nav button:not(.nav-card),
   .home-route .bottom-nav .nav-card{gap:5px !important;}
 }
+
+/* Requested corrections: program spacing, raised lettering, reference nav icons. */
+.home-live-v2{
+  grid-template-rows:118px 174px 112px auto auto;
+}
+.home-live-program + .home-live-program{
+  margin-top:0 !important;
+}
+.home-live-script span:nth-child(1),
+.home-live-script span:nth-child(2){
+  top:-15px;
+}
+.bottom-nav button,
+.home-route .bottom-nav button:not(.nav-card),
+.home-route .bottom-nav .nav-card{
+  gap:5px !important;
+  justify-content:flex-end !important;
+}
+.bottom-nav button:not(.nav-card) .nav-icon-shell,
+.home-route .bottom-nav button:not(.nav-card) .nav-icon-shell{
+  height:23px !important;
+  flex:0 0 23px;
+  margin-bottom:0 !important;
+  padding:0 !important;
+}
+#bottomNav button .nav-icon-shell .nav-reference-icon{
+  display:block;
+  color:#bfc1c5 !important;
+  filter:none !important;
+  opacity:1 !important;
+}
+#bottomNav .nav-card .nav-icon-shell .nav-reference-icon{
+  color:#302510 !important;
+}
+#bottomNav button.active .nav-icon-shell .nav-reference-icon{
+  color:#f4ce68 !important;
+  filter:none !important;
+}
+#bottomNav .nav-card.active .nav-icon-shell .nav-reference-icon{
+  filter:drop-shadow(0 1px 1px #302510) !important;
+}
+#bottomNav .nav-card .nav-icon-shell{flex-shrink:0;}
+@media (max-width:390px){
+  .home-live-v2{grid-template-rows:112px 168px 108px auto auto;}
+  /* Keep the existing 9px gaps elsewhere; only these cards need 10px. */
+  .home-live-program + .home-live-program{margin-top:1px !important;}
+}
