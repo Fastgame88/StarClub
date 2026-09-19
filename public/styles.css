@@ -1763,3 +1763,63 @@ label.check span{min-width:0}
   .home-route .bottom-nav .nav-card{width:78px !important;max-width:78px !important;}
   .home-route .bottom-nav .nav-card .nav-icon-shell{width:62px !important;height:62px !important;}
 }
+
+/* v41 requested micro-fixes */
+/* 1) reduce spacing between accumulation cards to 10px */
+.home-live-program + .home-live-program{
+  margin-top:10px !important;
+}
+
+/* 2) raise only the handwritten text so "покупки" sits above the heart */
+.home-live-script{
+  width:116px !important;
+}
+.home-live-script span:nth-child(1),
+.home-live-script span:nth-child(2){
+  position:relative;
+  top:-7px;
+}
+.home-live-script span:last-child{
+  right:2px !important;
+  bottom:-1px !important;
+}
+
+/* 3) bottom nav: fixed positions, 5px gap, active item gets gold bg and gold icon */
+.home-route .bottom-nav button,
+.home-route .bottom-nav button.active,
+.home-route .bottom-nav button:not(.active),
+.home-route .bottom-nav .nav-card{
+  transform:none !important;
+  top:0 !important;
+  translate:none !important;
+}
+.home-route .bottom-nav button:not(.nav-card){
+  gap:5px !important;
+  padding-top:5px !important;
+}
+.home-route .bottom-nav button:not(.nav-card) .nav-icon-shell{
+  margin-top:0 !important;
+}
+.home-route .bottom-nav button.active:not(.nav-card){
+  background:linear-gradient(145deg,#8f631f 0%,#5f4114 40%,#22160c 100%) !important;
+  box-shadow:inset 0 0 0 1px rgba(237,189,82,.72), 0 8px 18px rgba(0,0,0,.22) !important;
+}
+.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
+  filter:sepia(1) saturate(2.4) brightness(1.5) hue-rotate(-6deg) !important;
+}
+.home-route .bottom-nav button.active:not(.nav-card) small{
+  color:#efcc67 !important;
+}
+.home-route .bottom-nav .nav-card{
+  gap:5px !important;
+}
+.home-route .bottom-nav .nav-card .nav-icon-shell{
+  margin-top:0 !important;
+}
+
+@media (max-width:390px){
+  .home-live-script span:nth-child(1),
+  .home-live-script span:nth-child(2){top:-6px;}
+  .home-route .bottom-nav button:not(.nav-card),
+  .home-route .bottom-nav .nav-card{gap:5px !important;}
+}
