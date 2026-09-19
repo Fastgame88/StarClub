@@ -1616,3 +1616,150 @@ label.check span{min-width:0}
   .home-route .bottom-nav button{min-height:66px !important;height:66px !important;max-width:68px !important;}
   .home-route .bottom-nav .nav-card .nav-icon-shell{width:62px !important;height:62px !important;}
 }
+
+/* v40 final alignment fixes requested by user */
+.home-live-script{
+  position:relative !important;
+  width:116px !important;
+  margin-right:12px !important;
+  transform:rotate(-8deg) translateX(-8px) translateY(0) !important;
+  align-items:flex-start !important;
+  justify-content:flex-start !important;
+  text-align:left !important;
+}
+.home-live-script span:nth-child(1){
+  margin-left:2px;
+}
+.home-live-script span:nth-child(2){
+  margin-top:3px;
+  margin-left:0;
+}
+.home-live-script span:last-child{
+  position:absolute;
+  right:2px;
+  bottom:-2px;
+  margin-top:0 !important;
+}
+
+.home-live-program + .home-live-program{
+  margin-top:20px !important;
+}
+.home-live-program-main{
+  min-width:0;
+}
+.home-live-steps{
+  width:100% !important;
+  max-width:100% !important;
+  min-height:40px !important;
+  height:40px !important;
+  padding:10px 12px !important;
+  gap:6px !important;
+  align-items:center !important;
+  overflow:hidden !important;
+  box-sizing:border-box !important;
+}
+.home-live-stars img{
+  width:21px !important;
+  height:21px !important;
+  display:block !important;
+}
+.home-live-cups img{
+  width:21px !important;
+  height:16px !important;
+  display:block !important;
+}
+
+/* restore bottom nav behavior: fixed positions, active gold background only */
+.home-route .bottom-nav{
+  min-height:94px !important;
+  height:94px !important;
+  padding:9px 10px calc(9px + var(--safe-bottom)) !important;
+  gap:6px !important;
+}
+.home-route .bottom-nav button,
+.home-route .bottom-nav button.active,
+.home-route .bottom-nav button:not(.active){
+  transform:none !important;
+  position:relative;
+  top:0 !important;
+}
+.home-route .bottom-nav button:not(.nav-card){
+  width:72px !important;
+  max-width:72px !important;
+  min-height:70px !important;
+  height:70px !important;
+  border-radius:18px !important;
+  padding:4px 2px 2px !important;
+  gap:4px !important;
+}
+.home-route .bottom-nav button:not(.nav-card) .nav-icon-shell{
+  width:30px !important;
+  height:30px !important;
+  margin-top:-10px !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+.home-route .bottom-nav button:not(.nav-card) .nav-icon-shell .app-icon{
+  width:23px !important;
+  height:23px !important;
+  filter:brightness(0) invert(1) !important;
+}
+.home-route .bottom-nav button:not(.nav-card) small{
+  color:#fff !important;
+  font-size:10px !important;
+}
+.home-route .bottom-nav button.active:not(.nav-card){
+  background:linear-gradient(145deg,#8f631f 0%,#5f4114 40%,#22160c 100%) !important;
+  box-shadow:inset 0 0 0 1px rgba(237,189,82,.72), 0 8px 18px rgba(0,0,0,.22) !important;
+}
+.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
+  filter:sepia(1) saturate(2.1) brightness(1.55) !important;
+}
+.home-route .bottom-nav button.active:not(.nav-card) small{
+  color:#efcc67 !important;
+}
+.home-route .bottom-nav .nav-card{
+  width:82px !important;
+  max-width:82px !important;
+  min-height:72px !important;
+  height:72px !important;
+  gap:4px !important;
+  transform:none !important;
+}
+.home-route .bottom-nav .nav-card .nav-icon-shell{
+  width:66px !important;
+  height:66px !important;
+  margin-top:-10px !important;
+  border:4px solid #070a0f !important;
+  border-radius:50% !important;
+  background:linear-gradient(145deg,#f6df9a 0%,#e2b24b 72%,#a36c28 100%) !important;
+  box-shadow:0 0 22px rgba(229,183,83,.30), 0 8px 26px rgba(229,183,83,.18), inset 0 1px 0 rgba(255,255,255,.52) !important;
+}
+.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{
+  width:29px !important;
+  height:29px !important;
+  filter:brightness(.18) !important;
+}
+.home-route .bottom-nav .nav-card small{
+  color:#f0cb61 !important;
+  font-size:10px !important;
+}
+
+@media (max-width:390px){
+  .home-live-script{
+    width:96px !important;
+    margin-right:8px !important;
+    transform:rotate(-8deg) translateX(-6px) !important;
+  }
+  .home-live-steps{
+    min-height:36px !important;
+    height:36px !important;
+    padding:8px 10px !important;
+    gap:5px !important;
+  }
+  .home-live-stars img{width:19px !important;height:19px !important;}
+  .home-live-cups img{width:19px !important;height:15px !important;}
+  .home-route .bottom-nav button:not(.nav-card){width:68px !important;max-width:68px !important;}
+  .home-route .bottom-nav .nav-card{width:78px !important;max-width:78px !important;}
+  .home-route .bottom-nav .nav-card .nav-icon-shell{width:62px !important;height:62px !important;}
+}
