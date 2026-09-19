@@ -524,7 +524,7 @@ function homeScreen() {
             <h1>Вітаємо, ${safeHtml(c.name || 'Denys')}!</h1>
             <p>Кожна покупка наближає<br>до нових можливостей!</p>
           </div>
-          <div class="home-live-script">Більше<br>ніж покупки ♡</div>
+          <div class="home-live-script">Більше<br>ніж покупки<br>♡</div>
           <button type="button" class="home-live-bell" data-toggle-notifications aria-label="Повідомлення">
             ${appIcon(icons.notification)}
             ${unread ? `<span class="home-live-bell-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
@@ -538,7 +538,7 @@ function homeScreen() {
       <button class="home-live-balance" type="button" data-route="card">
         <div class="home-live-balance-copy">
           <span>Ваш баланс</span>
-          <strong>${fmtStars(c.stars_balance)} <b>★</b></strong>
+          <strong>${fmtStars(c.stars_balance)} <b><img src="/assets/design/home-balance-value-star.svg" alt="" aria-hidden="true"></b></strong>
           <small>Більше зірок — більше можливостей!</small>
         </div>
         <img class="home-live-balance-star" src="/assets/design/home-brand-star.svg" alt="" aria-hidden="true">
