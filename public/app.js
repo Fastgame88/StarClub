@@ -524,7 +524,7 @@ function homeScreen() {
             <h1>Вітаємо, ${safeHtml(c.name || 'Denys')}!</h1>
             <p>Кожна покупка наближає<br>до нових можливостей!</p>
           </div>
-          <div class="home-live-script">Більше<br>ніж покупки<br>♡</div>
+          <div class="home-live-script"><span>Більше</span><span>ніж покупки</span><span>♡</span></div>
           <button type="button" class="home-live-bell" data-toggle-notifications aria-label="Повідомлення">
             ${appIcon(icons.notification)}
             ${unread ? `<span class="home-live-bell-badge">${unread > 9 ? '9+' : unread}</span>` : ''}
@@ -546,7 +546,7 @@ function homeScreen() {
       </button>
 
       <button class="home-live-program" type="button" data-route="progress">
-        <span class="home-live-program-icon"><img src="/assets/icons/home-trophy.svg" alt="" aria-hidden="true"></span>
+        <span class="home-live-program-icon"><img src="/assets/icons/program-trophy-card.png" alt="" aria-hidden="true"></span>
         <div class="home-live-program-main">
           <div class="home-live-program-title">${safeHtml(challenge.name || '7 днів зі Star')}</div>
           <div class="home-live-program-subtitle">Ще ${challengeLeft} днів до бонусу ${fmtStars(challengeReward)} ★</div>
@@ -556,7 +556,7 @@ function homeScreen() {
       </button>
 
       <button class="home-live-program" type="button" data-route="progress">
-        <span class="home-live-program-icon"><img src="/assets/icons/home-coffee.svg" alt="" aria-hidden="true"></span>
+        <span class="home-live-program-icon"><img src="/assets/icons/program-coffee-card.png" alt="" aria-hidden="true"></span>
         <div class="home-live-program-main">
           <div class="home-live-program-title">${safeHtml(stamp.name || '10-та кава')}</div>
           <div class="home-live-program-subtitle">Ще ${stampLeft} до безкоштовного коду</div>

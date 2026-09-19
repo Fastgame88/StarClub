@@ -1493,3 +1493,126 @@ label.check span{min-width:0}
   .home-route .bottom-nav button.active:not(.nav-card){width:74px !important;max-width:74px !important;}
   .home-route .bottom-nav .nav-card .nav-icon-shell{width:64px !important;height:64px !important;}
 }
+
+/* v39 exacter home adjustments */
+.home-live-script{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:flex-start !important;
+  justify-content:center !important;
+  width:108px !important;
+  gap:0 !important;
+  line-height:.86 !important;
+  text-align:left !important;
+  white-space:nowrap !important;
+  transform:rotate(-8deg) translateY(0) !important;
+  margin-right:8px !important;
+}
+.home-live-script span{display:block;}
+.home-live-script span:last-child{align-self:flex-end; margin-top:2px;}
+
+.home-live-balance{
+  background:url('/assets/design/home-balance-bg-ref.png') center/cover no-repeat !important;
+}
+.home-live-balance-copy strong b img{width:46px !important; height:46px !important;}
+.home-live-balance i{
+  right:16px !important;
+  bottom:16px !important;
+  width:34px !important;
+  height:34px !important;
+  font-size:28px !important;
+}
+
+.home-live-program{
+  min-height:104px !important;
+  height:104px !important;
+  padding:10px 14px !important;
+  grid-template-columns:72px minmax(0,1fr) !important;
+  gap:14px !important;
+}
+.home-live-program-icon{
+  width:72px !important;
+  height:72px !important;
+  border:none !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  border-radius:18px !important;
+  overflow:hidden !important;
+}
+.home-live-program-icon img{
+  width:72px !important;
+  height:72px !important;
+  object-fit:contain !important;
+  display:block !important;
+}
+.home-live-program-main{padding-right:56px !important;}
+.home-live-program-title{font-size:16px !important; margin-bottom:4px !important;}
+.home-live-program-subtitle{font-size:11px !important; margin-bottom:8px !important;}
+.home-live-program-count{top:12px !important; right:12px !important; min-width:52px !important; height:34px !important; font-size:14px !important;}
+.home-live-steps{
+  width:100% !important;
+  max-width:294px !important;
+  min-height:34px !important;
+  height:34px !important;
+  padding:10px 12px !important;
+  gap:9px !important;
+  border-radius:999px !important;
+  background:rgba(7,11,18,.92) !important;
+  box-sizing:border-box !important;
+  align-items:center !important;
+}
+.home-live-stars img{width:23px !important;height:22px !important;}
+.home-live-cups img{width:23px !important;height:18px !important;}
+
+/* restore old-style bottom nav with gold active and glowing center */
+.home-route .bottom-nav{
+  min-height:94px !important;
+  height:94px !important;
+  padding:9px 10px calc(9px + var(--safe-bottom)) !important;
+  gap:6px !important;
+  background:rgba(6,9,14,.98) !important;
+}
+.home-route .bottom-nav button{
+  min-height:70px !important;
+  height:70px !important;
+  max-width:72px !important;
+  border-radius:18px !important;
+  padding:4px 2px 2px !important;
+  gap:4px !important;
+  color:#ffffff !important;
+}
+.home-route .bottom-nav button small{font-size:10px !important;color:#fff !important;}
+.home-route .bottom-nav .nav-icon-shell{width:30px !important;height:30px !important;}
+.home-route .bottom-nav .nav-icon-shell .app-icon{width:23px !important;height:23px !important;filter:brightness(0) invert(1) !important;}
+.home-route .bottom-nav button.active:not(.nav-card){
+  width:72px !important;
+  max-width:72px !important;
+  background:linear-gradient(145deg,#9b6a1e,#664312 36%,#31200f 100%) !important;
+  box-shadow:inset 0 0 0 1px rgba(237,189,82,.78), 0 8px 20px rgba(0,0,0,.22) !important;
+}
+.home-route .bottom-nav button.active:not(.nav-card) small{color:#f4d36f !important;}
+.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{filter:sepia(1) saturate(2.3) hue-rotate(-5deg) brightness(1.55) !important;}
+.home-route .bottom-nav .nav-card{transform:translateY(-10px) !important;max-width:82px !important;}
+.home-route .bottom-nav .nav-card .nav-icon-shell{
+  width:66px !important;
+  height:66px !important;
+  margin-top:-16px !important;
+  border:4px solid #070a0f !important;
+  border-radius:50% !important;
+  background:linear-gradient(145deg,#f6df9a 0%,#e2b24b 72%,#a36c28 100%) !important;
+  box-shadow:0 0 24px rgba(229,183,83,.28), 0 8px 26px rgba(229,183,83,.2), inset 0 1px 0 rgba(255,255,255,.52) !important;
+}
+.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{width:29px !important;height:29px !important;filter:brightness(.18) !important;}
+.home-route .bottom-nav .nav-card small{color:#f0cb61 !important;}
+
+@media (max-width:390px){
+  .home-live-script{width:96px !important;font-size:18px !important;}
+  .home-live-program{grid-template-columns:66px minmax(0,1fr) !important;min-height:100px !important;height:100px !important;}
+  .home-live-program-icon,.home-live-program-icon img{width:66px !important;height:66px !important;}
+  .home-live-steps{max-width:258px !important;padding:9px 10px !important;gap:7px !important;}
+  .home-live-stars img{width:20px !important;height:20px !important;}
+  .home-live-cups img{width:20px !important;height:16px !important;}
+  .home-route .bottom-nav{min-height:90px !important;height:90px !important;}
+  .home-route .bottom-nav button{min-height:66px !important;height:66px !important;max-width:68px !important;}
+  .home-route .bottom-nav .nav-card .nav-icon-shell{width:62px !important;height:62px !important;}
+}
