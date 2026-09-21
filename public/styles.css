@@ -2029,3 +2029,9 @@ label.check span{min-width:0}
 @media(max-width:360px){
   .offers-heading{grid-template-columns:67px minmax(0,1fr) 67px;}
 }
+
+/* Align the title with the raised Back label without changing layout gaps. */
+.offers-heading-copy{transform:translateY(-12.4375px);}
+@media(max-width:360px){
+  .offers-heading-copy{transform:translateY(-13.375px);}
+}
