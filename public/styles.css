@@ -1987,3 +1987,45 @@ label.check span{min-width:0}
   .offers-design .promo-feed-description{font-size:11px;}
   .offers-design .offer-compact-prices strong{font-size:20px;}
 }
+
+/* Offers: centered heading, raised controls, fading gold edges and larger labels. */
+.offers-heading{grid-template-columns:82px minmax(0,1fr) 82px;}
+.offers-heading-copy{width:max-content;justify-self:center;}
+.offers-heading-copy h2{white-space:nowrap;}
+.offers-heading>.back-button,
+.offers-heading>.notification-wrap{transform:translateY(-8px);}
+.offers-heading>.notification-wrap{justify-self:end;}
+.offers-design .offer-compact-card{
+  border-color:transparent !important;
+  box-shadow:0 6px 15px #0004;
+}
+.offers-design .offer-compact-card::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:4;
+  border-radius:inherit;
+  padding:1px;
+  pointer-events:none;
+  background:conic-gradient(from 5deg,
+    rgba(215,172,78,.65) 0deg,
+    rgba(147,110,44,.2) 48deg,
+    transparent 78deg,
+    rgba(178,135,53,.35) 120deg,
+    rgba(217,175,84,.7) 153deg,
+    transparent 190deg,
+    transparent 218deg,
+    rgba(171,124,41,.3) 250deg,
+    rgba(240,197,102,.85) 292deg,
+    rgba(161,119,39,.25) 335deg,
+    rgba(215,172,78,.65) 360deg);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  mask-composite:exclude;
+}
+.offers-design .offer-compact-meta>span{font-size:10.5px;}
+.offers-design .offer-compact-prices s{font-size:12px;}
+@media(max-width:360px){
+  .offers-heading{grid-template-columns:67px minmax(0,1fr) 67px;}
+}
