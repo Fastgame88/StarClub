@@ -812,32 +812,53 @@ async function cardScreen() {
   `;
 }
 
+function rewardReferenceImage(reward) {
+  const name = String(reward.name || '').toLowerCase();
+  const preset = String(reward.image_url || '');
+  let image = '';
+  if (/buondi|буонді|еспресо|espresso/.test(name) || preset === '/assets/coffee.svg') image = 'espresso';
+  else if (/круасан|croissant/.test(name)) image = 'croissant';
+  else if (/snickers|снікерс|сникерс/.test(name)) image = 'snickers';
+  else if (/моршин|morshyn/.test(name) || preset === '/assets/water.svg') image = 'water';
+  else if (/lactel|лактель|лактел/.test(name)) image = 'milk';
+  return image ? `/assets/design/rewards/${image}.webp` : (reward.image_url || '/assets/star.svg');
+}
+
 function rewardsScreen() {
   const data = state.data.rewards;
   const items = data?.items || [];
   const active = (data?.qrs || []).filter((q) => q.status === 'reserved');
+  const query = String(state.data.rewardSearch || '').trim().toLocaleLowerCase('uk');
+  const matches = (r) => `${r.name || ''} ${r.conditions || ''}`.toLocaleLowerCase('uk').includes(query);
   return `
-    ${header('За зірки', true)}
-    <div class="stack">
-      <section class="card gold-border spark">
-        <b>Оберіть улюблені нагороди за зірки</b>
+    <section class="rewards-design">
+      <header class="rewards-heading">
+        <button class="back-button" type="button" data-back="1">${appIcon('arrow-left')}<span>Назад</span></button>
+        <div><h2>За зірки</h2><p>Обирайте, отримуйте, насолоджуйтесь</p></div>
+        ${notificationButton()}
+      </header>
+      <img class="rewards-reference-banner" src="/assets/design/rewards/banner.webp" alt="Обирайте улюблені нагороди за зірки. Більше покупок — більше можливостей. Вигода у кожній покупці!">
+      <label class="rewards-search">${appIcon('search')}<input type="search" data-rewards-search value="${safeHtml(state.data.rewardSearch || '')}" placeholder="Пошук нагород..." aria-label="Пошук нагород" autocomplete="off"></label>
+      <div class="rewards-product-list">
+        ${items.map((r) => `
+          <article class="rewards-product ${matches(r) ? '' : 'hidden'}" data-reward-search-text="${safeHtml(`${r.name || ''} ${r.conditions || ''}`.toLocaleLowerCase('uk'))}">
+            <img class="rewards-product-image" src="${safeHtml(rewardReferenceImage(r))}" alt="${safeHtml(r.name)}" onerror="this.onerror=null;this.src='/assets/star.svg'">
+            <div class="rewards-product-copy">
+              <h3>${safeHtml(r.name)}</h3>
+              <div class="rewards-product-price">${fmtStars(r.stars_price)} <span>★</span></div>
+              <p>${safeHtml(r.conditions || '')}</p>
+            </div>
+            <button class="rewards-get" type="button" data-create-reward="${safeHtml(r.id)}" ${r.can_get ? '' : 'disabled'}>${r.can_get ? 'Отримати' : 'Недостатньо'}</button>
+          </article>
+        `).join('')}
+        <p class="rewards-search-empty ${items.some(matches) ? 'hidden' : ''}" data-rewards-empty>${items.length ? 'Нагород за вашим запитом не знайдено' : 'Наразі немає доступних нагород'}</p>
+      </div>
+      <div class="stack rewards-code-access">
         <p class="small">Доступно: ${fmtStars(data?.available_stars || 0)} ★</p>
-      </section>
-      ${active.length ? `<section class="card gold-border"><b>Активні коди</b><p class="small">У вас є активний QR-код. Його можна повторно відкрити.</p>${active.map((q)=>`<button class="reward-code-row" data-open-reward-code="${q.token}"><span>${q.reward.name}</span><b>${q.manual_code}</b></button>`).join('')}</section>` : ''}
-      <button class="card gold-border reward-codes-link" data-route="rewardCodes"><b>Мої QR-коди</b><p class="small">Активні коди та історія використання</p></button>
-      ${items.map((r) => `
-        <article class="product">
-          <img src="${r.image_url}" alt="${r.name}">
-          <div>
-            <h3>${r.name}</h3>
-            <div class="price">${fmtStars(r.stars_price)}★</div>
-            <p class="small" style="color:#555">${r.conditions || ''}</p>
-            <button class="mini-btn" data-create-reward="${r.id}" ${r.can_get ? '' : 'disabled'}>${r.can_get ? 'Отримати' : 'Недостатньо'}</button>
-          </div>
-        </article>
-      `).join('')}
-    </div>
-  `;
+        ${active.length ? `<section class="card gold-border"><b>Активні коди</b><p class="small">У вас є активний QR-код. Його можна повторно відкрити.</p>${active.map((q)=>`<button class="reward-code-row" data-open-reward-code="${safeHtml(q.token)}"><span>${safeHtml(q.reward.name)}</span><b>${safeHtml(q.manual_code)}</b></button>`).join('')}</section>` : ''}
+        <button class="card gold-border reward-codes-link" data-route="rewardCodes"><b>Мої QR-коди</b><p class="small">Активні коди та історія використання</p></button>
+      </div>
+    </section>`;
 }
 
 function rewardCodesScreen() {
@@ -1227,6 +1248,7 @@ async function render() {
   renderNav();
   document.body.classList.toggle('home-route', state.route === 'home' && Boolean(state.client?.registered));
   document.body.classList.toggle('offers-route', state.route === 'offers' && Boolean(state.client?.registered));
+  document.body.classList.toggle('rewards-route', state.route === 'rewards' && Boolean(state.client?.registered));
   if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
     $app.innerHTML = startScreen();
     bindEvents();
@@ -1320,6 +1342,19 @@ function bindNotificationEvents() {
 }
 
 function bindEvents() {
+  const rewardSearch = document.querySelector('[data-rewards-search]');
+  if (rewardSearch) rewardSearch.oninput = () => {
+    state.data.rewardSearch = rewardSearch.value;
+    const query = rewardSearch.value.trim().toLocaleLowerCase('uk');
+    let visibleCount = 0;
+    document.querySelectorAll('[data-reward-search-text]').forEach((card) => {
+      const matches = card.dataset.rewardSearchText.includes(query);
+      card.classList.toggle('hidden', !matches);
+      if (matches) visibleCount++;
+    });
+    document.querySelector('[data-rewards-empty]')?.classList.toggle('hidden', visibleCount > 0);
+  }
+
   bindHomeBannerCarousel();
   bindNotificationEvents();
   document.querySelectorAll('[data-route]').forEach((el) => {
