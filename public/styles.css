@@ -2157,3 +2157,496 @@ label.check span{min-width:0}
   .rewards-product h3{font-size:11px;}
   .rewards-product-price,.rewards-product-price>span{font-size:20px;}
 }
+
+/* Star Club — "Моя карта" / barcode reference screens (2026-09-21). */
+.card-route .app-shell{
+  background:#05090d;
+}
+.card-route .screen{
+  padding:10px 18px calc(112px + var(--safe-bottom));
+  background:
+    radial-gradient(ellipse at 82% 12%,rgba(104,76,31,.13),transparent 28%),
+    linear-gradient(180deg,#05090d 0%,#05090d 100%);
+}
+.star-card-screen,
+.star-cashier-overlay{
+  font-family:"Manrope",Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  color:#f7f7f5;
+}
+.star-card-screen{display:grid;gap:13px;}
+.star-card-heading{
+  display:grid;
+  grid-template-columns:94px minmax(0,1fr) 94px;
+  align-items:center;
+  gap:4px;
+  min-height:58px;
+  margin:0 1px 2px;
+}
+.star-card-back{
+  width:94px;
+  min-height:44px;
+  border-radius:16px;
+  padding:8px 12px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  border:1px solid rgba(213,168,77,.52);
+  background:linear-gradient(120deg,rgba(47,40,24,.7),rgba(7,11,15,.96) 68%);
+  box-shadow:inset 0 0 8px rgba(224,178,82,.1),0 0 14px rgba(194,135,31,.08);
+  color:#f4f4f1;
+  font-size:14px;
+  line-height:1;
+  font-weight:800;
+}
+.star-card-back .app-icon{
+  width:21px;
+  height:21px;
+  filter:sepia(1) saturate(4) hue-rotate(350deg) brightness(1.35);
+}
+.star-card-heading-copy{text-align:center;min-width:0;align-self:center;}
+.star-card-heading-copy h2{
+  margin:0;
+  color:#f7f7f6;
+  font-size:22px;
+  line-height:1.08;
+  letter-spacing:-.65px;
+  font-weight:850;
+  white-space:nowrap;
+}
+.star-card-heading-copy p{
+  margin:5px -20px 0;
+  color:#afb3bb;
+  font-size:10.5px;
+  line-height:1.1;
+  font-weight:500;
+  white-space:nowrap;
+}
+.star-card-heading>.notification-wrap{justify-self:end;position:relative;}
+.star-card-heading .notification-btn{
+  width:46px;
+  height:46px;
+  border-radius:16px;
+  border:1px solid rgba(215,171,82,.62);
+  background:linear-gradient(135deg,rgba(55,44,23,.72),rgba(8,12,15,.98) 72%);
+  box-shadow:inset 0 0 8px rgba(236,190,90,.11),0 0 12px rgba(220,162,52,.08);
+}
+.star-card-heading .notification-btn>.app-icon{
+  width:25px;
+  height:25px;
+  filter:brightness(0) invert(1);
+}
+.star-card-heading .notification-badge{
+  width:22px;
+  height:22px;
+  min-width:22px;
+  right:-6px;
+  top:-6px;
+  font-size:11px;
+  background:#f03747;
+  color:#fff;
+  border:0;
+  box-shadow:0 2px 8px rgba(240,55,71,.28);
+}
+
+.star-member-card{
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  width:100%;
+  border:1px solid rgba(216,168,66,.73);
+  border-radius:21px;
+  background:
+    radial-gradient(ellipse at 79% 15%,rgba(113,77,22,.27),transparent 39%),
+    linear-gradient(120deg,#101419 0%,#080c10 48%,#11120e 100%);
+  box-shadow:inset 0 0 18px rgba(221,171,66,.08),0 4px 12px rgba(0,0,0,.23);
+}
+.star-member-card-main{aspect-ratio:544 / 295;min-height:0;}
+.star-member-art{
+  position:absolute;
+  z-index:0;
+  top:0;
+  right:0;
+  width:61.22%;
+  height:100%;
+  object-fit:fill;
+  pointer-events:none;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.16) 8%,#000 24%,#000 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.16) 8%,#000 24%,#000 100%);
+}
+.star-member-left{
+  position:absolute;
+  z-index:2;
+  inset:10% auto 8% 5.2%;
+  width:48%;
+}
+.star-club-emblem{
+  width:68px;
+  height:68px;
+  margin-left:42px;
+  border-radius:22px;
+  display:grid;
+  place-items:center;
+  color:#fff;
+  border:1px solid rgba(204,151,47,.68);
+  background:linear-gradient(145deg,#11161a,#05080b 76%);
+  box-shadow:inset 0 0 8px rgba(255,255,255,.05),0 0 16px rgba(206,147,32,.08);
+}
+.star-club-emblem-star{
+  display:block;
+  transform:translateY(-1px);
+  font-size:47px;
+  line-height:1;
+  color:#f8f9f8;
+  text-shadow:0 0 10px rgba(255,255,255,.05);
+}
+.star-club-wordmark{
+  margin:9px 0 0 0;
+  color:#e7c873;
+  font-size:15px;
+  font-weight:500;
+  letter-spacing:5px;
+  white-space:nowrap;
+}
+.star-member-name{
+  margin-top:22px;
+  color:#f5f5f5;
+  font-size:23px;
+  line-height:1;
+  font-weight:850;
+  letter-spacing:-.45px;
+}
+.star-member-number-label{
+  margin-top:16px;
+  color:#aeb3bb;
+  font-size:12px;
+  line-height:1.15;
+}
+.star-member-number{
+  margin-top:3px;
+  color:#e7c660;
+  font-size:15.5px;
+  line-height:1.1;
+  font-weight:550;
+  white-space:nowrap;
+  letter-spacing:.15px;
+}
+
+.star-balance-card{
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  width:100%;
+  aspect-ratio:544 / 270;
+  border-radius:22px;
+  padding:20px 20px 14px;
+  border:1px solid rgba(216,168,66,.7);
+  background:linear-gradient(118deg,#13181e,#090d11 65%,#13130f);
+  box-shadow:inset 0 0 18px rgba(221,171,66,.06),0 4px 12px rgba(0,0,0,.2);
+}
+.star-balance-art{
+  position:absolute;
+  z-index:0;
+  top:0;
+  right:0;
+  width:29.05%;
+  height:100%;
+  object-fit:fill;
+  pointer-events:none;
+  opacity:.96;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.2) 8%,#000 34%,#000 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.2) 8%,#000 34%,#000 100%);
+}
+.star-balance-card>*:not(.star-balance-art){position:relative;z-index:2;}
+.star-balance-label{color:#b8bdc6;font-size:13px;font-weight:500;line-height:1.1;}
+.star-balance-value{display:flex;align-items:center;gap:9px;margin-top:7px;line-height:.96;}
+.star-balance-value strong{font-size:47px;font-weight:850;letter-spacing:-2px;color:#f7f7f6;}
+.star-balance-value span{font-size:42px;color:#efc55d;transform:translateY(-1px);}
+.star-balance-note{display:flex;align-items:center;gap:9px;margin-top:9px;color:#b8bec7;font-size:11px;line-height:1.15;}
+.star-balance-note .app-icon{width:18px;height:18px;filter:sepia(1) saturate(3) brightness(1.25);}
+.star-cashier-button{
+  position:absolute !important;
+  left:18px;
+  right:18px;
+  bottom:13px;
+  width:calc(100% - 36px);
+  min-height:50px;
+  border-radius:15px;
+  display:grid;
+  grid-template-columns:28px 1fr 20px;
+  align-items:center;
+  gap:8px;
+  padding:8px 14px;
+  background:linear-gradient(106deg,#f7d66d,#e3ad42 68%,#d59830);
+  color:#19150c;
+  font-size:16px;
+  font-weight:850;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.4),0 4px 12px rgba(198,135,32,.18);
+}
+.star-cashier-button .app-icon{width:24px;height:24px;filter:brightness(.18);}
+.star-cashier-button b{font-size:36px;font-weight:350;line-height:.5;transform:translateY(-2px);}
+.star-promo-card-image{
+  display:block;
+  width:100%;
+  height:auto;
+  aspect-ratio:544 / 278;
+  border-radius:21px;
+  object-fit:fill;
+  box-shadow:0 4px 12px rgba(0,0,0,.2);
+}
+
+/* Full-screen cashier/barcode view. The app bottom navigation remains the real navigation. */
+.star-cashier-overlay{
+  position:fixed;
+  z-index:25;
+  top:0;
+  left:50%;
+  transform:translateX(-50%);
+  width:min(470px,100%);
+  bottom:calc(88px + var(--safe-bottom));
+  background:#05090d;
+  overflow:hidden;
+}
+.star-cashier-scroll{
+  height:100%;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding:10px 18px 14px;
+  overscroll-behavior:contain;
+  scrollbar-width:none;
+}
+.star-cashier-scroll::-webkit-scrollbar{display:none;}
+.star-cashier-heading{margin-bottom:11px;}
+.star-cashier-heading .star-card-heading-copy p{font-size:10.5px;margin-left:-8px;margin-right:-8px;}
+.star-member-card-cashier{
+  aspect-ratio:544 / 291;
+  margin-bottom:-1px;
+  border-radius:21px;
+}
+.star-member-art-cashier{
+  width:36.40%;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.1) 4%,#000 27%,#000 100%);
+  mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.1) 4%,#000 27%,#000 100%);
+}
+.star-cashier-brand{
+  position:absolute;
+  z-index:2;
+  top:12%;
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+.star-cashier-brand .star-club-emblem{
+  width:72px;
+  height:72px;
+  margin:0;
+  border-radius:24px;
+}
+.star-cashier-brand .star-club-emblem-star{font-size:48px;}
+.star-cashier-brand .star-club-wordmark{margin-top:8px;font-size:14px;letter-spacing:4px;}
+.star-cashier-member-copy{
+  position:absolute;
+  z-index:2;
+  left:5.5%;
+  bottom:9%;
+}
+.star-cashier-member-copy .star-member-name{margin:0 0 15px;font-size:22px;}
+.star-cashier-member-copy .star-member-number-label{margin:0;font-size:12px;}
+.star-cashier-member-copy .star-member-number{font-size:15px;}
+.star-mini-qr{
+  position:absolute;
+  z-index:3;
+  right:6.5%;
+  bottom:8.5%;
+  width:47px;
+  height:47px;
+  display:grid;
+  place-items:center;
+  border-radius:14px;
+  border:1px solid rgba(203,156,65,.45);
+  background:linear-gradient(145deg,#151714,#090c0f);
+  box-shadow:inset 0 0 6px rgba(218,170,73,.08);
+}
+.star-mini-qr .app-icon{width:26px;height:26px;filter:sepia(1) saturate(3) brightness(1.25);}
+
+.star-barcode-sheet{
+  position:relative;
+  z-index:5;
+  margin:-1px -12px 0;
+  padding:58px 27px 28px;
+  min-height:500px;
+  border:1px solid rgba(218,170,72,.76);
+  border-radius:33px 33px 23px 23px;
+  background:
+    radial-gradient(ellipse at 92% 17%,rgba(112,80,29,.12),transparent 33%),
+    url('/assets/design/gold-waves.svg') right top 22% / 55% 44% no-repeat,
+    linear-gradient(116deg,#12171c,#080c0f 66%,#11120e);
+  box-shadow:0 -5px 20px rgba(217,166,56,.09),inset 0 0 16px rgba(232,190,92,.055);
+}
+.star-sheet-handle{
+  position:absolute;
+  top:18px;
+  left:50%;
+  transform:translateX(-50%);
+  width:55px;
+  height:5px;
+  border-radius:10px;
+  background:linear-gradient(90deg,#b67f25,#f4c85f,#d69b2f);
+  box-shadow:0 0 8px rgba(225,173,62,.2);
+}
+.star-barcode-sheet>h2{
+  margin:0;
+  color:#f7f7f5;
+  font-size:27px;
+  line-height:1.1;
+  letter-spacing:-.75px;
+  font-weight:850;
+}
+.star-barcode-sheet>p{
+  margin:17px 0 21px;
+  color:#b6bac2;
+  font-size:16px;
+  line-height:1.2;
+  font-weight:500;
+}
+.star-barcode-box{
+  width:100%;
+  min-height:137px;
+  padding:20px 28px 13px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  border-radius:16px;
+  background:#fff;
+  color:#111;
+  box-shadow:0 1px 0 rgba(255,255,255,.7),0 3px 10px rgba(0,0,0,.16);
+}
+.star-barcode-box img{
+  display:block;
+  width:100%;
+  max-width:330px;
+  height:83px;
+  object-fit:fill;
+}
+.star-barcode-box b{
+  display:block;
+  margin-top:1px;
+  color:#151515;
+  font-family:Arial,sans-serif;
+  font-size:17px;
+  line-height:1;
+  font-weight:500;
+  letter-spacing:2.5px;
+}
+.star-card-number-box{
+  width:100%;
+  min-height:92px;
+  margin-top:22px;
+  padding:10px 12px;
+  display:grid;
+  grid-template-columns:49px minmax(0,1fr) 49px;
+  align-items:center;
+  gap:12px;
+  border-radius:17px;
+  border:1px dashed rgba(224,175,75,.43);
+  background:linear-gradient(120deg,rgba(27,29,25,.75),rgba(8,12,15,.9));
+}
+.star-card-number-box>div{min-width:0;}
+.star-card-number-box span{display:block;color:#aeb2b8;font-size:12px;line-height:1.1;margin-bottom:5px;}
+.star-card-number-box strong{display:block;color:#ebc55e;font-size:20px;line-height:1.1;font-weight:850;letter-spacing:.45px;white-space:nowrap;}
+.star-copy-button{
+  width:49px;
+  height:49px;
+  border-radius:14px;
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(198,151,62,.34);
+  background:linear-gradient(145deg,#191b18,#090c0f);
+}
+.star-copy-button .app-icon{width:25px;height:25px;filter:sepia(1) saturate(3) brightness(1.33);}
+.star-done-button{
+  width:100%;
+  min-height:58px;
+  margin-top:18px;
+  border-radius:16px;
+  background:linear-gradient(105deg,#f7d76f,#e5ae42 66%,#d79b32);
+  color:#15130e;
+  font-size:19px;
+  font-weight:850;
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.4),0 5px 16px rgba(198,135,32,.2);
+}
+.cashier-open{overflow:hidden;}
+
+@media(max-width:420px){
+  .card-route .screen{padding-left:15px;padding-right:15px;}
+  .star-card-heading{grid-template-columns:82px minmax(0,1fr) 82px;}
+  .star-card-back{width:82px;min-height:40px;padding:7px 9px;font-size:12px;gap:6px;}
+  .star-card-back .app-icon{width:18px;height:18px;}
+  .star-card-heading-copy h2{font-size:20px;}
+  .star-card-heading-copy p{font-size:9.5px;}
+  .star-card-heading .notification-btn{width:42px;height:42px;border-radius:14px;}
+  .star-club-emblem{width:61px;height:61px;margin-left:34px;border-radius:19px;}
+  .star-club-emblem-star{font-size:42px;}
+  .star-club-wordmark{font-size:13px;letter-spacing:4px;margin-top:7px;}
+  .star-member-name{font-size:21px;margin-top:19px;}
+  .star-member-number-label{font-size:11px;margin-top:13px;}
+  .star-member-number{font-size:14px;}
+  .star-balance-card{padding:17px 17px 12px;}
+  .star-balance-label{font-size:12px;}
+  .star-balance-value strong{font-size:43px;}
+  .star-balance-value span{font-size:39px;}
+  .star-balance-note{font-size:10.5px;margin-top:7px;}
+  .star-cashier-button{left:15px;right:15px;width:calc(100% - 30px);min-height:47px;bottom:11px;font-size:15px;}
+  .star-cashier-scroll{padding-left:15px;padding-right:15px;}
+  .star-cashier-brand .star-club-emblem{width:66px;height:66px;}
+  .star-cashier-brand .star-club-emblem-star{font-size:44px;}
+  .star-barcode-sheet{margin-left:-10px;margin-right:-10px;padding:53px 23px 24px;}
+  .star-barcode-sheet>h2{font-size:25px;}
+  .star-barcode-sheet>p{font-size:15px;margin-top:15px;margin-bottom:18px;}
+  .star-barcode-box{min-height:127px;padding:18px 24px 12px;}
+  .star-card-number-box{grid-template-columns:45px minmax(0,1fr) 45px;gap:10px;}
+  .star-copy-button{width:45px;height:45px;}
+  .star-card-number-box strong{font-size:18px;}
+}
+@media(max-width:360px){
+  .star-card-screen{gap:10px;}
+  .star-card-heading{grid-template-columns:70px minmax(0,1fr) 70px;}
+  .star-card-back{width:70px;font-size:10px;padding:6px;}
+  .star-card-heading-copy h2{font-size:18px;}
+  .star-card-heading-copy p{font-size:8px;}
+  .star-card-heading .notification-btn{width:38px;height:38px;}
+  .star-club-emblem{width:54px;height:54px;margin-left:28px;border-radius:17px;}
+  .star-club-emblem-star{font-size:37px;}
+  .star-club-wordmark{font-size:11px;letter-spacing:3.4px;}
+  .star-member-name{font-size:18px;margin-top:15px;}
+  .star-member-number-label{font-size:10px;margin-top:10px;}
+  .star-member-number{font-size:12px;}
+  .star-balance-card{padding:14px 14px 10px;}
+  .star-balance-value{margin-top:4px;}
+  .star-balance-value strong{font-size:37px;}
+  .star-balance-value span{font-size:34px;}
+  .star-balance-note{font-size:9px;gap:6px;margin-top:5px;}
+  .star-balance-note .app-icon{width:15px;height:15px;}
+  .star-cashier-button{min-height:42px;bottom:9px;font-size:13px;grid-template-columns:22px 1fr 16px;}
+  .star-cashier-button .app-icon{width:20px;height:20px;}
+  .star-cashier-overlay{bottom:calc(88px + var(--safe-bottom));}
+  .star-cashier-brand .star-club-emblem{width:58px;height:58px;border-radius:19px;}
+  .star-cashier-brand .star-club-emblem-star{font-size:39px;}
+  .star-cashier-brand .star-club-wordmark{font-size:11px;letter-spacing:3.6px;}
+  .star-cashier-member-copy .star-member-name{font-size:18px;margin-bottom:12px;}
+  .star-mini-qr{width:42px;height:42px;}
+  .star-barcode-sheet{padding:49px 18px 20px;}
+  .star-barcode-sheet>h2{font-size:23px;}
+  .star-barcode-sheet>p{font-size:13px;}
+  .star-barcode-box{min-height:113px;padding:15px 18px 10px;}
+  .star-barcode-box img{height:70px;}
+  .star-barcode-box b{font-size:15px;}
+  .star-card-number-box{min-height:80px;margin-top:17px;grid-template-columns:40px minmax(0,1fr) 40px;padding:8px;}
+  .star-copy-button{width:40px;height:40px;}
+  .star-copy-button .app-icon{width:22px;height:22px;}
+  .star-card-number-box strong{font-size:16px;}
+  .star-done-button{min-height:50px;font-size:17px;margin-top:15px;}
+}

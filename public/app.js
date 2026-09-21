@@ -792,23 +792,41 @@ function startLiveRefresh() {
 async function cardScreen() {
   const data = await api('/api/client/card');
   const card = data.card;
+  const displayNumber = safeHtml(card.card_number || '');
   return `
-    ${header('Моя карта', true)}
-    <div class="stack">
-      <section class="card-visual">
-        <div class="logo-mark" style="width:62px;height:62px;margin:0 auto 8px"><div class="logo-star" style="width:34px;height:34px"></div></div>
-        <div class="club-logo">STAR CLUB</div>
-        <h3>${card.name}</h3>
-        <p class="small">№ картки<br><span class="gold">${card.card_number}</span></p>
-      </section>
-      <section class="card gold-border card-balance-actions">
-        <div>
-          <div class="small">Актуальний баланс</div>
-          <div class="balance" style="font-size:34px">${fmtStars(card.stars_balance)} <span class="star">★</span></div>
+    <section class="star-card-screen">
+      <header class="star-card-heading">
+        <button class="star-card-back" type="button" data-back="1">${appIcon('arrow-left')}<span>Назад</span></button>
+        <div class="star-card-heading-copy">
+          <h2>Моя карта</h2>
+          <p>Більше покупок — більше можливостей</p>
         </div>
-        <button class="btn" data-show-cashier data-card-number="${card.card_number}">Показати касиру</button>
+        ${notificationButton()}
+      </header>
+
+      <section class="star-member-card star-member-card-main">
+        <img class="star-member-art" src="/assets/design/card/member-card-art.png" alt="" aria-hidden="true">
+        <div class="star-member-left">
+          <div class="star-club-emblem"><span class="star-club-emblem-star">★</span></div>
+          <div class="star-club-wordmark">STAR CLUB</div>
+          <div class="star-member-name">${safeHtml(card.name || 'Клієнт Star Club')}</div>
+          <div class="star-member-number-label">№ картки</div>
+          <div class="star-member-number">${displayNumber}</div>
+        </div>
       </section>
-    </div>
+
+      <section class="star-balance-card">
+        <img class="star-balance-art" src="/assets/design/card/balance-card-art.png" alt="" aria-hidden="true">
+        <div class="star-balance-label">Актуальний баланс</div>
+        <div class="star-balance-value"><strong>${fmtStars(card.stars_balance)}</strong><span>★</span></div>
+        <div class="star-balance-note">${appIcon('coins')}<span>Збирайте зірки та отримуйте нагороди</span></div>
+        <button class="star-cashier-button" type="button" data-show-cashier data-card-number="${displayNumber}">
+          ${appIcon('barcode')}<span>Показати касиру</span><b aria-hidden="true">›</b>
+        </button>
+      </section>
+
+      <img class="star-promo-card-image" src="/assets/design/card/promo-card-reference.png" alt="Більше покупок — більше можливостей. Збирайте зірки, отримуйте нагороди та особливі пропозиції">
+    </section>
   `;
 }
 
@@ -1170,18 +1188,66 @@ function profileScreen() {
 
 function showCashierModal(cardNumber) {
   const clean = String(cardNumber || '').replaceAll(' ', '');
+  const displayNumber = safeHtml(String(cardNumber || ''));
+  const clientName = safeHtml(state.client?.name || 'Клієнт Star Club');
   const wrap = document.createElement('div');
-  wrap.className = 'modal-backdrop';
+  wrap.className = 'star-cashier-overlay';
   wrap.innerHTML = `
-    <div class="modal">
-      <h2>Штрихкод картки</h2>
-      <p class="small">Покажіть цей штрихкод касиру</p>
-      <div class="barcode barcode-large"><img src="/api/svg/barcode?text=${encodeURIComponent(clean)}" alt="barcode"></div>
-      <div class="manual-code"><span>Номер картки</span><b>${clean}</b></div>
-      <div class="modal-actions"><button class="btn" type="button" data-close-modal>Готово</button></div>
+    <div class="star-cashier-scroll">
+      <header class="star-card-heading star-cashier-heading">
+        <button class="star-card-back" type="button" data-close-cashier>${appIcon('arrow-left')}<span>Назад</span></button>
+        <div class="star-card-heading-copy">
+          <h2>Моя карта</h2>
+          <p>Ваш Star Club завжди з вами</p>
+        </div>
+        ${notificationButton()}
+      </header>
+
+      <section class="star-member-card star-member-card-cashier">
+        <img class="star-member-art star-member-art-cashier" src="/assets/design/card/barcode-card-art.png" alt="" aria-hidden="true">
+        <div class="star-cashier-brand">
+          <div class="star-club-emblem"><span class="star-club-emblem-star">★</span></div>
+          <div class="star-club-wordmark">STAR CLUB</div>
+        </div>
+        <div class="star-cashier-member-copy">
+          <div class="star-member-name">${clientName}</div>
+          <div class="star-member-number-label">№ картки</div>
+          <div class="star-member-number">${displayNumber}</div>
+        </div>
+        <button class="star-mini-qr" type="button" aria-label="QR код">${appIcon('qr-code')}</button>
+      </section>
+
+      <section class="star-barcode-sheet">
+        <div class="star-sheet-handle" aria-hidden="true"></div>
+        <h2>Штрихкод картки</h2>
+        <p>Покажіть цей штрихкод касиру</p>
+        <div class="star-barcode-box">
+          <img src="/api/svg/barcode?text=${encodeURIComponent(clean)}" alt="Штрихкод картки">
+          <b>${safeHtml(clean)}</b>
+        </div>
+        <div class="star-card-number-box">
+          <button class="star-copy-button" type="button" data-copy-card="${safeHtml(clean)}" aria-label="Скопіювати номер картки">${appIcon('copy')}</button>
+          <div><span>Номер картки</span><strong>${safeHtml(clean)}</strong></div>
+          <button class="star-copy-button" type="button" data-copy-card="${safeHtml(clean)}" aria-label="Скопіювати номер картки">${appIcon('copy')}</button>
+        </div>
+        <button class="star-done-button" type="button" data-close-cashier>Готово</button>
+      </section>
     </div>`;
-  document.body.appendChild(wrap);
-  wrap.querySelector('[data-close-modal]').onclick = () => wrap.remove();
+
+  document.querySelector('.app-shell')?.appendChild(wrap);
+  document.body.classList.add('cashier-open');
+  const onNavClick = () => close();
+  const close = () => {
+    $nav.removeEventListener('click', onNavClick, true);
+    document.body.classList.remove('cashier-open');
+    wrap.remove();
+  };
+  wrap.querySelectorAll('[data-close-cashier]').forEach((el) => el.onclick = close);
+  wrap.querySelectorAll('[data-copy-card]').forEach((el) => el.onclick = async () => {
+    try { await navigator.clipboard.writeText(clean); toast('Номер картки скопійовано'); }
+    catch { toast(clean); }
+  });
+  $nav.addEventListener('click', onNavClick, { once: true, capture: true });
 }
 
 function showPersonalCouponModal(button) {
@@ -1249,6 +1315,7 @@ async function render() {
   document.body.classList.toggle('home-route', state.route === 'home' && Boolean(state.client?.registered));
   document.body.classList.toggle('offers-route', state.route === 'offers' && Boolean(state.client?.registered));
   document.body.classList.toggle('rewards-route', state.route === 'rewards' && Boolean(state.client?.registered));
+  document.body.classList.toggle('card-route', state.route === 'card' && Boolean(state.client?.registered));
   if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
     $app.innerHTML = startScreen();
     bindEvents();
@@ -1284,11 +1351,6 @@ async function render() {
     }
   }
   bindEvents();
-  if (state.route === 'card' && state.openCashierOnCard) {
-    state.openCashierOnCard = false;
-    const cashierButton = document.querySelector('[data-show-cashier]');
-    if (cashierButton) showCashierModal(cashierButton.dataset.cardNumber);
-  }
 }
 
 function normalizeClientPhone(phone) {
@@ -1361,7 +1423,6 @@ function bindEvents() {
     if ($nav.contains(el)) return;
     el.onclick = (event) => {
       event?.preventDefault?.();
-      if (el.dataset.route === 'card') state.openCashierOnCard = true;
       setRoute(el.dataset.route);
     };
   });
@@ -1546,7 +1607,6 @@ $nav.addEventListener('click', (event) => {
   event.preventDefault();
   event.stopPropagation();
   if (button.disabled) return;
-  if (button.dataset.route === 'card') state.openCashierOnCard = true;
   setRoute(button.dataset.route);
 });
 
