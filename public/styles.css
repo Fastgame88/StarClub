@@ -723,28 +723,28 @@ label.check span{min-width:0}
 .home-live-cups{gap:6px;}
 .home-live-cups img{width:24px;height:19px;}
 
-.home-route .bottom-nav{
+.app-nav-unified .bottom-nav{
   min-height:82px;padding:8px 9px calc(8px + var(--safe-bottom));gap:4px;
   background:rgba(5,8,12,.97);border-top:1px solid rgba(255,255,255,.055);box-shadow:0 -8px 26px rgba(0,0,0,.22);backdrop-filter:blur(18px);
 }
-.home-route .bottom-nav button{min-height:64px;padding:3px 2px 2px;border-radius:17px;gap:4px;background:transparent!important;box-shadow:none!important;color:#c7cbd3;}
-.home-route .bottom-nav button small{font-family:"Manrope",sans-serif;font-size:9px;font-weight:700;line-height:1;}
-.home-route .bottom-nav .nav-icon-shell{width:32px;height:31px;border-radius:14px;display:grid;place-items:center;}
-.home-route .bottom-nav .nav-icon-shell .app-icon{width:24px;height:24px;filter:brightness(0) invert(.78);opacity:1;}
-.home-route .bottom-nav button.active:not(.nav-card){
+.app-nav-unified .bottom-nav button{min-height:64px;padding:3px 2px 2px;border-radius:17px;gap:4px;background:transparent!important;box-shadow:none!important;color:#c7cbd3;}
+.app-nav-unified .bottom-nav button small{font-family:"Manrope",sans-serif;font-size:9px;font-weight:700;line-height:1;}
+.app-nav-unified .bottom-nav .nav-icon-shell{width:32px;height:31px;border-radius:14px;display:grid;place-items:center;}
+.app-nav-unified .bottom-nav .nav-icon-shell .app-icon{width:24px;height:24px;filter:brightness(0) invert(.78);opacity:1;}
+.app-nav-unified .bottom-nav button.active:not(.nav-card){
   background:linear-gradient(145deg,#725019,#241a0d)!important;
   box-shadow:inset 0 0 0 1px rgba(237,189,82,.62),0 6px 18px rgba(0,0,0,.22)!important;
   color:#f0cc6c;
 }
-.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{filter:sepia(1) saturate(2) brightness(1.5);}
-.home-route .bottom-nav .nav-card{overflow:visible!important;}
-.home-route .bottom-nav .nav-card .nav-icon-shell{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{filter:sepia(1) saturate(2) brightness(1.5);}
+.app-nav-unified .bottom-nav .nav-card{overflow:visible!important;}
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{
   width:62px;height:62px;margin-top:-28px;margin-bottom:0;border-radius:50%;
   border:5px solid #070a0e;background:linear-gradient(145deg,#f8dc8c 0%,#e0aa3d 62%,#9e641c 100%);
   box-shadow:0 8px 25px rgba(202,139,35,.34),inset 0 1px 0 rgba(255,255,255,.62);
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{width:29px;height:29px;filter:brightness(.2);}
-.home-route .bottom-nav .nav-card small{color:#eac45f;}
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell .app-icon{width:29px;height:29px;filter:brightness(.2);}
+.app-nav-unified .bottom-nav .nav-card small{color:#eac45f;}
 
 @media (max-width:390px){
   .home-route .screen{padding-left:13px;padding-right:13px;}
@@ -768,7 +768,7 @@ label.check span{min-width:0}
   .home-banner-copy-v2{padding:13px 0 18px 18px;}.home-banner-copy-v2 h2{font-size:19px;margin:8px 0 5px;}.home-banner-copy-v2 p{font-size:11.5px;}.home-banner-copy-v2 span{font-size:9.5px;padding:4px 10px;}
   .home-live-balance{padding:12px 16px;}.home-live-balance-copy>span{margin-bottom:7px;}.home-live-balance-copy strong{font-size:46px;}.home-live-balance-copy strong b{font-size:39px;}.home-live-balance-copy small{margin-top:7px;font-size:10.5px;}.home-live-balance-star{width:88px;height:88px;top:8px;}
   .home-live-program{grid-template-columns:52px minmax(0,1fr);gap:10px;padding:9px 12px;}.home-live-program-icon{width:52px;height:52px;border-radius:16px;}.home-live-program-icon img{width:31px;height:31px;}.home-live-program-title{font-size:14px;margin-bottom:3px;}.home-live-program-subtitle{font-size:10px;margin-bottom:6px;}.home-live-program-count{right:12px;top:10px;min-width:49px;height:32px;font-size:13px;}.home-live-program-main{padding-right:50px;}.home-live-steps{height:20px;gap:5px;}.home-live-stars img{width:19px;height:19px;}.home-live-cups img{width:19px;height:15px;}
-  .home-route .bottom-nav{min-height:76px;}
+  .app-nav-unified .bottom-nav{min-height:76px;}
 }
 
 /* v34.1 final home fit correction */
@@ -790,14 +790,14 @@ label.check span{min-width:0}
 .home-live-program{grid-template-columns:70px minmax(0,1fr);gap:14px;}
 .home-live-program-icon{width:70px;height:70px;}
 .home-live-program-icon img{width:43px;height:43px;}
-.home-route .bottom-nav{min-height:102px;height:102px;padding:12px 9px calc(10px + var(--safe-bottom));}
+.app-nav-unified .bottom-nav{min-height:102px;height:102px;padding:12px 9px calc(10px + var(--safe-bottom));}
 .home-route .screen{height:calc(100dvh - 102px);max-height:calc(100dvh - 102px);}
-.home-route .bottom-nav button{min-height:77px;}
-.home-route .bottom-nav .nav-icon-shell{width:35px;height:34px;}
-.home-route .bottom-nav .nav-icon-shell .app-icon{width:26px;height:26px;}
-.home-route .bottom-nav button small{font-size:10px;}
-.home-route .bottom-nav .nav-card .nav-icon-shell{width:70px;height:70px;margin-top:-42px;}
-.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{width:31px;height:31px;}
+.app-nav-unified .bottom-nav button{min-height:77px;}
+.app-nav-unified .bottom-nav .nav-icon-shell{width:35px;height:34px;}
+.app-nav-unified .bottom-nav .nav-icon-shell .app-icon{width:26px;height:26px;}
+.app-nav-unified .bottom-nav button small{font-size:10px;}
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{width:70px;height:70px;margin-top:-42px;}
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell .app-icon{width:31px;height:31px;}
 @media (max-width:390px){
   .home-live-v2{grid-template-rows:126px 188px 122px 106px 106px;gap:12px;}
   .home-live-welcome-row{grid-template-columns:46px minmax(0,1fr) 76px 46px;gap:7px;height:72px;}
@@ -808,7 +808,7 @@ label.check span{min-width:0}
 @media (max-height:820px){
   .home-live-v2{grid-template-rows:112px 167px 108px 94px 94px;gap:9px;}
   .home-live-welcome-row{height:66px;grid-template-columns:43px minmax(0,1fr) 74px 43px;gap:6px;}.home-live-script{width:74px;font-size:17px;}.home-live-bell{width:41px;height:41px;}
-  .home-route .bottom-nav{height:88px;min-height:88px;}.home-route .screen{height:calc(100dvh - 88px);max-height:calc(100dvh - 88px);}.home-route .bottom-nav .nav-card .nav-icon-shell{width:62px;height:62px;margin-top:-34px;}
+  .app-nav-unified .bottom-nav{height:88px;min-height:88px;}.home-route .screen{height:calc(100dvh - 88px);max-height:calc(100dvh - 88px);}.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{width:62px;height:62px;margin-top:-34px;}
 }
 
 /* v34.3 progress tracks and final visual tuning */
@@ -829,29 +829,29 @@ label.check span{min-width:0}
 .home-live-stars img{width:23px;height:23px;}
 .home-live-cups{gap:6px;}
 .home-live-cups img{width:22px;height:17px;}
-.home-route .bottom-nav .nav-card{transform:translateY(-19px);}
-.home-route .bottom-nav button.active:not(.nav-card){width:82px;justify-self:center;}
-.home-route .bottom-nav button:not(.active):not(.nav-card){transform:translateY(-13px);}
+.app-nav-unified .bottom-nav .nav-card{transform:translateY(-19px);}
+.app-nav-unified .bottom-nav button.active:not(.nav-card){width:82px;justify-self:center;}
+.app-nav-unified .bottom-nav button:not(.active):not(.nav-card){transform:translateY(-13px);}
 @media(max-width:390px){
   .home-live-steps{height:25px;min-height:25px;padding:2px 6px;gap:5px;}
   .home-live-stars img{width:20px;height:20px;}.home-live-cups img{width:19px;height:15px;}
-  .home-route .bottom-nav .nav-card{transform:translateY(-15px);}
+  .app-nav-unified .bottom-nav .nav-card{transform:translateY(-15px);}
 }
 @media(max-height:820px){
   .home-live-steps{height:22px;min-height:22px;padding:2px 6px;gap:5px;}
   .home-live-stars img{width:18px;height:18px;}.home-live-cups img{width:18px;height:14px;}
-  .home-route .bottom-nav .nav-card{transform:translateY(-12px);}
+  .app-nav-unified .bottom-nav .nav-card{transform:translateY(-12px);}
 }
 
 /* v35 — requested fixes only: compact bottom menu, shorter hero banner, clean spacing */
-.home-route .bottom-nav{
+.app-nav-unified .bottom-nav{
   height:calc(74px + var(--safe-bottom));
   min-height:calc(74px + var(--safe-bottom));
   padding:5px 8px calc(5px + var(--safe-bottom));
   gap:3px;
   overflow:visible;
 }
-.home-route .bottom-nav button{
+.app-nav-unified .bottom-nav button{
   min-height:52px;
   height:52px;
   padding:2px 1px;
@@ -863,20 +863,20 @@ label.check span{min-width:0}
   width:auto;
   max-width:66px;
 }
-.home-route .bottom-nav button small{
+.app-nav-unified .bottom-nav button small{
   font-size:9px;
   line-height:1;
 }
-.home-route .bottom-nav .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-icon-shell{
   width:28px;
   height:28px;
   border-radius:12px;
 }
-.home-route .bottom-nav .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav .nav-icon-shell .app-icon{
   width:21px;
   height:21px;
 }
-.home-route .bottom-nav button.active:not(.nav-card){
+.app-nav-unified .bottom-nav button.active:not(.nav-card){
   width:62px;
   max-width:62px;
   min-height:54px;
@@ -884,17 +884,17 @@ label.check span{min-width:0}
   justify-self:center;
   border-radius:16px;
 }
-.home-route .bottom-nav .nav-card{
+.app-nav-unified .bottom-nav .nav-card{
   transform:translateY(-7px)!important;
   overflow:visible!important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{
   width:54px;
   height:54px;
   margin:0;
   border-width:4px;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell .app-icon{
   width:25px;
   height:25px;
 }
@@ -1030,12 +1030,12 @@ label.check span{min-width:0}
   .home-banner-copy-v2 p{font-size:10.5px;}
   .home-live-balance-copy strong{font-size:46px;}
   .home-live-balance-copy strong b{font-size:38px;}
-  .home-route .bottom-nav button{max-width:62px;}
-  .home-route .bottom-nav button.active:not(.nav-card){width:58px;max-width:58px;}
+  .app-nav-unified .bottom-nav button{max-width:62px;}
+  .app-nav-unified .bottom-nav button.active:not(.nav-card){width:58px;max-width:58px;}
 }
 
 @media (max-height:820px){
-  .home-route .bottom-nav{
+  .app-nav-unified .bottom-nav{
     height:calc(70px + var(--safe-bottom));
     min-height:calc(70px + var(--safe-bottom));
     padding:4px 7px calc(4px + var(--safe-bottom));
@@ -1044,10 +1044,10 @@ label.check span{min-width:0}
     height:calc(100dvh - 70px - var(--safe-bottom));
     max-height:calc(100dvh - 70px - var(--safe-bottom));
   }
-  .home-route .bottom-nav button{height:49px;min-height:49px;}
-  .home-route .bottom-nav button.active:not(.nav-card){height:51px;min-height:51px;}
-  .home-route .bottom-nav .nav-card{transform:translateY(-5px)!important;}
-  .home-route .bottom-nav .nav-card .nav-icon-shell{width:50px;height:50px;}
+  .app-nav-unified .bottom-nav button{height:49px;min-height:49px;}
+  .app-nav-unified .bottom-nav button.active:not(.nav-card){height:51px;min-height:51px;}
+  .app-nav-unified .bottom-nav .nav-card{transform:translateY(-5px)!important;}
+  .app-nav-unified .bottom-nav .nav-card .nav-icon-shell{width:50px;height:50px;}
   .home-live-v2{
     grid-template-rows:104px 134px 100px 86px 86px;
     gap:8px;
@@ -1136,7 +1136,7 @@ label.check span{min-width:0}
 .home-live-stars img{width:17px;height:17px;}
 .home-live-cups img{width:17px;height:13px;}
 
-.home-route .bottom-nav{
+.app-nav-unified .bottom-nav{
   height:84px !important;
   min-height:84px !important;
   padding:8px 8px calc(7px + var(--safe-bottom)) !important;
@@ -1144,7 +1144,7 @@ label.check span{min-width:0}
   border-top:1px solid rgba(255,255,255,.06);
   width:min(470px,100%) !important;
 }
-.home-route .bottom-nav button{
+.app-nav-unified .bottom-nav button{
   min-height:56px !important;
   height:56px !important;
   max-width:64px;
@@ -1153,39 +1153,39 @@ label.check span{min-width:0}
   border-radius:15px;
   justify-self:center;
 }
-.home-route .bottom-nav button small{
+.app-nav-unified .bottom-nav button small{
   font-size:8.5px !important;
   line-height:1.05;
 }
-.home-route .bottom-nav .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-icon-shell{
   width:29px !important;
   height:29px !important;
 }
-.home-route .bottom-nav .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav .nav-icon-shell .app-icon{
   width:22px !important;
   height:22px !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card){
+.app-nav-unified .bottom-nav button.active:not(.nav-card){
   width:58px !important;
   max-width:58px !important;
   background:rgba(232,184,79,.10) !important;
   box-shadow:inset 0 0 0 1px rgba(232,184,79,.22) !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) .nav-icon-shell{
   width:48px !important;
   height:48px !important;
   border-radius:15px;
   background:linear-gradient(145deg,#d7a53c 0%,#8d641e 100%);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.55), 0 8px 20px rgba(200,140,40,.28);
 }
-.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
   filter:brightness(0) invert(1) !important;
 }
-.home-route .bottom-nav .nav-card{
+.app-nav-unified .bottom-nav .nav-card{
   transform:translateY(-6px) !important;
   max-width:72px;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{
   width:56px !important;
   height:56px !important;
   margin-top:-8px !important;
@@ -1194,13 +1194,13 @@ label.check span{min-width:0}
   background:linear-gradient(145deg,#f7de98,#dfaf44 72%,#a16927) !important;
   box-shadow:0 10px 24px rgba(228,183,95,.28), inset 0 1px 0 rgba(255,255,255,.5) !important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell .app-icon{
   width:27px !important;
   height:27px !important;
   filter:brightness(.2) !important;
 }
-.home-route .bottom-nav .nav-card small{font-size:8.5px !important;}
-.home-route .bottom-nav button:not(.active):not(.nav-card){transform:none !important;}
+.app-nav-unified .bottom-nav .nav-card small{font-size:8.5px !important;}
+.app-nav-unified .bottom-nav button:not(.active):not(.nav-card){transform:none !important;}
 
 @media (max-width:390px){
   .home-live-v2{grid-template-rows:112px 168px 108px 93px 93px;gap:9px;}
@@ -1278,52 +1278,52 @@ label.check span{min-width:0}
   opacity:0 !important;
 }
 
-.home-route .bottom-nav{
+.app-nav-unified .bottom-nav{
   min-height:86px !important;
   height:86px !important;
   padding:8px 10px calc(9px + var(--safe-bottom)) !important;
   gap:6px !important;
   background:rgba(7,10,14,.98) !important;
 }
-.home-route .bottom-nav button{
+.app-nav-unified .bottom-nav button{
   min-height:58px !important;
   height:58px !important;
   border-radius:18px !important;
   gap:4px !important;
 }
-.home-route .bottom-nav button small{
+.app-nav-unified .bottom-nav button small{
   font-size:9px !important;
 }
-.home-route .bottom-nav .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-icon-shell{
   width:31px !important;
   height:31px !important;
   border-radius:14px !important;
 }
-.home-route .bottom-nav .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav .nav-icon-shell .app-icon{
   width:23px !important;
   height:23px !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card){
+.app-nav-unified .bottom-nav button.active:not(.nav-card){
   width:68px !important;
   max-width:68px !important;
   border-radius:18px !important;
   background:linear-gradient(145deg,#78521a,#281b0d) !important;
   box-shadow:inset 0 0 0 1px rgba(237,189,82,.62),0 6px 18px rgba(0,0,0,.22)!important;
 }
-.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) .nav-icon-shell{
   background:transparent !important;
   box-shadow:none !important;
 }
-.home-route .bottom-nav .nav-card{
+.app-nav-unified .bottom-nav .nav-card{
   transform:none !important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{
   width:60px !important;
   height:60px !important;
   margin-top:-24px !important;
   border-width:4px !important;
 }
-.home-route .bottom-nav .nav-card small{
+.app-nav-unified .bottom-nav .nav-card small{
   font-size:9px !important;
 }
 
@@ -1333,7 +1333,7 @@ label.check span{min-width:0}
   .home-live-program-icon{width:60px !important;height:60px !important;}
   .home-live-program-icon img{width:36px !important;height:36px !important;}
   .home-live-steps{max-width:270px;}
-  .home-route .bottom-nav button.active:not(.nav-card){width:64px !important;max-width:64px !important;}
+  .app-nav-unified .bottom-nav button.active:not(.nav-card){width:64px !important;max-width:64px !important;}
 }
 
 /* v38 final requested home adjustments */
@@ -1425,7 +1425,7 @@ label.check span{min-width:0}
 .home-live-stars img{width:21px !important;height:21px !important;}
 .home-live-cups img{width:21px !important;height:15px !important;}
 
-.home-route .bottom-nav{
+.app-nav-unified .bottom-nav{
   min-height:96px !important;
   height:96px !important;
   padding:10px 10px calc(10px + var(--safe-bottom)) !important;
@@ -1433,7 +1433,7 @@ label.check span{min-width:0}
   background:rgba(6,9,14,.98) !important;
   box-shadow:0 -8px 26px rgba(0,0,0,.22) !important;
 }
-.home-route .bottom-nav button{
+.app-nav-unified .bottom-nav button{
   min-height:72px !important;
   height:72px !important;
   max-width:74px !important;
@@ -1441,33 +1441,33 @@ label.check span{min-width:0}
   border-radius:20px !important;
   gap:5px !important;
 }
-.home-route .bottom-nav button small{
+.app-nav-unified .bottom-nav button small{
   font-size:10px !important;
   line-height:1 !important;
 }
-.home-route .bottom-nav .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-icon-shell{
   width:34px !important;
   height:34px !important;
 }
-.home-route .bottom-nav .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav .nav-icon-shell .app-icon{
   width:25px !important;
   height:25px !important;
   filter:brightness(0) invert(.92) !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card){
+.app-nav-unified .bottom-nav button.active:not(.nav-card){
   width:82px !important;
   max-width:82px !important;
   background:linear-gradient(145deg,#7b551b,#2b1d0d) !important;
   box-shadow:inset 0 0 0 1px rgba(237,189,82,.62),0 8px 18px rgba(0,0,0,.22) !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
   filter:sepia(1) saturate(1.8) brightness(1.7) !important;
 }
-.home-route .bottom-nav .nav-card{
+.app-nav-unified .bottom-nav .nav-card{
   transform:translateY(-12px) !important;
   max-width:86px !important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{
   width:70px !important;
   height:70px !important;
   margin-top:-18px !important;
@@ -1476,22 +1476,22 @@ label.check span{min-width:0}
   background:linear-gradient(145deg,#f7de98 0%,#dfaf44 72%,#a16927 100%) !important;
   box-shadow:0 10px 26px rgba(228,183,95,.34), inset 0 1px 0 rgba(255,255,255,.55) !important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell .app-icon{
   width:30px !important;
   height:30px !important;
   filter:brightness(.18) !important;
 }
-.home-route .bottom-nav .nav-card small{color:#eac45f !important;}
+.app-nav-unified .bottom-nav .nav-card small{color:#eac45f !important;}
 
 @media (max-width:390px){
   .home-live-welcome-row{grid-template-columns:44px minmax(0,1fr) 88px 44px !important;gap:8px !important;}
   .home-live-script{width:88px !important;font-size:18px !important;margin-right:3px !important;}
   .home-live-bell{width:44px !important;height:44px !important;}
   .home-live-balance-copy strong b img{width:38px;height:38px;}
-  .home-route .bottom-nav{min-height:90px !important;height:90px !important;}
-  .home-route .bottom-nav button{min-height:66px !important;height:66px !important;max-width:68px !important;}
-  .home-route .bottom-nav button.active:not(.nav-card){width:74px !important;max-width:74px !important;}
-  .home-route .bottom-nav .nav-card .nav-icon-shell{width:64px !important;height:64px !important;}
+  .app-nav-unified .bottom-nav{min-height:90px !important;height:90px !important;}
+  .app-nav-unified .bottom-nav button{min-height:66px !important;height:66px !important;max-width:68px !important;}
+  .app-nav-unified .bottom-nav button.active:not(.nav-card){width:74px !important;max-width:74px !important;}
+  .app-nav-unified .bottom-nav .nav-card .nav-icon-shell{width:64px !important;height:64px !important;}
 }
 
 /* v39 exacter home adjustments */
@@ -1565,14 +1565,14 @@ label.check span{min-width:0}
 .home-live-cups img{width:23px !important;height:18px !important;}
 
 /* restore old-style bottom nav with gold active and glowing center */
-.home-route .bottom-nav{
+.app-nav-unified .bottom-nav{
   min-height:94px !important;
   height:94px !important;
   padding:9px 10px calc(9px + var(--safe-bottom)) !important;
   gap:6px !important;
   background:rgba(6,9,14,.98) !important;
 }
-.home-route .bottom-nav button{
+.app-nav-unified .bottom-nav button{
   min-height:70px !important;
   height:70px !important;
   max-width:72px !important;
@@ -1581,19 +1581,19 @@ label.check span{min-width:0}
   gap:4px !important;
   color:#ffffff !important;
 }
-.home-route .bottom-nav button small{font-size:10px !important;color:#fff !important;}
-.home-route .bottom-nav .nav-icon-shell{width:30px !important;height:30px !important;}
-.home-route .bottom-nav .nav-icon-shell .app-icon{width:23px !important;height:23px !important;filter:brightness(0) invert(1) !important;}
-.home-route .bottom-nav button.active:not(.nav-card){
+.app-nav-unified .bottom-nav button small{font-size:10px !important;color:#fff !important;}
+.app-nav-unified .bottom-nav .nav-icon-shell{width:30px !important;height:30px !important;}
+.app-nav-unified .bottom-nav .nav-icon-shell .app-icon{width:23px !important;height:23px !important;filter:brightness(0) invert(1) !important;}
+.app-nav-unified .bottom-nav button.active:not(.nav-card){
   width:72px !important;
   max-width:72px !important;
   background:linear-gradient(145deg,#9b6a1e,#664312 36%,#31200f 100%) !important;
   box-shadow:inset 0 0 0 1px rgba(237,189,82,.78), 0 8px 20px rgba(0,0,0,.22) !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card) small{color:#f4d36f !important;}
-.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{filter:sepia(1) saturate(2.3) hue-rotate(-5deg) brightness(1.55) !important;}
-.home-route .bottom-nav .nav-card{transform:translateY(-10px) !important;max-width:82px !important;}
-.home-route .bottom-nav .nav-card .nav-icon-shell{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) small{color:#f4d36f !important;}
+.app-nav-unified .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{filter:sepia(1) saturate(2.3) hue-rotate(-5deg) brightness(1.55) !important;}
+.app-nav-unified .bottom-nav .nav-card{transform:translateY(-10px) !important;max-width:82px !important;}
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{
   width:66px !important;
   height:66px !important;
   margin-top:-16px !important;
@@ -1602,8 +1602,8 @@ label.check span{min-width:0}
   background:linear-gradient(145deg,#f6df9a 0%,#e2b24b 72%,#a36c28 100%) !important;
   box-shadow:0 0 24px rgba(229,183,83,.28), 0 8px 26px rgba(229,183,83,.2), inset 0 1px 0 rgba(255,255,255,.52) !important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{width:29px !important;height:29px !important;filter:brightness(.18) !important;}
-.home-route .bottom-nav .nav-card small{color:#f0cb61 !important;}
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell .app-icon{width:29px !important;height:29px !important;filter:brightness(.18) !important;}
+.app-nav-unified .bottom-nav .nav-card small{color:#f0cb61 !important;}
 
 @media (max-width:390px){
   .home-live-script{width:96px !important;font-size:18px !important;}
@@ -1612,9 +1612,9 @@ label.check span{min-width:0}
   .home-live-steps{max-width:258px !important;padding:9px 10px !important;gap:7px !important;}
   .home-live-stars img{width:20px !important;height:20px !important;}
   .home-live-cups img{width:20px !important;height:16px !important;}
-  .home-route .bottom-nav{min-height:90px !important;height:90px !important;}
-  .home-route .bottom-nav button{min-height:66px !important;height:66px !important;max-width:68px !important;}
-  .home-route .bottom-nav .nav-card .nav-icon-shell{width:62px !important;height:62px !important;}
+  .app-nav-unified .bottom-nav{min-height:90px !important;height:90px !important;}
+  .app-nav-unified .bottom-nav button{min-height:66px !important;height:66px !important;max-width:68px !important;}
+  .app-nav-unified .bottom-nav .nav-card .nav-icon-shell{width:62px !important;height:62px !important;}
 }
 
 /* v40 final alignment fixes requested by user */
@@ -1670,20 +1670,20 @@ label.check span{min-width:0}
 }
 
 /* restore bottom nav behavior: fixed positions, active gold background only */
-.home-route .bottom-nav{
+.app-nav-unified .bottom-nav{
   min-height:94px !important;
   height:94px !important;
   padding:9px 10px calc(9px + var(--safe-bottom)) !important;
   gap:6px !important;
 }
-.home-route .bottom-nav button,
-.home-route .bottom-nav button.active,
-.home-route .bottom-nav button:not(.active){
+.app-nav-unified .bottom-nav button,
+.app-nav-unified .bottom-nav button.active,
+.app-nav-unified .bottom-nav button:not(.active){
   transform:none !important;
   position:relative;
   top:0 !important;
 }
-.home-route .bottom-nav button:not(.nav-card){
+.app-nav-unified .bottom-nav button:not(.nav-card){
   width:72px !important;
   max-width:72px !important;
   min-height:70px !important;
@@ -1692,33 +1692,33 @@ label.check span{min-width:0}
   padding:4px 2px 2px !important;
   gap:4px !important;
 }
-.home-route .bottom-nav button:not(.nav-card) .nav-icon-shell{
+.app-nav-unified .bottom-nav button:not(.nav-card) .nav-icon-shell{
   width:30px !important;
   height:30px !important;
   margin-top:-10px !important;
   background:transparent !important;
   box-shadow:none !important;
 }
-.home-route .bottom-nav button:not(.nav-card) .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav button:not(.nav-card) .nav-icon-shell .app-icon{
   width:23px !important;
   height:23px !important;
   filter:brightness(0) invert(1) !important;
 }
-.home-route .bottom-nav button:not(.nav-card) small{
+.app-nav-unified .bottom-nav button:not(.nav-card) small{
   color:#fff !important;
   font-size:10px !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card){
+.app-nav-unified .bottom-nav button.active:not(.nav-card){
   background:linear-gradient(145deg,#8f631f 0%,#5f4114 40%,#22160c 100%) !important;
   box-shadow:inset 0 0 0 1px rgba(237,189,82,.72), 0 8px 18px rgba(0,0,0,.22) !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
   filter:sepia(1) saturate(2.1) brightness(1.55) !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card) small{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) small{
   color:#efcc67 !important;
 }
-.home-route .bottom-nav .nav-card{
+.app-nav-unified .bottom-nav .nav-card{
   width:82px !important;
   max-width:82px !important;
   min-height:72px !important;
@@ -1726,7 +1726,7 @@ label.check span{min-width:0}
   gap:4px !important;
   transform:none !important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{
   width:66px !important;
   height:66px !important;
   margin-top:-10px !important;
@@ -1735,12 +1735,12 @@ label.check span{min-width:0}
   background:linear-gradient(145deg,#f6df9a 0%,#e2b24b 72%,#a36c28 100%) !important;
   box-shadow:0 0 22px rgba(229,183,83,.30), 0 8px 26px rgba(229,183,83,.18), inset 0 1px 0 rgba(255,255,255,.52) !important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell .app-icon{
   width:29px !important;
   height:29px !important;
   filter:brightness(.18) !important;
 }
-.home-route .bottom-nav .nav-card small{
+.app-nav-unified .bottom-nav .nav-card small{
   color:#f0cb61 !important;
   font-size:10px !important;
 }
@@ -1759,9 +1759,9 @@ label.check span{min-width:0}
   }
   .home-live-stars img{width:19px !important;height:19px !important;}
   .home-live-cups img{width:19px !important;height:15px !important;}
-  .home-route .bottom-nav button:not(.nav-card){width:68px !important;max-width:68px !important;}
-  .home-route .bottom-nav .nav-card{width:78px !important;max-width:78px !important;}
-  .home-route .bottom-nav .nav-card .nav-icon-shell{width:62px !important;height:62px !important;}
+  .app-nav-unified .bottom-nav button:not(.nav-card){width:68px !important;max-width:68px !important;}
+  .app-nav-unified .bottom-nav .nav-card{width:78px !important;max-width:78px !important;}
+  .app-nav-unified .bottom-nav .nav-card .nav-icon-shell{width:62px !important;height:62px !important;}
 }
 
 /* v41 requested micro-fixes */
@@ -1785,43 +1785,43 @@ label.check span{min-width:0}
 }
 
 /* 3) bottom nav: fixed positions, 5px gap, active item gets gold bg and gold icon */
-.home-route .bottom-nav button,
-.home-route .bottom-nav button.active,
-.home-route .bottom-nav button:not(.active),
-.home-route .bottom-nav .nav-card{
+.app-nav-unified .bottom-nav button,
+.app-nav-unified .bottom-nav button.active,
+.app-nav-unified .bottom-nav button:not(.active),
+.app-nav-unified .bottom-nav .nav-card{
   transform:none !important;
   top:0 !important;
   translate:none !important;
 }
-.home-route .bottom-nav button:not(.nav-card){
+.app-nav-unified .bottom-nav button:not(.nav-card){
   gap:5px !important;
   padding-top:5px !important;
 }
-.home-route .bottom-nav button:not(.nav-card) .nav-icon-shell{
+.app-nav-unified .bottom-nav button:not(.nav-card) .nav-icon-shell{
   margin-top:0 !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card){
+.app-nav-unified .bottom-nav button.active:not(.nav-card){
   background:linear-gradient(145deg,#8f631f 0%,#5f4114 40%,#22160c 100%) !important;
   box-shadow:inset 0 0 0 1px rgba(237,189,82,.72), 0 8px 18px rgba(0,0,0,.22) !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) .nav-icon-shell .app-icon{
   filter:sepia(1) saturate(2.4) brightness(1.5) hue-rotate(-6deg) !important;
 }
-.home-route .bottom-nav button.active:not(.nav-card) small{
+.app-nav-unified .bottom-nav button.active:not(.nav-card) small{
   color:#efcc67 !important;
 }
-.home-route .bottom-nav .nav-card{
+.app-nav-unified .bottom-nav .nav-card{
   gap:5px !important;
 }
-.home-route .bottom-nav .nav-card .nav-icon-shell{
+.app-nav-unified .bottom-nav .nav-card .nav-icon-shell{
   margin-top:0 !important;
 }
 
 @media (max-width:390px){
   .home-live-script span:nth-child(1),
   .home-live-script span:nth-child(2){top:-6px;}
-  .home-route .bottom-nav button:not(.nav-card),
-  .home-route .bottom-nav .nav-card{gap:5px !important;}
+  .app-nav-unified .bottom-nav button:not(.nav-card),
+  .app-nav-unified .bottom-nav .nav-card{gap:5px !important;}
 }
 
 /* Requested corrections: program spacing, raised lettering, reference nav icons. */
@@ -1836,13 +1836,13 @@ label.check span{min-width:0}
   top:-15px;
 }
 .bottom-nav button,
-.home-route .bottom-nav button:not(.nav-card),
-.home-route .bottom-nav .nav-card{
+.app-nav-unified .bottom-nav button:not(.nav-card),
+.app-nav-unified .bottom-nav .nav-card{
   gap:5px !important;
   justify-content:flex-end !important;
 }
 .bottom-nav button:not(.nav-card) .nav-icon-shell,
-.home-route .bottom-nav button:not(.nav-card) .nav-icon-shell{
+.app-nav-unified .bottom-nav button:not(.nav-card) .nav-icon-shell{
   height:23px !important;
   flex:0 0 23px;
   margin-bottom:0 !important;
@@ -1923,4 +1923,67 @@ label.check span{min-width:0}
 #bottomNav button[data-route="home"] .nav-icon-shell .app-icon{
   width:28.75px !important;
   height:28.75px !important;
+}
+
+/* Shared navigation: the home design follows the user through every route. */
+.app-nav-unified:not(.home-route) .screen{padding-bottom:calc(118px + var(--safe-bottom));}
+#bottomNav button:not(.nav-card){justify-content:center !important;gap:5px !important;}
+#bottomNav button:not(.nav-card) .nav-icon-shell{
+  width:28.75px !important;height:28.75px !important;min-height:28.75px !important;
+  flex:0 0 28.75px !important;margin:0 !important;padding:0 !important;
+}
+#bottomNav button:not(.nav-card) .nav-icon-shell .app-icon{width:28.75px !important;height:28.75px !important;}
+
+/* Offers reference layout; product data and prices still come from the API. */
+.offers-route .app-shell{background:#060a0d;}
+.offers-route .screen{padding:16px 14px calc(120px + var(--safe-bottom));}
+.offers-design{font-family:"Manrope",sans-serif;}
+.offers-heading{position:relative;display:grid;grid-template-columns:82px minmax(0,1fr) 42px;align-items:center;gap:7px;margin:0 0 17px;min-height:73px;}
+.offers-heading .back-button{width:82px;min-height:36px;padding:7px 10px;gap:5px;border-radius:22px;border:1px solid #5d5033;background:linear-gradient(135deg,#262a27,#0b1014 75%);font-size:12px;color:#f5f5f3;box-shadow:inset 0 1px 3px #ffffff12;}
+.offers-heading .back-button .app-icon{width:18px;height:18px;}
+.offers-heading-copy{text-align:center;min-width:0;}
+.offers-heading-copy>img{display:block;width:23px;height:23px;object-fit:contain;margin:0 auto 3px;}
+.offers-heading-copy h2{font-size:18px;line-height:1.15;letter-spacing:-.5px;margin:0;font-weight:800;color:#f4f4f2;}
+.offers-heading-copy p{margin:4px 0 0;font-size:10.5px;line-height:1.25;color:#d9c488;white-space:nowrap;}
+.offers-heading .notification-btn{width:40px;height:40px;border-radius:14px;border:1px solid #b18c43;background:linear-gradient(135deg,#28251a,#080d10 75%);box-shadow:0 0 8px #c3983b20,inset 0 0 4px #d2ae6b44;}
+.offers-heading .notification-btn>.app-icon{width:22px;height:22px;}
+.offers-heading .notification-badge{background:#f34e58;color:white;}
+.offers-heading .notification-panel{z-index:40;width:min(330px,calc(100vw - 32px));}
+.offers-content{gap:10px;}
+.offers-design .tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:0;background:none;border:0;}
+.offers-design .tabs button{display:flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:10px;border:1px solid #252b2d;border-radius:30px;background:linear-gradient(#1b2023,#080c10);color:#adb1bb;font-size:15px;font-weight:800;box-shadow:inset 0 1px 2px #ffffff08;}
+.offers-design .tabs button .app-icon{width:22px;height:22px;opacity:.8;filter:grayscale(1);}
+.offers-design .tabs button.active{background:linear-gradient(110deg,#f5d47a,#deaa42 55%,#c98a25);color:#10100b;border-color:#e4b452;box-shadow:inset 0 1px 1px #fff4;}
+.offers-design .tabs button.active .app-icon{filter:brightness(0);opacity:1;}
+.offers-design .offers-store-note{display:grid;grid-template-columns:22px minmax(0,1fr) auto 9px;gap:8px;width:100%;min-height:40px;padding:8px 13px;margin:2px 0 1px;text-align:left;border-radius:24px;border:1px solid #655232;background:linear-gradient(115deg,#191a14,#090e12 55%,#151813);box-shadow:inset 0 0 4px #d3ad5930;color:#e8e9e8;font-size:10px;}
+.offers-design .offers-store-note>b{max-width:105px;color:#e7c46d;font-size:10px;}
+.offers-design .offers-store-note>i{font-size:22px;font-style:normal;color:#969b9d;}
+.offers-design .offer-compact-card{position:relative;display:block !important;isolation:isolate;min-height:148px !important;padding:14px 15px !important;border-radius:23px;border:1px solid #80622b !important;background:radial-gradient(ellipse at 86% 34%,#74541b50,transparent 47%),linear-gradient(120deg,#161711,#090e12 55%,#11140e) !important;box-shadow:inset 0 0 4px #e8be6238,0 6px 15px #0004;overflow:hidden;}
+.offers-design .promo-feed-card__body{position:relative;z-index:2;width:68%;min-height:118px;padding:0 !important;overflow:visible;justify-content:flex-start;}
+.offers-design .offer-compact-meta{gap:10px;}
+.offers-design .offer-compact-meta>span{padding:5px 9px;font-size:9px;border:1px solid #92702f;background:linear-gradient(145deg,#76571950,#211b0e);box-shadow:0 0 7px #d7a63520;color:#efcd76;}
+.offers-design .offer-compact-meta>small{font-size:10px;color:#acb0b7;}
+.offers-design .offer-compact-card h3{margin:9px 0 5px;font-size:16px;font-weight:800;line-height:1.2;letter-spacing:-.25px;}
+.offers-design .promo-feed-description{font-size:12px;line-height:1.4;-webkit-line-clamp:2;color:#b2b7bf;max-width:91%;}
+.offers-design .offer-compact-prices{margin-top:12px;gap:9px;}
+.offers-design .offer-compact-prices strong{font-size:22px;line-height:1.1;color:#f1d381;letter-spacing:-.6px;}
+.offers-design .offer-compact-prices s{font-size:10px;color:#90949b;}
+.offers-design .offer-compact-prices>span{font-size:9px;}
+.offers-design .offer-compact-rule{font-size:10px;}
+.offers-design .promo-feed-card__media{position:absolute;z-index:1;inset:8px 0 4px auto;width:39%;min-height:0;border:0;background:radial-gradient(ellipse at 55% 45%,#dcaa483b,transparent 68%);overflow:hidden;}
+.offers-design .promo-feed-card__media:before{content:"";position:absolute;left:8%;right:3%;bottom:12%;height:12%;border-radius:50%;background:linear-gradient(#5f4c25,#14150d);box-shadow:0 10px 15px #0009;}
+.offers-design .promo-feed-card__media img{position:relative;z-index:1;width:100%;height:100%;max-height:none;padding:8px 5px 17px;object-fit:contain !important;filter:drop-shadow(0 9px 7px #0008);}
+.offer-multiplier{position:absolute;z-index:3;top:9px;right:8px;padding:4px 7px;border-radius:12px;background:linear-gradient(145deg,#6e5122,#29210d);color:#f5d985;font-size:10px;font-weight:800;box-shadow:inset 0 1px 2px #e5c36c44;}
+@media(max-width:360px){
+  .offers-heading{grid-template-columns:67px minmax(0,1fr) 37px;gap:4px;}
+  .offers-heading .back-button{width:67px;font-size:10px;padding:7px;}
+  .offers-heading-copy h2{font-size:16px;}
+  .offers-heading-copy p{font-size:9px;}
+  .offers-heading .notification-btn{width:36px;height:36px;}
+  .offers-design .offers-store-note{gap:5px;padding:8px 9px;font-size:9px;}
+  .offers-design .offers-store-note>b{max-width:80px;font-size:9px;}
+  .offers-design .offer-compact-card{padding:13px 12px !important;}
+  .offers-design .offer-compact-card h3{font-size:14px;}
+  .offers-design .promo-feed-description{font-size:11px;}
+  .offers-design .offer-compact-prices strong{font-size:20px;}
 }

@@ -274,6 +274,7 @@ function navIcon(name) {
 
 function renderNav() {
   const registered = state.client?.registered;
+  document.body.classList.toggle('app-nav-unified', Boolean(registered));
   $nav.classList.toggle('hidden', !registered);
   if (!registered) return;
   const items = [
@@ -891,13 +892,18 @@ function offersScreen() {
     return offerStore === 'all' || selectedStore === 'all' || offerStore === String(selectedStore);
   });
   return `
-    ${header(tab === 'club' ? 'Клубні пропозиції' : 'Оптові пропозиції', true)}
-    <div class="stack">
+    <section class="offers-design">
+    <header class="offers-heading">
+      <button class="back-button" type="button" data-back="1">${appIcon('arrow-left')}<span>Назад</span></button>
+      <div class="offers-heading-copy"><img src="/assets/starclub-crown.svg" alt="" aria-hidden="true"><h2>${tab === 'club' ? 'Клубні пропозиції' : 'Оптові пропозиції'}</h2><p>Вигідніше з кожною покупкою</p></div>
+      ${notificationButton()}
+    </header>
+    <div class="stack offers-content">
       <div class="tabs">
-        <button class="${tab === 'club' ? 'active' : ''}" data-offer-tab="club">Клубні</button>
-        <button class="${tab === 'wholesale' ? 'active' : ''}" data-offer-tab="wholesale">Оптові</button>
+        <button class="${tab === 'club' ? 'active' : ''}" data-offer-tab="club">${appIcon('star-fill')}Клубні</button>
+        <button class="${tab === 'wholesale' ? 'active' : ''}" data-offer-tab="wholesale">${appIcon('shopping-cart')}Оптові</button>
       </div>
-      <div class="offers-store-note">${appIcon('store')}<span>Ціни для улюбленого магазину</span><b>${safeHtml(selectedStoreName || 'не вибрано')}</b></div>
+      <button type="button" class="offers-store-note" data-route="profile">${appIcon('store')}<span>Ціни для улюбленого магазину</span><b>${safeHtml(selectedStoreName || 'не вибрано')}</b><i aria-hidden="true">›</i></button>
       ${items.map((o) => {
         const oldPrice = o.old_price_cents === null || o.old_price_cents === undefined ? null : Number(o.old_price_cents);
         const newPrice = o.current_price_cents === null || o.current_price_cents === undefined ? null : Number(o.current_price_cents);
@@ -906,18 +912,22 @@ function offersScreen() {
           : Number(o.saving_cents);
         const kindLabel = o.type === 'wholesale' ? 'Оптова' : 'Клубна';
         const showRule = o.type === 'wholesale' && o.discount_label;
+        const multiplier = Number(o.stars_multiplier || 0);
+        const scope = String(o.store_id || 'all') === 'all' ? 'Усі магазини' : (o.store_name || o.store_id);
+        const fallbackImage = /кава|раф|coffee/i.test(o.target_name || o.name || '') ? '/assets/coffee.svg' : /хліб|випіч|круасан/i.test(o.target_name || o.name || '') ? '/assets/croissant.svg' : '/assets/starclub-bag.svg';
         return `<article class="card promo-feed-card offer-compact-card">
+          ${multiplier > 1 ? `<span class="offer-multiplier">x${safeHtml(multiplier)}★</span>` : ''}
           <div class="promo-feed-card__body">
-            <div class="offer-compact-meta"><span>${kindLabel}</span><small>${safeHtml(o.store_name || o.store_id || 'Усі магазини')}</small></div>
+            <div class="offer-compact-meta"><span>${kindLabel}</span><small>${safeHtml(scope)}</small></div>
             <h3>${safeHtml(o.target_name || o.name)}</h3>
             <p class="promo-feed-description">${safeHtml(o.description || '')}</p>
             <div class="offer-compact-prices">${newPrice !== null ? `<strong>${o.price_from ? 'від ' : ''}${formatOfferMoney(newPrice)}</strong>` : `<strong>${safeHtml(o.discount_label || 'Star Club')}</strong>`}${oldPrice !== null ? `<s>${o.price_from ? 'від ' : ''}${formatOfferMoney(oldPrice)}</s>` : ''}${saving !== null && saving > 0 ? `<span>−${formatOfferMoney(saving)}</span>` : ''}</div>
             ${showRule ? `<p class="offer-compact-rule">${safeHtml(o.discount_label)}</p>` : ''}
           </div>
-          <div class="promo-feed-card__media"><img src="${safeHtml(o.image_url || '/assets/star.svg')}" alt="${safeHtml(o.name)}" onerror="this.onerror=null;this.src='/assets/star.svg'"></div>
+          <div class="promo-feed-card__media"><img src="${safeHtml(o.image_url || fallbackImage)}" alt="${safeHtml(o.target_name || o.name || '')}" onerror="this.onerror=null;this.src='/assets/star.svg'"></div>
         </article>`;
       }).join('') || '<div class="card empty">Активних пропозицій для цього магазину поки немає</div>'}
-    </div>`;
+    </div></section>`;
 }
 
 function progressScreen() {
@@ -1212,6 +1222,7 @@ function showRewardModal(qr) {
 async function render() {
   renderNav();
   document.body.classList.toggle('home-route', state.route === 'home' && Boolean(state.client?.registered));
+  document.body.classList.toggle('offers-route', state.route === 'offers' && Boolean(state.client?.registered));
   if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
     $app.innerHTML = startScreen();
     bindEvents();
