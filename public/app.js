@@ -504,7 +504,7 @@ function renderHomeStepIcons(progress, total, type) {
     const icon = type === 'cup'
       ? (active ? 'home-step-cup-on.svg' : 'home-step-cup-off.svg')
       : (active ? 'home-step-star-on.svg' : 'home-step-star-off.svg');
-    return `<img src="/assets/icons/${icon}" alt="" aria-hidden="true">`;
+    return `<img src="/assets/icons/${icon}${type === 'cup' ? '' : '?v=45'}" alt="" aria-hidden="true">`;
   }).join('');
 }
 

@@ -1870,3 +1870,57 @@ label.check span{min-width:0}
   /* Keep the existing 9px gaps elsewhere; only these cards need 10px. */
   .home-live-program + .home-live-program{margin-top:1px !important;}
 }
+
+/* 2026-09-21: requested home progress, lettering and home-nav corrections. */
+.home-live-steps{
+  padding-top:6px !important;
+  padding-bottom:6px !important;
+  display:grid !important;
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(0,1fr);
+  justify-items:center;
+  column-gap:clamp(2px,1.2vw,6px) !important;
+}
+.home-live-steps img{
+  max-width:100% !important;
+  object-fit:contain;
+  align-self:center;
+}
+.home-live-cups{
+  /* Use the free space below the counter, without changing the text above. */
+  width:calc(100% + 56px) !important;
+  max-width:none !important;
+}
+.home-live-script{
+  width:100% !important;
+  margin:0 !important;
+  padding-bottom:15px;
+  transform:rotate(-8deg) !important;
+}
+.home-live-script span:nth-child(1),
+.home-live-script span:nth-child(2){
+  top:0;
+  margin-left:0;
+}
+.home-live-script span:last-child{
+  bottom:0 !important;
+  right:2px !important;
+}
+#bottomNav button[data-route="home"]{
+  justify-content:center !important;
+  gap:5px !important;
+}
+#bottomNav button[data-route="home"] .nav-icon-shell{
+  width:28.75px !important;
+  height:28.75px !important;
+  min-height:28.75px !important;
+  flex:0 0 28.75px !important;
+  margin:0 !important;
+  padding:0 !important;
+  display:grid;
+  place-items:center;
+}
+#bottomNav button[data-route="home"] .nav-icon-shell .app-icon{
+  width:28.75px !important;
+  height:28.75px !important;
+}
