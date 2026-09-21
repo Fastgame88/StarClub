@@ -892,10 +892,10 @@ function offersScreen() {
     return offerStore === 'all' || selectedStore === 'all' || offerStore === String(selectedStore);
   });
   return `
-    <section class="offers-design">
+    <section class="offers-design ${tab === 'wholesale' ? 'offers-wholesale' : 'offers-club'}">
     <header class="offers-heading">
       <button class="back-button" type="button" data-back="1">${appIcon('arrow-left')}<span>Назад</span></button>
-      <div class="offers-heading-copy"><img src="/assets/starclub-crown.svg" alt="" aria-hidden="true"><h2>${tab === 'club' ? 'Клубні пропозиції' : 'Оптові пропозиції'}</h2><p>Вигідніше з кожною покупкою</p></div>
+      <div class="offers-heading-copy"><img src="/assets/starclub-crown.svg" alt="" aria-hidden="true"><h2>${tab === 'club' ? 'Клубні пропозиції' : 'Оптові пропозиції'}</h2><p>${tab === 'wholesale' ? 'Більші обсяги — більша вигода' : 'Вигідніше з кожною покупкою'}</p></div>
       ${notificationButton()}
     </header>
     <div class="stack offers-content">
@@ -904,7 +904,7 @@ function offersScreen() {
         <button class="${tab === 'wholesale' ? 'active' : ''}" data-offer-tab="wholesale">${appIcon('shopping-cart')}Оптові</button>
       </div>
       <button type="button" class="offers-store-note" data-route="profile">${appIcon('store')}<span>Ціни для улюбленого магазину</span><b>${safeHtml(selectedStoreName || 'не вибрано')}</b><i aria-hidden="true">›</i></button>
-      ${items.map((o) => {
+      ${items.map((o, index) => {
         const oldPrice = o.old_price_cents === null || o.old_price_cents === undefined ? null : Number(o.old_price_cents);
         const newPrice = o.current_price_cents === null || o.current_price_cents === undefined ? null : Number(o.current_price_cents);
         const saving = o.saving_cents === null || o.saving_cents === undefined
@@ -914,7 +914,7 @@ function offersScreen() {
         const showRule = o.type === 'wholesale' && o.discount_label;
         const multiplier = Number(o.stars_multiplier || 0);
         const scope = String(o.store_id || 'all') === 'all' ? 'Усі магазини' : (o.store_name || o.store_id);
-        const fallbackImage = /кава|раф|coffee/i.test(o.target_name || o.name || '') ? '/assets/coffee.svg' : /хліб|випіч|круасан/i.test(o.target_name || o.name || '') ? '/assets/croissant.svg' : '/assets/starclub-bag.svg';
+        const fallbackImage = /вода|water|молоко/i.test(o.target_name || o.name || '') ? '/assets/water.svg' : /кава|раф|coffee/i.test(o.target_name || o.name || '') ? '/assets/coffee.svg' : /хліб|випіч|круасан/i.test(o.target_name || o.name || '') ? '/assets/croissant.svg' : '/assets/starclub-bag.svg';
         return `<article class="card promo-feed-card offer-compact-card">
           ${multiplier > 1 ? `<span class="offer-multiplier">x${safeHtml(multiplier)}★</span>` : ''}
           <div class="promo-feed-card__body">
@@ -924,7 +924,11 @@ function offersScreen() {
             <div class="offer-compact-prices">${newPrice !== null ? `<strong>${o.price_from ? 'від ' : ''}${formatOfferMoney(newPrice)}</strong>` : `<strong>${safeHtml(o.discount_label || 'Star Club')}</strong>`}${oldPrice !== null ? `<s>${o.price_from ? 'від ' : ''}${formatOfferMoney(oldPrice)}</s>` : ''}${saving !== null && saving > 0 ? `<span>−${formatOfferMoney(saving)}</span>` : ''}</div>
             ${showRule ? `<p class="offer-compact-rule">${safeHtml(o.discount_label)}</p>` : ''}
           </div>
-          <div class="promo-feed-card__media"><img src="${safeHtml(o.image_url || fallbackImage)}" alt="${safeHtml(o.target_name || o.name || '')}" onerror="this.onerror=null;this.src='/assets/star.svg'"></div>
+          <div class="promo-feed-card__media">
+            ${o.type === 'wholesale' ? `<svg class="wholesale-discount-tag" viewBox="0 0 36 42" aria-hidden="true"><path d="M19 1h12a4 4 0 0 1 4 4v13L15 40 1 26Z" fill="#efc565"/><circle cx="28" cy="8" r="2.5" fill="#45330d"/><path d="m11 25 11-10" stroke="#16140e" stroke-width="2.4" stroke-linecap="round"/><circle cx="11" cy="18" r="2" fill="none" stroke="#16140e" stroke-width="1.8"/><circle cx="22" cy="25" r="2" fill="none" stroke="#16140e" stroke-width="1.8"/></svg>` : ''}
+            <img src="${safeHtml(o.image_url || fallbackImage)}" alt="${safeHtml(o.target_name || o.name || '')}" onerror="this.onerror=null;this.src='/assets/star.svg'">
+            ${o.type === 'wholesale' ? `<p class="wholesale-media-caption">${index % 2 === 0 ? 'Вигідна ціна<br>для оптових покупок' : 'Більше покупок —<br>більше вигоди'}</p>` : ''}
+          </div>
         </article>`;
       }).join('') || '<div class="card empty">Активних пропозицій для цього магазину поки немає</div>'}
     </div></section>`;

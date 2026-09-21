@@ -2035,3 +2035,76 @@ label.check span{min-width:0}
 @media(max-width:360px){
   .offers-heading-copy{transform:translateY(-13.375px);}
 }
+
+/* Bring the complete offers list closer to the raised heading. */
+.offers-heading{margin-bottom:0;}
+.offers-design .tabs button:not(.active) .app-icon{
+  filter:brightness(0) saturate(100%) invert(70%) !important;
+  opacity:1;
+}
+.offers-design .tabs button.active .app-icon{
+  filter:brightness(0) !important;
+  opacity:1;
+}
+
+/* Wholesale reference: text at left, a gold product panel at right. */
+.offers-wholesale .offer-compact-card{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) 34% !important;
+  align-items:stretch !important;
+  min-height:166px !important;
+  padding:0 !important;
+  border-radius:22px;
+  background:radial-gradient(ellipse at 0% 100%,#86601f33,transparent 52%),linear-gradient(120deg,#121711,#080d11 66%,#1c1c10) !important;
+}
+.offers-wholesale .promo-feed-card__body{
+  width:100%;min-width:0;min-height:164px;
+  padding:15px 9px 16px 16px !important;
+  justify-content:flex-start;
+}
+.offers-wholesale .offer-compact-meta{gap:9px;}
+.offers-wholesale .offer-compact-meta>span{font-size:10.5px;padding:4px 8px;}
+.offers-wholesale .offer-compact-meta>small{font-size:9px;}
+.offers-wholesale .offer-compact-card h3{font-size:15px;line-height:1.22;margin:10px 0 6px;}
+.offers-wholesale .promo-feed-description{max-width:100%;font-size:11px;line-height:1.35;}
+.offers-wholesale .offer-compact-prices{margin-top:13px;gap:8px;}
+.offers-wholesale .offer-compact-prices strong{font-size:23px;color:#efcc77;}
+.offers-wholesale .offer-compact-prices s{font-size:11px;}
+.offers-wholesale .offer-compact-rule{font-size:11px;color:#d5b866;margin:11px 0 0;line-height:1.35;}
+.offers-wholesale .promo-feed-card__media{
+  position:relative;inset:auto;align-self:stretch;
+  width:100%;min-width:0;min-height:164px;
+  display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;
+  padding:16px 8px 12px 10px;
+  border-left:1px solid #7c602018;
+  background:radial-gradient(ellipse at 75% 40%,#bb8b303b,transparent 70%),linear-gradient(140deg,#51432230,transparent);
+}
+.offers-wholesale .promo-feed-card__media:before{
+  top:18px;bottom:42px;left:6px;right:8px;height:auto;
+  border-radius:50% 50% 22% 22%;
+  background:radial-gradient(ellipse at 40% 20%,#ca9d4333,transparent 58%),linear-gradient(135deg,#a07a2c44,#171b1455 45%,#b28b3430);
+  border:1px solid #cfae5230;
+  box-shadow:inset 0 8px 0 #d5b45812,inset 0 20px 0 #d5b4580d;
+}
+.offers-wholesale .promo-feed-card__media>img{
+  flex:1 1 auto;min-height:0;width:100%;height:100px;max-height:120px;
+  object-fit:contain !important;padding:10px 0 3px;
+  filter:drop-shadow(0 6px 5px #0007);
+}
+.offers-wholesale .wholesale-media-caption{
+  position:relative;z-index:2;flex:0 0 auto;
+  margin:5px 0 0;color:#aeb1b5;font-size:9px;line-height:1.35;
+}
+.offers-wholesale .wholesale-discount-tag{
+  position:absolute;z-index:3;right:8px;top:9px;width:28px;height:33px;
+  filter:drop-shadow(0 2px 3px #0006);
+}
+.offers-wholesale .offer-multiplier{right:40px;}
+@media(max-width:360px){
+  .offers-wholesale .promo-feed-card__body{padding:13px 8px 14px 12px !important;}
+  .offers-wholesale .offer-compact-card h3{font-size:14px;}
+  .offers-wholesale .offer-compact-prices strong{font-size:21px;}
+  .offers-wholesale .offer-compact-prices s{font-size:10px;}
+  .offers-wholesale .offer-compact-meta{gap:6px;}
+  .offers-wholesale .offer-compact-meta>small{font-size:8px;}
+}
