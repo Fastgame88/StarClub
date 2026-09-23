@@ -1223,7 +1223,6 @@ function showCashierModal(cardNumber) {
         <p>Покажіть цей штрихкод касиру</p>
         <div class="star-barcode-box">
           <img src="/api/svg/barcode?text=${encodeURIComponent(clean)}" alt="Штрихкод картки">
-          <b>${safeHtml(clean)}</b>
         </div>
         <div class="star-card-number-box">
           <button class="star-copy-button" type="button" data-copy-card="${safeHtml(clean)}" aria-label="Скопіювати номер картки">${appIcon('copy')}</button>

@@ -2650,3 +2650,220 @@ label.check span{min-width:0}
   .star-card-number-box strong{font-size:16px;}
   .star-done-button{min-height:50px;font-size:17px;margin-top:15px;}
 }
+
+/* Barcode reference: dimensions scale together from the 591px reference.
+   Existing artwork and the shared navigation remain unchanged. */
+.star-cashier-overlay {
+  --card-unit: calc(min(100vw, 470px) / 591);
+  bottom: calc(94px + var(--safe-bottom));
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+.star-cashier-overlay .star-cashier-scroll {
+  padding: calc(16 * var(--card-unit)) calc(24 * var(--card-unit)) calc(22 * var(--card-unit));
+}
+.star-cashier-overlay .star-cashier-heading {
+  height: calc(57 * var(--card-unit));
+  min-height: 0;
+  margin: 0 calc(-3 * var(--card-unit)) calc(27 * var(--card-unit));
+  grid-template-columns: calc(123 * var(--card-unit)) minmax(0,1fr) calc(123 * var(--card-unit));
+  gap: 0;
+  align-items: start;
+}
+.star-cashier-overlay .star-card-back {
+  width: calc(123 * var(--card-unit));
+  height: calc(54 * var(--card-unit));
+  min-height: 0;
+  padding: 0;
+  border-radius: calc(20 * var(--card-unit));
+  gap: calc(10 * var(--card-unit));
+  font-size: calc(18 * var(--card-unit));
+  font-weight: 700;
+}
+.star-cashier-overlay .star-card-back .app-icon {
+  width: calc(22 * var(--card-unit));
+  height: calc(22 * var(--card-unit));
+}
+.star-cashier-overlay .star-card-heading-copy {
+  align-self: start;
+  padding-top: calc(4 * var(--card-unit));
+}
+.star-cashier-overlay .star-card-heading-copy h2 {
+  font-size: calc(26 * var(--card-unit));
+  line-height: calc(31 * var(--card-unit));
+  letter-spacing: 0;
+  font-weight: 750;
+}
+.star-cashier-overlay .star-card-heading-copy p {
+  font-size: calc(16 * var(--card-unit));
+  line-height: calc(20 * var(--card-unit));
+  margin: calc(4 * var(--card-unit)) calc(-35 * var(--card-unit)) 0;
+  font-weight: 400;
+}
+.star-cashier-overlay .notification-btn {
+  width: calc(59 * var(--card-unit));
+  height: calc(59 * var(--card-unit));
+  border-radius: calc(21 * var(--card-unit));
+}
+.star-cashier-overlay .notification-btn>.app-icon {
+  width: calc(29 * var(--card-unit));
+  height: calc(29 * var(--card-unit));
+  filter: sepia(1) saturate(3) brightness(1.25);
+}
+.star-cashier-overlay .notification-badge {
+  width: calc(23 * var(--card-unit));
+  height: calc(23 * var(--card-unit));
+  min-width: calc(23 * var(--card-unit));
+  font-size: calc(13 * var(--card-unit));
+  right: calc(-6 * var(--card-unit));
+  top: calc(-5 * var(--card-unit));
+}
+.star-cashier-overlay .star-member-card-cashier {
+  aspect-ratio: 543 / 291;
+  border-radius: calc(28 * var(--card-unit));
+  margin-bottom: 0;
+  border-color: rgba(185,150,77,.36);
+}
+.star-cashier-overlay .star-cashier-brand {
+  top: calc(34 * var(--card-unit));
+  opacity: .68;
+}
+.star-cashier-overlay .star-cashier-brand .star-club-emblem {
+  width: calc(96 * var(--card-unit));
+  height: calc(88 * var(--card-unit));
+  border-radius: calc(40 * var(--card-unit));
+  margin: 0;
+}
+.star-cashier-overlay .star-cashier-brand .star-club-emblem-star {
+  width: calc(52 * var(--card-unit));
+  height: calc(50 * var(--card-unit));
+  font-size: 0;
+  background: #fff;
+  clip-path: polygon(50% 0%,62% 35%,99% 35%,69% 57%,80% 95%,50% 73%,20% 95%,31% 57%,1% 35%,38% 35%);
+  transform: none;
+}
+.star-cashier-overlay .star-cashier-brand .star-club-wordmark {
+  font-size: calc(20 * var(--card-unit));
+  line-height: calc(25 * var(--card-unit));
+  letter-spacing: calc(4 * var(--card-unit));
+  margin-top: calc(10 * var(--card-unit));
+}
+.star-cashier-overlay .star-cashier-member-copy {
+  left: calc(29 * var(--card-unit));
+  bottom: calc(25 * var(--card-unit));
+  opacity: .65;
+}
+.star-cashier-overlay .star-cashier-member-copy .star-member-name {
+  font-size: calc(28 * var(--card-unit));
+  line-height: calc(34 * var(--card-unit));
+  font-weight: 700;
+  margin: 0 0 calc(17 * var(--card-unit));
+}
+.star-cashier-overlay .star-cashier-member-copy .star-member-number-label {
+  font-size: calc(18 * var(--card-unit));
+  line-height: calc(23 * var(--card-unit));
+  margin: 0;
+}
+.star-cashier-overlay .star-cashier-member-copy .star-member-number {
+  font-size: calc(20 * var(--card-unit));
+  line-height: calc(26 * var(--card-unit));
+}
+.star-cashier-overlay .star-mini-qr {
+  width: calc(66 * var(--card-unit));
+  height: calc(66 * var(--card-unit));
+  right: calc(23 * var(--card-unit));
+  bottom: calc(24 * var(--card-unit));
+  border-radius: calc(21 * var(--card-unit));
+  opacity: .65;
+}
+.star-cashier-overlay .star-mini-qr .app-icon {
+  width: calc(33 * var(--card-unit));
+  height: calc(33 * var(--card-unit));
+}
+.star-cashier-overlay .star-barcode-sheet {
+  margin: 0 calc(-16 * var(--card-unit));
+  padding: calc(64 * var(--card-unit)) calc(33 * var(--card-unit)) calc(29 * var(--card-unit));
+  min-height: 0;
+  border-radius: calc(40 * var(--card-unit));
+  border-color: rgba(218,170,72,.6);
+}
+.star-cashier-overlay .star-sheet-handle {
+  top: calc(20 * var(--card-unit));
+  width: calc(62 * var(--card-unit));
+  height: calc(7 * var(--card-unit));
+}
+.star-cashier-overlay .star-barcode-sheet>h2 {
+  font-size: calc(40 * var(--card-unit));
+  line-height: calc(48 * var(--card-unit));
+  font-weight: 750;
+  letter-spacing: 0;
+  margin: 0;
+}
+.star-cashier-overlay .star-barcode-sheet>p {
+  font-size: calc(24 * var(--card-unit));
+  line-height: calc(29 * var(--card-unit));
+  font-weight: 400;
+  margin: calc(20 * var(--card-unit)) 0 calc(27 * var(--card-unit));
+}
+.star-cashier-overlay .star-barcode-box {
+  height: calc(174 * var(--card-unit));
+  min-height: 0;
+  padding: calc(23 * var(--card-unit)) calc(68 * var(--card-unit)) calc(20 * var(--card-unit));
+  border-radius: calc(20 * var(--card-unit));
+}
+.star-cashier-overlay .star-barcode-box img {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  object-fit: contain;
+}
+.star-cashier-overlay .star-card-number-box {
+  height: calc(110 * var(--card-unit));
+  min-height: 0;
+  margin-top: calc(30 * var(--card-unit));
+  padding: calc(14 * var(--card-unit)) calc(15 * var(--card-unit));
+  grid-template-columns: calc(64 * var(--card-unit)) minmax(0,1fr) calc(48 * var(--card-unit));
+  gap: calc(22 * var(--card-unit));
+  border-radius: calc(22 * var(--card-unit));
+}
+.star-cashier-overlay .star-card-number-box span {
+  font-size: calc(18 * var(--card-unit));
+  line-height: calc(23 * var(--card-unit));
+  margin-bottom: calc(5 * var(--card-unit));
+}
+.star-cashier-overlay .star-card-number-box strong {
+  font-size: calc(30 * var(--card-unit));
+  line-height: calc(36 * var(--card-unit));
+  font-weight: 750;
+  letter-spacing: calc(1 * var(--card-unit));
+}
+.star-cashier-overlay .star-copy-button {
+  width: calc(64 * var(--card-unit));
+  height: calc(64 * var(--card-unit));
+  border-radius: calc(21 * var(--card-unit));
+}
+.star-cashier-overlay .star-copy-button .app-icon {
+  width: calc(30 * var(--card-unit));
+  height: calc(30 * var(--card-unit));
+}
+.star-cashier-overlay .star-copy-button:last-child {
+  width: calc(48 * var(--card-unit));
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.star-cashier-overlay .star-done-button {
+  height: calc(72 * var(--card-unit));
+  min-height: 0;
+  margin-top: calc(19 * var(--card-unit));
+  border-radius: calc(23 * var(--card-unit));
+  font-size: calc(24 * var(--card-unit));
+  font-weight: 750;
+  padding: 0;
+  border: 1px solid rgba(255,223,134,.55);
+}
+.star-cashier-overlay .star-copy-button .app-icon,
+.star-cashier-overlay .star-mini-qr .app-icon,
+.star-cashier-overlay .star-card-back .app-icon,
+.star-cashier-overlay .notification-btn>.app-icon {
+  filter:brightness(0) saturate(100%) invert(83%) sepia(53%) saturate(610%) hue-rotate(347deg) brightness(99%) contrast(91%);
+}
