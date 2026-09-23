@@ -1348,10 +1348,10 @@ async function render() {
   document.body.classList.toggle('home-route', state.route === 'home' && Boolean(state.client?.registered));
   document.body.classList.toggle('offers-route', state.route === 'offers' && Boolean(state.client?.registered));
   document.body.classList.toggle('rewards-route', state.route === 'rewards' && Boolean(state.client?.registered));
-  document.body.classList.toggle('more-route', state.route === 'more' && Boolean(state.client?.registered));
   document.body.classList.toggle('card-route', state.route === 'card' && Boolean(state.client?.registered));
   if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
     $app.innerHTML = startScreen();
+    document.body.classList.remove('more-route');
     bindEvents();
     return;
   }
@@ -1384,6 +1384,7 @@ async function render() {
       $app.innerHTML = `<div class="empty">${e.message}</div>`;
     }
   }
+  document.body.classList.toggle('more-route', state.route === 'more' && Boolean(state.client?.registered));
   bindEvents();
 }
 

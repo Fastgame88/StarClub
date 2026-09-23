@@ -2963,3 +2963,49 @@ body.cashier-open { position:fixed; top:var(--cashier-scroll-top,0px); width:100
 .more-reference-heading .notification-panel { width:min(340px,calc(100vw - 30px));z-index:120; }
 .more-reference-heading { z-index:3; }
 .more-reference-grid { z-index:1; }
+
+/* Keep the More artwork and controls in one fixed, proportionate viewport. */
+body.more-route {
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100dvh;
+  padding:0;
+  overflow:hidden;
+  overscroll-behavior:none;
+}
+.app-nav-unified.more-route .screen {
+  position:fixed;
+  top:0;
+  bottom:calc(94px + var(--safe-bottom));
+  left:50%;
+  transform:translateX(-50%);
+  width:min(470px,100%);
+  height:auto;
+  min-height:0;
+  padding:0;
+  overflow:hidden;
+  display:flex;
+  justify-content:center;
+  align-items:flex-start;
+  overscroll-behavior:none;
+}
+.more-route .more-reference {
+  width:min(100%,calc((100dvh - 94px - var(--safe-bottom)) * 457 / 770));
+  flex:none;
+  container-type:inline-size;
+  touch-action:none;
+}
+.more-reference-heading,
+.more-reference-grid {
+  --more-unit:calc(100cqw / 457);
+}
+.more-reference-tile,
+.more-reference-tile:active,
+.more-reference-tile:focus {
+  transform:none;
+  scale:1;
+  translate:none;
+  transition:none;
+}
+.more-reference .notification-list { touch-action:pan-y; }
