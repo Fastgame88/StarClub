@@ -2901,3 +2901,65 @@ body.cashier-open { position:fixed; top:var(--cashier-scroll-top,0px); width:100
     linear-gradient(115deg,#191b17 0%,#111412 40%,#0b0e10 67%,#181810 100%);
   box-shadow:inset 0 1px 1px rgba(244,205,112,.1),inset 0 -1px 10px rgba(214,161,57,.04);
 }
+
+/* More screen reference. Artwork is separate from live text and navigation. */
+.more-route .app-shell { background:#060809; }
+.more-route .screen { padding:0 0 calc(94px + var(--safe-bottom)); background:#060809; }
+.more-reference {
+  --more-unit:calc(min(100vw,470px) / 457);
+  position:relative;
+  width:100%;
+  aspect-ratio:457 / 770;
+  isolation:isolate;
+  color:#f1f1ed;
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+}
+.more-reference::before {
+  content:"";
+  position:absolute;
+  inset:0;
+  z-index:-1;
+  background:url('/assets/design/more/more-background.png') center / 100% 100% no-repeat;
+  filter:brightness(.52) saturate(.8);
+  pointer-events:none;
+}
+.more-reference-heading {
+  position:absolute;top:calc(17 * var(--more-unit));left:calc(15 * var(--more-unit));right:calc(14 * var(--more-unit));
+  display:grid;grid-template-columns:calc(50 * var(--more-unit)) 1fr calc(50 * var(--more-unit));align-items:start;
+}
+.more-reference-heading>div:not(.notification-wrap) { text-align:center;padding-top:calc(7 * var(--more-unit)); }
+.more-reference-heading h2 { margin:0;font-size:calc(23 * var(--more-unit));line-height:calc(28 * var(--more-unit));font-weight:750; }
+.more-reference-heading p { margin:calc(3 * var(--more-unit)) calc(-20 * var(--more-unit)) 0;color:#a5a7ad;font-size:calc(13 * var(--more-unit));line-height:calc(17 * var(--more-unit)); }
+.more-reference-mark,.more-reference-heading .notification-btn {
+  width:calc(49 * var(--more-unit));height:calc(49 * var(--more-unit));display:grid;place-items:center;
+  border:1px solid #a98b4d;border-radius:calc(17 * var(--more-unit));
+  background:linear-gradient(120deg,#3b321d,#121411 58%,#151711);
+  box-shadow:inset 0 0 5px #e4b85229,0 0 8px #e4b8520c;
+}
+.more-reference-heading .notification-wrap { justify-self:end; }
+.more-reference .app-icon { filter:brightness(0) saturate(100%) invert(89%) sepia(27%) saturate(565%) hue-rotate(357deg) brightness(100%) contrast(89%); }
+.more-reference-mark .app-icon { width:calc(30 * var(--more-unit));height:calc(30 * var(--more-unit)); }
+.more-reference-heading .notification-btn .app-icon { width:calc(25 * var(--more-unit));height:calc(25 * var(--more-unit)); }
+.more-reference-heading .notification-badge { min-width:calc(17 * var(--more-unit));width:calc(17 * var(--more-unit));height:calc(17 * var(--more-unit));font-size:calc(10 * var(--more-unit));top:calc(-2 * var(--more-unit));right:calc(-2 * var(--more-unit)); }
+.more-reference-grid {
+  position:absolute;top:calc(92 * var(--more-unit));left:calc(13 * var(--more-unit));right:calc(10 * var(--more-unit));
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:calc(11 * var(--more-unit));row-gap:calc(8 * var(--more-unit));
+  grid-template-rows:calc(146 * var(--more-unit)) calc(146 * var(--more-unit)) calc(144 * var(--more-unit)) calc(134 * var(--more-unit));
+}
+.more-reference-tile {
+  position:relative;display:flex;flex-direction:column;align-items:flex-start;text-align:left;min-width:0;
+  padding:calc(14 * var(--more-unit)) calc(18 * var(--more-unit));border:0;border-radius:calc(22 * var(--more-unit));background:transparent;color:inherit;
+}
+.more-reference-tile:focus-visible { outline:2px solid #f4d37b;outline-offset:2px; }
+.more-reference-tile:active { background:#e4b75f0d; }
+.more-reference-icon {
+  display:grid;place-items:center;flex:none;width:calc(52 * var(--more-unit));height:calc(52 * var(--more-unit));
+  border:1px solid #ad8c48;border-radius:calc(15 * var(--more-unit));background:linear-gradient(130deg,#2e2a1a,#151710 72%);box-shadow:inset 0 0 4px #e6c47418;
+}
+.more-reference-icon .app-icon { width:calc(29 * var(--more-unit));height:calc(29 * var(--more-unit)); }
+.more-reference-title { display:block;margin-top:calc(12 * var(--more-unit));font-size:calc(14 * var(--more-unit));line-height:calc(18 * var(--more-unit));font-weight:700; }
+.more-reference-description { display:block;margin-top:calc(5 * var(--more-unit));font-size:calc(12 * var(--more-unit));line-height:calc(14 * var(--more-unit));font-weight:400;color:#a8aaae; }
+.more-reference-chevron { position:absolute;right:calc(13 * var(--more-unit));top:calc(79 * var(--more-unit));width:calc(11 * var(--more-unit));height:calc(17 * var(--more-unit));color:#e9e6cd; }
+.more-reference-heading .notification-panel { width:min(340px,calc(100vw - 30px));z-index:120; }
+.more-reference-heading { z-index:3; }
+.more-reference-grid { z-index:1; }

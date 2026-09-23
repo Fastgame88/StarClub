@@ -1114,18 +1114,33 @@ function storesScreen() {
 }
 
 function moreScreen() {
+  const items = [
+    ['stores', 'store', 'Магазини', 'Адреси, графік, контакти'],
+    ['', 'barcode', 'Дізнатись ціну', 'Скануйте штрих-код<br>товару'],
+    ['rewardCodes', 'qr-code', 'Мої QR-коди', 'Активні коди<br>та історія використання'],
+    ['progress', 'trophy', 'Прогрес', 'Ваші цілі та досягнення'],
+    ['history', 'history', 'Історія', 'Ваші покупки<br>та нараховані зірки'],
+    ['news', 'newspaper', 'Новини', 'Акції, новинки<br>та спеціальні пропозиції'],
+    ['profile', 'user-round', 'Профіль', 'Ваші дані та налаштування'],
+    ['support', 'message-circle', 'Підтримка', 'Ми завжди на зв’язку']
+  ];
   return `
-    ${header('Ще', false)}
-    <div class="more-grid">
-      <button data-route="stores"><b>${appIcon('store')}</b><span>Магазини</span></button>
-      <button data-route="rewardCodes"><b>${appIcon('qr-code')}</b><span>Мої QR-коди</span></button>
-      <button data-route="progress"><b>${appIcon('trophy')}</b><span>Прогрес</span></button>
-      <button data-route="history"><b>${appIcon('history')}</b><span>Історія</span></button>
-      <button data-route="news"><b>${appIcon('newspaper')}</b><span>Новини</span></button>
-      <button data-route="profile"><b>${appIcon('user-round-pen')}</b><span>Профіль</span></button>
-      <button data-route="support"><b>${appIcon('message-circle')}</b><span>Підтримка</span></button>
-    </div>
-  `;
+    <section class="more-reference">
+      <header class="more-reference-heading">
+        <span class="more-reference-mark" aria-hidden="true">${appIcon('circle-star')}</span>
+        <div><h2>Ще</h2><p>Зручні функції в одному місці</p></div>
+        ${notificationButton()}
+      </header>
+      <div class="more-reference-grid">
+        ${items.map(([route, icon, title, description]) => `
+          <button class="more-reference-tile" type="button" ${route ? `data-route="${route}"` : 'data-price-unavailable'}>
+            <span class="more-reference-icon">${appIcon(icon)}</span>
+            <span class="more-reference-title">${title}</span>
+            <span class="more-reference-description">${description}</span>
+            <svg class="more-reference-chevron" viewBox="0 0 12 20" fill="none" aria-hidden="true"><path d="m3 3 6 7-6 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>`).join('')}
+      </div>
+    </section>`;
 }
 
 function supportScreen() {
@@ -1333,6 +1348,7 @@ async function render() {
   document.body.classList.toggle('home-route', state.route === 'home' && Boolean(state.client?.registered));
   document.body.classList.toggle('offers-route', state.route === 'offers' && Boolean(state.client?.registered));
   document.body.classList.toggle('rewards-route', state.route === 'rewards' && Boolean(state.client?.registered));
+  document.body.classList.toggle('more-route', state.route === 'more' && Boolean(state.client?.registered));
   document.body.classList.toggle('card-route', state.route === 'card' && Boolean(state.client?.registered));
   if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
     $app.innerHTML = startScreen();
@@ -1422,6 +1438,7 @@ function bindNotificationEvents() {
 }
 
 function bindEvents() {
+  document.querySelectorAll('[data-price-unavailable]').forEach((el) => el.onclick = () => toast('Перевірка ціни за штрихкодом поки недоступна.'));
   const rewardSearch = document.querySelector('[data-rewards-search]');
   if (rewardSearch) rewardSearch.oninput = () => {
     state.data.rewardSearch = rewardSearch.value;
