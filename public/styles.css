@@ -2929,7 +2929,7 @@ body.cashier-open { position:fixed; top:var(--cashier-scroll-top,0px); width:100
 }
 .more-reference-heading>div:not(.notification-wrap) { text-align:center;padding-top:calc(7 * var(--more-unit)); }
 .more-reference-heading h2 { margin:0;font-size:calc(23 * var(--more-unit));line-height:calc(28 * var(--more-unit));font-weight:750; }
-.more-reference-heading p { margin:calc(3 * var(--more-unit)) calc(-20 * var(--more-unit)) 0;color:#a5a7ad;font-size:calc(13 * var(--more-unit));line-height:calc(17 * var(--more-unit)); }
+.more-reference-heading>div:not(.notification-wrap)>p { margin:calc(3 * var(--more-unit)) calc(-20 * var(--more-unit)) 0;color:#a5a7ad;font-size:calc(13 * var(--more-unit));line-height:calc(17 * var(--more-unit)); }
 .more-reference-mark,.more-reference-heading .notification-btn {
   width:calc(49 * var(--more-unit));height:calc(49 * var(--more-unit));display:grid;place-items:center;
   border:1px solid #a98b4d;border-radius:calc(17 * var(--more-unit));
@@ -3009,3 +3009,34 @@ body.more-route {
   transition:none;
 }
 .more-reference .notification-list { touch-action:pan-y; }
+
+/* Fill the available More viewport without letterboxing. */
+.more-route .more-reference {
+  width:100%;
+  height:100%;
+  aspect-ratio:auto;
+  container-type:size;
+}
+.more-reference-heading,
+.more-reference-grid {
+  --more-unit:min(calc(100cqw / 457),calc(100cqh / 770));
+}
+.more-reference-heading { top:2.2078%;left:3.2823%;right:3.0635%; }
+.more-reference-grid {
+  top:11.9481%;left:2.8446%;right:2.1882%;height:77.1429%;
+  column-gap:2.5346%;row-gap:1.3468%;
+  grid-template-rows:146fr 146fr 144fr 134fr;
+}
+/* Notification text must stay within its own grid cell on every screen. */
+.notification-list { grid-template-columns:minmax(0,1fr);min-width:0;overflow-x:hidden; }
+.notification-panel .notification-item { min-width:0;max-width:100%;grid-template-columns:minmax(0,1fr); }
+.notification-panel .notification-item>span,
+.notification-panel .notification-item>p,
+.notification-panel .notification-item>small {
+  min-width:0;
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  word-break:normal;
+}
+.notification-panel .notification-item>p { margin:0; }
