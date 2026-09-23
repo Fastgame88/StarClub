@@ -807,8 +807,8 @@ async function cardScreen() {
       <section class="star-member-card star-member-card-main">
         <img class="star-member-art" src="/assets/design/card/member-card-art.png" alt="" aria-hidden="true">
         <div class="star-member-left">
-          <div class="star-club-emblem"><span class="star-club-emblem-star">★</span></div>
-          <div class="star-club-wordmark">STAR CLUB</div>
+          <div class="star-member-brand"><div class="star-club-emblem"><span class="star-club-emblem-star">★</span></div>
+          <div class="star-club-wordmark">STAR CLUB</div></div>
           <div class="star-member-name">${safeHtml(card.name || 'Клієнт Star Club')}</div>
           <div class="star-member-number-label">№ картки</div>
           <div class="star-member-number">${displayNumber}</div>
@@ -1187,6 +1187,7 @@ function profileScreen() {
 }
 
 function showCashierModal(cardNumber) {
+  if (document.querySelector('.star-cashier-overlay')) return;
   const clean = String(cardNumber || '').replaceAll(' ', '');
   const displayNumber = safeHtml(String(cardNumber || ''));
   const clientName = safeHtml(state.client?.name || 'Клієнт Star Club');
@@ -1200,7 +1201,7 @@ function showCashierModal(cardNumber) {
           <h2>Моя карта</h2>
           <p>Ваш Star Club завжди з вами</p>
         </div>
-        ${notificationButton()}
+        <span aria-hidden="true"></span>
       </header>
 
       <section class="star-member-card star-member-card-cashier">
@@ -1233,13 +1234,31 @@ function showCashierModal(cardNumber) {
       </section>
     </div>`;
 
-  document.querySelector('.app-shell')?.appendChild(wrap);
+  const savedScrollY = window.scrollY;
+  document.body.style.setProperty('--cashier-scroll-top', `${-savedScrollY}px`);
   document.body.classList.add('cashier-open');
+  document.documentElement.classList.add('cashier-open');
+  document.body.appendChild(wrap);
+  const content = wrap.querySelector('.star-cashier-scroll');
+  const fitCard = () => {
+    const navHeight = $nav.getBoundingClientRect().height;
+    wrap.style.bottom = `${navHeight}px`;
+    const scale = Math.min(1, wrap.clientHeight / Math.max(1, content.scrollHeight));
+    content.style.transform = `scale(${scale})`;
+  };
+  const resizeObserver = new ResizeObserver(fitCard);
+  resizeObserver.observe(wrap);
+  resizeObserver.observe(content);
+  fitCard();
   const onNavClick = () => close();
   const close = () => {
     $nav.removeEventListener('click', onNavClick, true);
+    resizeObserver.disconnect();
     document.body.classList.remove('cashier-open');
+    document.documentElement.classList.remove('cashier-open');
+    document.body.style.removeProperty('--cashier-scroll-top');
     wrap.remove();
+    window.scrollTo(0, savedScrollY);
   };
   wrap.querySelectorAll('[data-close-cashier]').forEach((el) => el.onclick = close);
   wrap.querySelectorAll('[data-copy-card]').forEach((el) => el.onclick = async () => {

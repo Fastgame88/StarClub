@@ -2867,3 +2867,37 @@ label.check span{min-width:0}
 .star-cashier-overlay .notification-btn>.app-icon {
   filter:brightness(0) saturate(100%) invert(83%) sepia(53%) saturate(610%) hue-rotate(347deg) brightness(99%) contrast(91%);
 }
+
+/* Requested card-only fixes: centered brand, opaque overlay, fixed viewport. */
+.star-member-brand { display:inline-flex; flex-direction:column; align-items:center; }
+.star-member-brand .star-club-emblem { margin-left:0; }
+.star-member-brand .star-club-wordmark,
+.star-cashier-brand .star-club-wordmark { text-align:center; padding-left: .2em; }
+html.cashier-open { overflow:hidden; overscroll-behavior:none; }
+body.cashier-open { position:fixed; top:var(--cashier-scroll-top,0px); width:100%; overflow:hidden; overscroll-behavior:none; }
+.star-cashier-overlay {
+  z-index:80;
+  isolation:isolate;
+  background:#05090d;
+  opacity:1;
+  overflow:hidden;
+  touch-action:none;
+  overscroll-behavior:none;
+}
+.star-cashier-overlay .star-cashier-scroll {
+  height:auto;
+  min-height:0;
+  overflow:hidden;
+  transform-origin:top center;
+}
+.star-cashier-overlay .star-barcode-sheet {
+  isolation:isolate;
+  background-color:#080c0f;
+}
+.star-cashier-overlay .star-card-number-box {
+  background:
+    radial-gradient(ellipse at 12% 8%,rgba(218,175,78,.13),transparent 57%),
+    radial-gradient(ellipse at 93% 100%,rgba(154,111,36,.12),transparent 60%),
+    linear-gradient(115deg,#191b17 0%,#111412 40%,#0b0e10 67%,#181810 100%);
+  box-shadow:inset 0 1px 1px rgba(244,205,112,.1),inset 0 -1px 10px rgba(214,161,57,.04);
+}
