@@ -208,6 +208,7 @@ async function performApiRequest(path, options = {}) {
     const err = new Error(message);
     err.code = data.error || message;
     err.status = res.status;
+    err.data = data;
     throw err;
   }
   return data;
@@ -1237,16 +1238,20 @@ function setPriceScannerMessage(message, detail = '') {
   fallback.querySelector('small').textContent = detail || '';
 }
 
-function renderPriceCheckResult(data, barcode) {
+function renderPriceCheckResult(data, barcode, debug = null) {
   const slot = document.querySelector('[data-price-check-result]');
   if (!slot) return;
   const product = data?.product;
   const storeName = data?.store?.name || 'Star';
   if (!product) {
+    const diagnostic = debug?.reason
+      ? `<div class="price-check-debug"><b>Діагностика:</b><span>${safeHtml(debug.reason)}</span>${debug.code ? `<small>Код: ${safeHtml(debug.code)}</small>` : ''}</div>`
+      : '';
     slot.innerHTML = `
       <article class="price-check-product-card not-found">
         <div class="price-check-not-found-icon">${appIcon('barcode')}</div>
         <div class="price-check-not-found-copy"><b>Товар не знайдено</b><p>Штрих-код ${safeHtml(barcode)}</p></div>
+        ${diagnostic}
         <button type="button" class="price-check-next compact" data-price-check-next>Сканувати ще раз</button>
       </article>`;
     slot.classList.add('visible');
@@ -1283,6 +1288,9 @@ function resetPriceCheckScanner() {
   scanner.paused = false;
   scanner.lastValue = '';
   scanner.lastValueAt = 0;
+  scanner.candidateValue = '';
+  scanner.candidateCount = 0;
+  scanner.candidateFirstAt = 0;
 }
 
 function bindPriceCheckResultActions() {
@@ -1308,7 +1316,7 @@ async function lookupProductByBarcode(rawValue) {
   } catch (error) {
     if (error.code === 'PRODUCT_NOT_FOUND' || error.status === 404) {
       try { tg?.HapticFeedback?.notificationOccurred?.('warning'); } catch {}
-      renderPriceCheckResult(null, barcode);
+      renderPriceCheckResult(null, barcode, error.data?.debug || null);
       return;
     }
     if (scanner) scanner.paused = false;
@@ -1547,11 +1555,14 @@ function detectRetailBarcodeFallback(video, scanner) {
   let pixels;
   try { pixels = ctx.getImageData(0, 0, width, height).data; } catch { return null; }
 
-  const rows = [0.37, 0.435, 0.5, 0.565, 0.63];
-  const slopes = [-0.055, 0, 0.055];
-  const left = Math.round(width * 0.04);
-  const right = Math.round(width * 0.96);
+  // Аналізуємо тільки центральну область, яка відповідає рамці сканування.
+  // Код має бути розпізнаний щонайменше на двох незалежних лініях одного кадру.
+  const rows = [0.405, 0.455, 0.5, 0.545, 0.595];
+  const slopes = [-0.035, 0, 0.035];
+  const left = Math.round(width * 0.105);
+  const right = Math.round(width * 0.895);
   const luma = new Array(right - left);
+  const hits = new Map();
   for (const row of rows) {
     for (const slope of slopes) {
       for (let x = left; x < right; x++) {
@@ -1560,11 +1571,60 @@ function detectRetailBarcodeFallback(video, scanner) {
         luma[x - left] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
       }
       const code = decodeRetailBarcodeLuma(luma);
-      if (code) return code;
+      if (code) hits.set(code, (hits.get(code) || 0) + 1);
     }
   }
-  return null;
+  let bestCode = null;
+  let bestHits = 0;
+  for (const [code, count] of hits.entries()) {
+    if (count > bestHits) { bestCode = code; bestHits = count; }
+  }
+  return bestHits >= 2 ? bestCode : null;
 }
+
+function scannerDetectionInsideFrame(detection, video) {
+  const box = detection?.boundingBox;
+  const frame = document.querySelector('.price-check-frame');
+  if (!box || !frame || !video?.videoWidth || !video?.videoHeight) return true;
+  const videoRect = video.getBoundingClientRect();
+  const frameRect = frame.getBoundingClientRect();
+  if (!videoRect.width || !videoRect.height) return true;
+
+  // video має object-fit: cover, тому переводимо координати BarcodeDetector у координати екрана.
+  const scale = Math.max(videoRect.width / video.videoWidth, videoRect.height / video.videoHeight);
+  const renderedWidth = video.videoWidth * scale;
+  const renderedHeight = video.videoHeight * scale;
+  const cropX = (renderedWidth - videoRect.width) / 2;
+  const cropY = (renderedHeight - videoRect.height) / 2;
+  const centerX = videoRect.left + (box.x + box.width / 2) * scale - cropX;
+  const centerY = videoRect.top + (box.y + box.height / 2) * scale - cropY;
+  const inside = centerX >= frameRect.left && centerX <= frameRect.right
+    && centerY >= frameRect.top && centerY <= frameRect.bottom;
+  if (!inside) return false;
+
+  // Для одновимірного товарного штрих-коду очікуємо витягнуту область, а не блок звичайного тексту.
+  const displayWidth = Math.abs(box.width * scale);
+  const displayHeight = Math.abs(box.height * scale);
+  if (displayWidth > 0 && displayHeight > 0 && Math.max(displayWidth, displayHeight) / Math.min(displayWidth, displayHeight) < 1.25) return false;
+  return true;
+}
+
+function scannerValueIsPlausible(rawValue, format = '', source = 'native') {
+  const value = String(rawValue || '').trim().replace(/\s+/g, '');
+  if (!value || value.length < 6 || value.length > 40) return false;
+  if (source === 'fallback') return /^\d{8}$|^\d{13}$/.test(value) && barcodeChecksumValid(value);
+
+  const normalizedFormat = String(format || '').toLowerCase();
+  // Нативному BarcodeDetector довіряємо тип формату, але перевіряємо довжину/склад.
+  // Контрольну цифру тут навмисно не вимагаємо: у 1С можуть бути внутрішні Code128/вагові коди.
+  if (normalizedFormat === 'ean_13') return /^\d{13}$/.test(value);
+  if (normalizedFormat === 'ean_8') return /^\d{8}$/.test(value);
+  if (normalizedFormat === 'upc_a') return /^\d{12}$/.test(value);
+  if (normalizedFormat === 'upc_e') return /^\d{6,8}$/.test(value);
+  // Code128/ITF/Code39 можуть бути не лише цифровими — їх приймаємо тільки після повторного підтвердження нижче.
+  return ['code_128', 'code_39', 'codabar', 'itf'].includes(normalizedFormat) && /^[0-9A-Z.$/+%\-]+$/i.test(value);
+}
+
 
 async function startPriceScanner() {
   const video = document.querySelector('[data-price-check-video]');
@@ -1573,7 +1633,8 @@ async function startPriceScanner() {
   const scanner = {
     active: true, paused: false, flash: false, stream: null, detector: null,
     detecting: false, fallbackDetecting: false, canvas: null, context: null,
-    raf: 0, lastFrameAt: 0, lastFallbackAt: 0, lastValue: '', lastValueAt: 0
+    raf: 0, lastFrameAt: 0, lastFallbackAt: 0, lastValue: '', lastValueAt: 0,
+    candidateValue: '', candidateCount: 0, candidateFirstAt: 0
   };
   state.priceScanner = scanner;
 
@@ -1625,13 +1686,29 @@ async function startPriceScanner() {
     }
   }
 
-  const acceptValue = async (rawValue) => {
-    const value = String(rawValue || '').trim();
-    if (!value || scanner.paused) return false;
+  const acceptValue = async (rawValue, { source = 'native', format = '' } = {}) => {
+    const value = String(rawValue || '').trim().replace(/\s+/g, '');
+    if (!value || scanner.paused || !scannerValueIsPlausible(value, format, source)) return false;
     const now = Date.now();
+
+    // Не реагуємо на одиничний випадковий збіг. Один і той самий код має стабільно
+    // розпізнатися в кількох послідовних кадрах. Це відсікає цифри/текст на упаковці.
+    if (scanner.candidateValue !== value || now - scanner.candidateFirstAt > 1500) {
+      scanner.candidateValue = value;
+      scanner.candidateCount = 1;
+      scanner.candidateFirstAt = now;
+      return false;
+    }
+    scanner.candidateCount += 1;
+    const requiredHits = source === 'fallback' ? 3 : 2;
+    if (scanner.candidateCount < requiredHits) return false;
     if (value === scanner.lastValue && now - scanner.lastValueAt <= 2200) return false;
+
     scanner.lastValue = value;
     scanner.lastValueAt = now;
+    scanner.candidateValue = '';
+    scanner.candidateCount = 0;
+    scanner.candidateFirstAt = 0;
     await lookupProductByBarcode(value);
     return true;
   };
@@ -1645,7 +1722,10 @@ async function startPriceScanner() {
         scanner.detecting = true;
         try {
           const codes = await scanner.detector.detect(video);
-          found = await acceptValue(codes?.[0]?.rawValue || '');
+          const validCode = (codes || []).find((code) =>
+            scannerDetectionInsideFrame(code, video)
+            && scannerValueIsPlausible(code.rawValue, code.format, 'native'));
+          if (validCode) found = await acceptValue(validCode.rawValue, { source: 'native', format: validCode.format });
         } catch {}
         scanner.detecting = false;
       }
@@ -1654,7 +1734,7 @@ async function startPriceScanner() {
         scanner.fallbackDetecting = true;
         try {
           const value = detectRetailBarcodeFallback(video, scanner);
-          if (value) await acceptValue(value);
+          if (value) await acceptValue(value, { source: 'fallback', format: value.length === 13 ? 'ean_13' : 'ean_8' });
         } catch (error) {
           console.warn('StarClub fallback barcode scan error', error);
         }

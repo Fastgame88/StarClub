@@ -3265,3 +3265,31 @@ body.priceCheck-route{
   .priceCheck-route .price-check-tip p{font-size:calc(13.5 * var(--pcu));}
   .priceCheck-route .price-check-manual{bottom:calc(18 * var(--pcu));height:calc(60 * var(--pcu));}
 }
+
+/* 2026-09-24 scanner accuracy + diagnostics */
+.price-check-frame span{
+  top:12%;
+  animation:price-check-scan-line 1.7s ease-in-out infinite alternate;
+  will-change:top,opacity;
+}
+@keyframes price-check-scan-line{
+  0%{top:12%;opacity:.78;}
+  48%{opacity:1;}
+  100%{top:88%;opacity:.86;}
+}
+.price-check-debug{
+  grid-column:1/-1;
+  display:flex;
+  flex-direction:column;
+  gap:calc(4 * var(--pcu));
+  padding:calc(9 * var(--pcu)) calc(11 * var(--pcu));
+  border:1px solid #604a2d;
+  border-radius:calc(12 * var(--pcu));
+  background:#1a160fdd;
+  color:#d5d7db;
+  font-size:calc(11.5 * var(--pcu));
+  line-height:1.28;
+}
+.price-check-debug b{color:#efc765;font-size:calc(12 * var(--pcu));}
+.price-check-debug span{overflow-wrap:anywhere;}
+.price-check-debug small{color:#8f949c;font-size:calc(10 * var(--pcu));}

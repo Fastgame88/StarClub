@@ -675,6 +675,7 @@ function productBarcodeLookupVariants(value) {
   const variants = [barcode];
   if (/^\d+$/.test(barcode)) {
     if (barcode.length === 12) variants.push(`0${barcode}`);
+    if (barcode.length === 13) variants.push(`0${barcode}`);
     if (barcode.length === 13 && barcode.startsWith('0')) variants.push(barcode.slice(1));
     if (barcode.length === 14 && barcode.startsWith('0')) variants.push(barcode.slice(1));
     const withoutLeadingZeros = barcode.replace(/^0+(?=\d)/, '');
@@ -695,6 +696,57 @@ function productBarcodesFromPayload(product = {}) {
 function payloadHasProductBarcodes(product = {}) {
   return Object.prototype.hasOwnProperty.call(product, 'barcodes')
     || ['barcode', 'ean', 'ean13', 'gtin'].some((key) => Object.prototype.hasOwnProperty.call(product, key));
+}
+
+function priceCheckDebugInfo(barcode, variants = []) {
+  const debug = {
+    code: 'UNKNOWN',
+    reason: 'Штрих-код не знайдено у локальній базі Star Club.',
+    scanned_barcode: barcode,
+    lookup_variants: variants
+  };
+  try {
+    const productsCount = Number(db.prepare('SELECT COUNT(*) AS count FROM products').get()?.count || 0);
+    const barcodesCount = Number(db.prepare('SELECT COUNT(*) AS count FROM product_barcodes').get()?.count || 0);
+    const lastProductUpdate = db.prepare('SELECT MAX(updated_at) AS value FROM products').get()?.value || null;
+    const lastBarcodeUpdate = db.prepare('SELECT MAX(updated_at) AS value FROM product_barcodes').get()?.value || null;
+    debug.products_in_catalog = productsCount;
+    debug.barcodes_in_catalog = barcodesCount;
+    debug.last_product_update = lastProductUpdate;
+    debug.last_barcode_update = lastBarcodeUpdate;
+
+    if (productsCount === 0) {
+      debug.code = 'CATALOG_NOT_SYNCED';
+      debug.reason = 'Каталог товарів із 1С у Star Club порожній. Спочатку потрібно виконати синхронізацію номенклатури з 1С.';
+      return debug;
+    }
+    if (barcodesCount === 0) {
+      debug.code = 'BARCODES_NOT_SYNCED';
+      debug.reason = `Товари з 1С у Star Club є (${productsCount}), але жодного штрих-коду не передано/не збережено. Причина не в сканері: під час синхронізації 1С поле barcode/barcodes не потрапило в backend.`;
+      return debug;
+    }
+
+    const placeholders = variants.map(() => '?').join(',');
+    const barcodeMatches = variants.length
+      ? Number(db.prepare(`SELECT COUNT(*) AS count FROM product_barcodes WHERE barcode IN (${placeholders})`).get(...variants)?.count || 0)
+      : 0;
+    debug.barcode_variant_matches = barcodeMatches;
+
+    const externalMatch = variants.find((variant) => productCatalogRowByCode(variant));
+    if (externalMatch) {
+      debug.code = 'BARCODE_SAVED_AS_PRODUCT_CODE';
+      debug.reason = `Товар із кодом ${externalMatch} є в каталозі, але цей номер не записаний як штрих-код товару. Перевірте передачу штрих-кодів із 1С.`;
+      return debug;
+    }
+
+    debug.code = 'BARCODE_NOT_IN_SYNC';
+    debug.reason = `Каталог із 1С синхронізований (${productsCount} товарів, ${barcodesCount} штрих-кодів), але саме штрих-коду ${barcode} серед синхронізованих немає. Перевірте, чи цей штрих-код передається з номенклатури 1С під час /api/1c/products/sync.`;
+    return debug;
+  } catch (error) {
+    debug.code = 'PRICE_CHECK_DEBUG_ERROR';
+    debug.reason = `Не вдалося перевірити стан синхронізації: ${String(error?.message || error)}`;
+    return debug;
+  }
 }
 
 function priceForProductAndStore(product, storeId) {
@@ -2165,7 +2217,15 @@ app.get('/api/client/price-check', clientAuth, (req, res) => {
     }
   }
   if (!product) {
-    return res.status(404).json({ ok: false, error: 'PRODUCT_NOT_FOUND', message: 'Товар не знайдено', barcode });
+    const debug = priceCheckDebugInfo(barcode, variants);
+    console.warn('[price-check] product not found', debug);
+    return res.status(404).json({
+      ok: false,
+      error: 'PRODUCT_NOT_FOUND',
+      message: 'Товар не знайдено',
+      barcode,
+      debug
+    });
   }
 
   const requestedStoreId = String(req.query.store_id || req.client.favorite_store || '').trim();
@@ -3379,6 +3439,8 @@ app.post('/api/1c/products/sync', oneCAuth, (req, res) => {
   let pricesSynced = 0;
   let zeroPrices = 0;
   let barcodesSynced = 0;
+  let productsWithBarcodes = 0;
+  let productsWithoutBarcodes = 0;
   const storesSynced = new Set();
   const touchedProducts = new Set();
   const tx = db.transaction(() => {
@@ -3416,6 +3478,10 @@ app.post('/api/1c/products/sync', oneCAuth, (req, res) => {
           upsertProductBarcode.run(barcode, productExternalId, index === 0 ? 1 : 0, t, t);
           barcodesSynced += 1;
         });
+        if (barcodes.length) productsWithBarcodes += 1;
+        else productsWithoutBarcodes += 1;
+      } else {
+        productsWithoutBarcodes += 1;
       }
 
       if (storeExternalId) {
@@ -3451,6 +3517,8 @@ app.post('/api/1c/products/sync', oneCAuth, (req, res) => {
     stores_synced: storesSynced.size,
     prices_synced: pricesSynced,
     barcodes_synced: barcodesSynced,
+    products_with_barcodes: productsWithBarcodes,
+    products_without_barcodes: productsWithoutBarcodes,
     zero_prices: zeroPrices
   });
 });
