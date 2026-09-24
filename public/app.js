@@ -981,21 +981,26 @@ function progressScreen() {
     return Array.from({ length: total }, (_, index) => `<span class="program-step ${index < filled ? 'filled' : ''}">${appIcon(iconName)}</span>`).join('');
   };
   return `
-    ${header('Прогрес і активність', true)}
-    <div class="stack">
-      <section class="progress-hero">
+    <div class="progress-design">
+      <header class="progress-ref-heading">
+        <button type="button" class="progress-ref-back" data-route="more">${appIcon('arrow-left')}<span>Назад</span></button>
+        <div class="progress-ref-heading-copy"><h2>Прогрес і активність</h2><p>Купуйте більше — отримуйте більше!</p></div>
+        ${notificationButton()}
+      </header>
+      <section class="progress-ref-hero">
         <span>${appIcon('award')}</span>
-        <div><p class="eyebrow">STAR CLUB</p><h2>Ваші цілі та винагороди</h2><p>Виконуйте завдання — прогрес оновлюється автоматично після покупок.</p></div>
+        <div><p class="eyebrow">STAR CLUB</p><h2>Ваші цілі та винагороди</h2><p>Виконуйте завдання — прогрес<br>оновлюється автоматично<br>після покупок.</p></div>
       </section>
-      <div class="section-heading"><span>${appIcon('trophy')}</span><div><h3>Активні челенджі</h3><p>Виконуйте завдання та отримуйте зірки</p></div></div>
+      <details class="progress-ref-group" open><summary class="progress-ref-section"><span>${appIcon('trophy')}</span><div><h3>Активні челенджі</h3><p>Виконуйте завдання та отримуйте зірки</p></div><i aria-hidden="true">›</i></summary><div class="progress-ref-list">
       ${p.challenges.map((c) => `
-        <section class="card challenge-card">
-          <div class="challenge-card-head"><span>${appIcon('target')}</span><div><b>${safeHtml(c.name)}</b><p>${safeHtml(c.description || '')}</p></div><strong>${c.progress}/${c.required_visits}</strong></div>
-          <div class="progressbar"><span style="width:${Math.min(100, c.progress / Math.max(1, c.required_visits) * 100)}%"></span></div>
+        <section class="card challenge-card ${/дн|день|days/i.test(c.name || '') ? 'challenge-calendar' : 'challenge-bag'}">
+          <div class="challenge-card-head"><span>${appIcon(/дн|день|days/i.test(c.name || '') ? 'calendar-days' : 'shopping-cart')}</span><div><b>${safeHtml(c.name)}</b><p>${safeHtml(c.description || '')}</p></div><strong>${c.progress}/${c.required_visits}</strong></div>
+          <div class="progressbar"><span style="width:${Math.max(0, Math.min(100, (Number(c.progress) || 0) / Math.max(1, Number(c.required_visits) || 1) * 100))}%"></span></div>
           <p class="challenge-reward">Залишилось ${Math.max(0, c.required_visits - c.progress)} · винагорода <b>${fmtStars(c.reward_stars)} ★</b></p>
         </section>
       `).join('') || '<div class="empty">Активних челенджів поки немає</div>'}
-      <div class="section-heading"><span>${appIcon('coffee')}</span><div><h3>Накопичувальні програми</h3><p>Збирайте покупки до безкоштовного коду</p></div></div>
+      </div></details>
+      <details class="progress-ref-group"><summary class="progress-ref-section"><span>${appIcon('coins')}</span><div><h3>Накопичувальні програми</h3><p>Збирайте покупки до безкоштовного коду</p></div><i aria-hidden="true">›</i></summary><div class="progress-ref-list">
       ${p.stamps.map((s) => `
         <section class="card stamp-program-card">
           <div class="stamp-program-head"><div><p class="eyebrow">ПРОГРАМА ЛОЯЛЬНОСТІ</p><h3>${safeHtml(s.name)}</h3></div><strong>${s.progress}/${s.required_qty}</strong></div>
@@ -1004,6 +1009,7 @@ function progressScreen() {
           <div class="program-hint">${appIcon('gift')}<span>Ще <b>${Math.max(0, s.required_qty - s.progress)}</b> до безкоштовного коду. Винагорода зʼявиться автоматично.</span></div>
         </section>
       `).join('') || '<div class="empty">Накопичувальних програм поки немає</div>'}
+      </div></details>
     </div>
   `;
 }
@@ -1353,7 +1359,7 @@ function syncMoreViewport() {
 function commitScreen(html) {
   $app.innerHTML = html;
   renderNav();
-  for (const route of ['home', 'offers', 'rewards', 'card', 'more']) {
+  for (const route of ['home', 'offers', 'rewards', 'card', 'more', 'progress']) {
     document.body.classList.toggle(`${route}-route`, state.route === route && Boolean(state.client?.registered));
   }
   if (!moreViewportObserver) {
