@@ -1184,12 +1184,6 @@ function scannerSvg(name) {
 function priceCheckScreen() {
   return `
     <section class="price-check-screen">
-      <header class="price-check-appbar">
-        <button class="price-check-back" type="button" data-price-check-back aria-label="Назад">${appIcon('arrow-left')}</button>
-        <strong>StarClub</strong>
-        <button class="price-check-more" type="button" data-route="more" aria-label="Ще"><span></span><span></span><span></span></button>
-      </header>
-
       <div class="price-check-title-row">
         <span class="price-check-title-icon">${appIcon('barcode')}</span>
         <div>
@@ -1256,6 +1250,7 @@ function renderPriceCheckResult(data, barcode) {
         <button type="button" class="price-check-next compact" data-price-check-next>Сканувати ще раз</button>
       </article>`;
     slot.classList.add('visible');
+    bindPriceCheckResultActions();
     return;
   }
   const image = product.image_url ? safeHtml(product.image_url) : '/assets/star.svg';
@@ -1365,66 +1360,306 @@ async function togglePriceScannerFlash() {
   }
 }
 
+const PRICE_BARCODE_PATTERNS = (() => {
+  const bits = {
+    L: ['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'],
+    G: ['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'],
+    R: ['1110010','1100110','1101100','1000010','1011100','1001110','1010000','1000100','1001000','1110100']
+  };
+  const toRuns = (pattern) => {
+    const out = [];
+    let current = pattern[0];
+    let count = 1;
+    for (let i = 1; i < pattern.length; i++) {
+      if (pattern[i] === current) count++;
+      else { out.push(count); current = pattern[i]; count = 1; }
+    }
+    out.push(count);
+    return out;
+  };
+  return {
+    L: bits.L.map(toRuns),
+    G: bits.G.map(toRuns),
+    R: bits.R.map(toRuns),
+    parity: ['LLLLLL','LLGLGG','LLGGLG','LLGGGL','LGLLGG','LGGLLG','LGGGLL','LGLGLG','LGLGGL','LGGLGL']
+  };
+})();
+
+function barcodeChecksumValid(code) {
+  if (!/^\d+$/.test(code) || code.length < 2) return false;
+  const digits = [...code].map(Number);
+  const check = digits.pop();
+  let sum = 0;
+  let weight = 3;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    sum += digits[i] * weight;
+    weight = weight === 3 ? 1 : 3;
+  }
+  return ((10 - (sum % 10)) % 10) === check;
+}
+
+function barcodeGuardScore(runs, start, count) {
+  if (start < 0 || start + count > runs.length) return Infinity;
+  const lengths = runs.slice(start, start + count).map((r) => r.length);
+  const total = lengths.reduce((a, b) => a + b, 0);
+  if (!(total > 0)) return Infinity;
+  const unit = total / count;
+  return lengths.reduce((score, length) => score + Math.abs(length / unit - 1), 0);
+}
+
+function barcodeDigitMatch(lengths, families) {
+  const total = lengths.reduce((a, b) => a + b, 0);
+  if (!(total > 0)) return null;
+  let best = null;
+  for (const family of families) {
+    const patterns = PRICE_BARCODE_PATTERNS[family];
+    for (let digit = 0; digit <= 9; digit++) {
+      const expected = patterns[digit];
+      const scale = 7 / total;
+      let score = 0;
+      for (let i = 0; i < 4; i++) score += Math.abs(lengths[i] * scale - expected[i]);
+      if (!best || score < best.score) best = { digit, family, score };
+    }
+  }
+  return best && best.score <= 2.45 ? best : null;
+}
+
+function decodeEan13Runs(runs, start) {
+  if (start + 59 > runs.length || runs[start]?.color !== 1) return null;
+  const startScore = barcodeGuardScore(runs, start, 3);
+  const middleScore = barcodeGuardScore(runs, start + 27, 5);
+  const endScore = barcodeGuardScore(runs, start + 56, 3);
+  if (startScore > 1.45 || middleScore > 2.2 || endScore > 1.45) return null;
+
+  let leftDigits = '';
+  let parity = '';
+  let score = startScore + middleScore + endScore;
+  for (let i = 0; i < 6; i++) {
+    const pos = start + 3 + i * 4;
+    const match = barcodeDigitMatch(runs.slice(pos, pos + 4).map((r) => r.length), ['L', 'G']);
+    if (!match) return null;
+    leftDigits += match.digit;
+    parity += match.family;
+    score += match.score;
+  }
+  const firstDigit = PRICE_BARCODE_PATTERNS.parity.indexOf(parity);
+  if (firstDigit < 0) return null;
+
+  let rightDigits = '';
+  for (let i = 0; i < 6; i++) {
+    const pos = start + 32 + i * 4;
+    const match = barcodeDigitMatch(runs.slice(pos, pos + 4).map((r) => r.length), ['R']);
+    if (!match) return null;
+    rightDigits += match.digit;
+    score += match.score;
+  }
+  const code = `${firstDigit}${leftDigits}${rightDigits}`;
+  if (!barcodeChecksumValid(code)) return null;
+  return { code, score };
+}
+
+function decodeEan8Runs(runs, start) {
+  if (start + 43 > runs.length || runs[start]?.color !== 1) return null;
+  const startScore = barcodeGuardScore(runs, start, 3);
+  const middleScore = barcodeGuardScore(runs, start + 19, 5);
+  const endScore = barcodeGuardScore(runs, start + 40, 3);
+  if (startScore > 1.45 || middleScore > 2.2 || endScore > 1.45) return null;
+
+  let code = '';
+  let score = startScore + middleScore + endScore;
+  for (let i = 0; i < 4; i++) {
+    const pos = start + 3 + i * 4;
+    const match = barcodeDigitMatch(runs.slice(pos, pos + 4).map((r) => r.length), ['L']);
+    if (!match) return null;
+    code += match.digit;
+    score += match.score;
+  }
+  for (let i = 0; i < 4; i++) {
+    const pos = start + 24 + i * 4;
+    const match = barcodeDigitMatch(runs.slice(pos, pos + 4).map((r) => r.length), ['R']);
+    if (!match) return null;
+    code += match.digit;
+    score += match.score;
+  }
+  if (!barcodeChecksumValid(code)) return null;
+  return { code, score };
+}
+
+function barcodeRunsFromLuma(luma, threshold) {
+  const runs = [];
+  let color = luma[0] < threshold ? 1 : 0;
+  let length = 1;
+  for (let i = 1; i < luma.length; i++) {
+    const next = luma[i] < threshold ? 1 : 0;
+    if (next === color) length++;
+    else { runs.push({ color, length }); color = next; length = 1; }
+  }
+  runs.push({ color, length });
+
+  // Прибираємо одиночні шумові пікселі, але не чіпаємо реальні вузькі модулі штрих-коду.
+  for (let i = 1; i < runs.length - 1; i++) {
+    if (runs[i].length <= 1 && runs[i - 1].color === runs[i + 1].color) {
+      runs[i - 1].length += runs[i].length + runs[i + 1].length;
+      runs.splice(i, 2);
+      i = Math.max(0, i - 2);
+    }
+  }
+  return runs;
+}
+
+function decodeRetailBarcodeLuma(luma) {
+  if (!luma || luma.length < 120) return null;
+  let min = 255, max = 0;
+  for (const value of luma) { if (value < min) min = value; if (value > max) max = value; }
+  if (max - min < 48) return null;
+  const middle = (min + max) / 2;
+  const thresholds = [middle, middle - 13, middle + 13];
+  let best = null;
+  for (const threshold of thresholds) {
+    const runs = barcodeRunsFromLuma(luma, threshold);
+    for (let i = 0; i < runs.length; i++) {
+      if (runs[i].color !== 1) continue;
+      const candidate13 = decodeEan13Runs(runs, i);
+      if (candidate13 && (!best || candidate13.score < best.score)) best = candidate13;
+      const candidate8 = decodeEan8Runs(runs, i);
+      if (candidate8 && (!best || candidate8.score < best.score)) best = candidate8;
+    }
+  }
+  return best?.code || null;
+}
+
+function detectRetailBarcodeFallback(video, scanner) {
+  if (!video?.videoWidth || !video?.videoHeight) return null;
+  if (!scanner.canvas) {
+    scanner.canvas = document.createElement('canvas');
+    scanner.context = scanner.canvas.getContext('2d', { willReadFrequently: true });
+  }
+  const maxWidth = 960;
+  const width = Math.min(maxWidth, Math.max(480, video.videoWidth));
+  const height = Math.max(270, Math.round(width * video.videoHeight / video.videoWidth));
+  if (scanner.canvas.width !== width || scanner.canvas.height !== height) {
+    scanner.canvas.width = width;
+    scanner.canvas.height = height;
+  }
+  const ctx = scanner.context;
+  if (!ctx) return null;
+  ctx.drawImage(video, 0, 0, width, height);
+  let pixels;
+  try { pixels = ctx.getImageData(0, 0, width, height).data; } catch { return null; }
+
+  const rows = [0.37, 0.435, 0.5, 0.565, 0.63];
+  const slopes = [-0.055, 0, 0.055];
+  const left = Math.round(width * 0.04);
+  const right = Math.round(width * 0.96);
+  const luma = new Array(right - left);
+  for (const row of rows) {
+    for (const slope of slopes) {
+      for (let x = left; x < right; x++) {
+        const y = Math.max(0, Math.min(height - 1, Math.round(height * row + (x - width / 2) * slope)));
+        const index = (y * width + x) * 4;
+        luma[x - left] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
+      }
+      const code = decodeRetailBarcodeLuma(luma);
+      if (code) return code;
+    }
+  }
+  return null;
+}
+
 async function startPriceScanner() {
   const video = document.querySelector('[data-price-check-video]');
   if (!video || state.route !== 'priceCheck') return;
   stopPriceScanner();
-  const scanner = { active: true, paused: false, flash: false, stream: null, detector: null, detecting: false, raf: 0, lastFrameAt: 0, lastValue: '', lastValueAt: 0 };
+  const scanner = {
+    active: true, paused: false, flash: false, stream: null, detector: null,
+    detecting: false, fallbackDetecting: false, canvas: null, context: null,
+    raf: 0, lastFrameAt: 0, lastFallbackAt: 0, lastValue: '', lastValueAt: 0
+  };
   state.priceScanner = scanner;
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    setPriceScannerMessage('Камера недоступна', 'Скористайтесь ручним введенням штрих-коду.');
+    setPriceScannerMessage('Камера недоступна', 'На цьому пристрої немає доступу до камери браузера.');
     return;
   }
 
-  try {
-    scanner.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false
-    });
-    if (!scanner.active || state.route !== 'priceCheck') { scanner.stream.getTracks().forEach((track) => track.stop()); return; }
-    video.srcObject = scanner.stream;
-    await video.play();
-    document.querySelector('[data-price-check-camera-fallback]')?.classList.remove('show');
-  } catch (error) {
-    setPriceScannerMessage('Немає доступу до камери', 'Надайте дозвіл на камеру або введіть штрих-код вручну.');
+  const cameraRequests = [
+    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: { facingMode: 'environment' }, audio: false },
+    { video: true, audio: false }
+  ];
+  let cameraError = null;
+  for (const constraints of cameraRequests) {
+    try {
+      scanner.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if (scanner.stream) break;
+    } catch (error) {
+      cameraError = error;
+    }
+  }
+  if (!scanner.stream) {
+    console.warn('StarClub price scanner camera error', cameraError);
+    setPriceScannerMessage('Немає доступу до камери', 'Надайте дозвіл на камеру в налаштуваннях Telegram або браузера.');
     return;
   }
 
-  if (!('BarcodeDetector' in window)) {
-    setPriceScannerMessage('Автосканування не підтримується', 'Камера працює, але на цьому пристрої використайте ручне введення штрих-коду.');
+  if (!scanner.active || state.route !== 'priceCheck') {
+    scanner.stream.getTracks().forEach((track) => track.stop());
     return;
+  }
+  video.srcObject = scanner.stream;
+  video.setAttribute('playsinline', '');
+  video.muted = true;
+  try { await video.play(); } catch {}
+  document.querySelector('[data-price-check-camera-fallback]')?.classList.remove('show');
+
+  // На Android/Chrome використовуємо нативний BarcodeDetector, а на iPhone/Safari/Telegram WebView
+  // автоматично переходить на власний EAN-13/EAN-8 сканер через Canvas — без ручного вводу.
+  if ('BarcodeDetector' in window) {
+    try {
+      const wanted = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar', 'itf'];
+      const supported = BarcodeDetector.getSupportedFormats ? await BarcodeDetector.getSupportedFormats() : wanted;
+      const formats = wanted.filter((item) => supported.includes(item));
+      scanner.detector = new BarcodeDetector(formats.length ? { formats } : undefined);
+    } catch {
+      try { scanner.detector = new BarcodeDetector(); } catch {}
+    }
   }
 
-  try {
-    const wanted = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'codabar', 'itf'];
-    const supported = BarcodeDetector.getSupportedFormats ? await BarcodeDetector.getSupportedFormats() : wanted;
-    const formats = wanted.filter((item) => supported.includes(item));
-    scanner.detector = new BarcodeDetector(formats.length ? { formats } : undefined);
-  } catch {
-    try { scanner.detector = new BarcodeDetector(); } catch {}
-  }
-  if (!scanner.detector) {
-    setPriceScannerMessage('Автосканування не підтримується', 'Скористайтесь ручним введенням штрих-коду.');
-    return;
-  }
+  const acceptValue = async (rawValue) => {
+    const value = String(rawValue || '').trim();
+    if (!value || scanner.paused) return false;
+    const now = Date.now();
+    if (value === scanner.lastValue && now - scanner.lastValueAt <= 2200) return false;
+    scanner.lastValue = value;
+    scanner.lastValueAt = now;
+    await lookupProductByBarcode(value);
+    return true;
+  };
 
   const detectLoop = async (timestamp = 0) => {
     if (!scanner.active || state.priceScanner !== scanner || state.route !== 'priceCheck') return;
-    if (!scanner.paused && !scanner.detecting && video.readyState >= 2 && timestamp - scanner.lastFrameAt >= 170) {
-      scanner.lastFrameAt = timestamp;
-      scanner.detecting = true;
-      try {
-        const codes = await scanner.detector.detect(video);
-        const value = String(codes?.[0]?.rawValue || '').trim();
-        const now = Date.now();
-        if (value && (value !== scanner.lastValue || now - scanner.lastValueAt > 2200)) {
-          scanner.lastValue = value;
-          scanner.lastValueAt = now;
-          await lookupProductByBarcode(value);
+    if (!scanner.paused && video.readyState >= 2) {
+      let found = false;
+      if (scanner.detector && !scanner.detecting && timestamp - scanner.lastFrameAt >= 150) {
+        scanner.lastFrameAt = timestamp;
+        scanner.detecting = true;
+        try {
+          const codes = await scanner.detector.detect(video);
+          found = await acceptValue(codes?.[0]?.rawValue || '');
+        } catch {}
+        scanner.detecting = false;
+      }
+      if (!found && !scanner.fallbackDetecting && timestamp - scanner.lastFallbackAt >= 190) {
+        scanner.lastFallbackAt = timestamp;
+        scanner.fallbackDetecting = true;
+        try {
+          const value = detectRetailBarcodeFallback(video, scanner);
+          if (value) await acceptValue(value);
+        } catch (error) {
+          console.warn('StarClub fallback barcode scan error', error);
         }
-      } catch {}
-      scanner.detecting = false;
+        scanner.fallbackDetecting = false;
+      }
     }
     scanner.raf = requestAnimationFrame(detectLoop);
   };
@@ -1634,9 +1869,14 @@ function showRewardModal(qr) {
 let renderRevision = 0;
 let moreViewportObserver;
 function syncMoreViewport() {
-  if (!document.body.classList.contains('more-route')) return;
   const navTop = $nav.getBoundingClientRect().top;
-  if (navTop > 0) $app.style.setProperty('--more-content-height', `${navTop}px`);
+  if (!(navTop > 0)) return;
+  if (document.body.classList.contains('more-route')) {
+    $app.style.setProperty('--more-content-height', `${navTop}px`);
+  }
+  if (document.body.classList.contains('priceCheck-route')) {
+    $app.style.setProperty('--price-content-height', `${navTop}px`);
+  }
 }
 function commitScreen(html) {
   $app.innerHTML = html;

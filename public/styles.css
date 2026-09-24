@@ -3191,3 +3191,77 @@ body.more-route {
   .price-check-title-row h1{font-size:calc(25 * var(--pcu));}.price-check-title-row p{font-size:calc(15 * var(--pcu));}
   .price-check-camera{min-height:430px}.price-check-product-info h2{font-size:calc(24 * var(--pcu));}.price-check-price{font-size:calc(38 * var(--pcu));}
 }
+
+/* 2026-09-24 price scanner corrections: fixed viewport, lighter icon, compact camera. */
+body.priceCheck-route{
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100dvh;
+  overflow:hidden;
+  overscroll-behavior:none;
+  touch-action:manipulation;
+}
+.app-nav-unified.priceCheck-route .screen{
+  position:fixed;
+  top:0;
+  left:50%;
+  transform:translateX(-50%);
+  width:min(470px,100%);
+  height:var(--price-content-height,calc(100dvh - 94px - var(--safe-bottom)));
+  min-height:0;
+  max-height:none;
+  padding:0 !important;
+  overflow:hidden;
+  overscroll-behavior:none;
+  background:#06090d;
+}
+.priceCheck-route .price-check-screen{
+  box-sizing:border-box;
+  width:100%;
+  height:100%;
+  min-height:0;
+  padding:calc(8 * var(--pcu)) 0 calc(10 * var(--pcu));
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+.priceCheck-route .price-check-title-row{
+  flex:0 0 auto;
+  min-height:calc(98 * var(--pcu));
+  padding:calc(10 * var(--pcu)) calc(23 * var(--pcu)) calc(12 * var(--pcu));
+}
+.priceCheck-route .price-check-title-icon .app-icon{
+  filter:brightness(0) invert(1) opacity(.94) !important;
+}
+.priceCheck-route .price-check-camera{
+  flex:1 1 auto;
+  height:auto;
+  min-height:0;
+  max-height:calc(630 * var(--pcu));
+  margin:0;
+}
+.priceCheck-route .price-check-frame{
+  top:50%;
+  transform:translate(-50%,-50%);
+  height:min(calc(245 * var(--pcu)),58%);
+}
+.priceCheck-route .price-check-manual{
+  bottom:calc(27 * var(--pcu));
+}
+.priceCheck-route .price-check-tip{
+  flex:0 0 auto;
+  margin:calc(10 * var(--pcu)) calc(23 * var(--pcu)) 0;
+  min-height:calc(102 * var(--pcu));
+  padding:calc(18 * var(--pcu)) calc(24 * var(--pcu));
+  border-radius:calc(25 * var(--pcu));
+}
+.priceCheck-route .price-check-tip p{
+  margin-top:calc(5 * var(--pcu));
+}
+@media(max-height:720px){
+  .priceCheck-route .price-check-title-row{min-height:calc(88 * var(--pcu));padding-top:calc(6 * var(--pcu));padding-bottom:calc(8 * var(--pcu));}
+  .priceCheck-route .price-check-tip{min-height:calc(88 * var(--pcu));padding-top:calc(13 * var(--pcu));padding-bottom:calc(13 * var(--pcu));}
+  .priceCheck-route .price-check-tip p{font-size:calc(13.5 * var(--pcu));}
+  .priceCheck-route .price-check-manual{bottom:calc(18 * var(--pcu));height:calc(60 * var(--pcu));}
+}

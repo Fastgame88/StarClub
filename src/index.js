@@ -669,6 +669,20 @@ function normalizeProductBarcode(value) {
   return String(value ?? '').trim().replace(/[^0-9A-Za-z]/g, '').toUpperCase();
 }
 
+function productBarcodeLookupVariants(value) {
+  const barcode = normalizeProductBarcode(value);
+  if (!barcode) return [];
+  const variants = [barcode];
+  if (/^\d+$/.test(barcode)) {
+    if (barcode.length === 12) variants.push(`0${barcode}`);
+    if (barcode.length === 13 && barcode.startsWith('0')) variants.push(barcode.slice(1));
+    if (barcode.length === 14 && barcode.startsWith('0')) variants.push(barcode.slice(1));
+    const withoutLeadingZeros = barcode.replace(/^0+(?=\d)/, '');
+    if (withoutLeadingZeros && barcode.length - withoutLeadingZeros.length <= 2) variants.push(withoutLeadingZeros);
+  }
+  return [...new Set(variants.filter(Boolean))];
+}
+
 function productBarcodesFromPayload(product = {}) {
   const raw = [];
   if (Array.isArray(product.barcodes)) raw.push(...product.barcodes);
@@ -2134,14 +2148,22 @@ app.get('/api/client/price-check', clientAuth, (req, res) => {
     return res.status(400).json({ ok: false, error: 'BARCODE_REQUIRED', message: 'Введіть або відскануйте штрих-код' });
   }
 
-  let product = db.prepare(`SELECT p.*
+  const variants = productBarcodeLookupVariants(barcode);
+  const placeholders = variants.map(() => '?').join(',');
+  let product = variants.length ? db.prepare(`SELECT p.*, pb.barcode AS matched_barcode
     FROM product_barcodes pb
     JOIN products p ON p.id = pb.product_id
-    WHERE pb.barcode = ?
-    LIMIT 1`).get(barcode);
+    WHERE pb.barcode IN (${placeholders})
+    ORDER BY CASE WHEN pb.barcode = ? THEN 0 ELSE 1 END
+    LIMIT 1`).get(...variants, barcode) : null;
 
   // Залишаємо сумісність з базами, де штрих-код раніше зберігали як код товару 1С.
-  if (!product) product = productCatalogRowByCode(barcode);
+  if (!product) {
+    for (const variant of variants) {
+      product = productCatalogRowByCode(variant);
+      if (product) break;
+    }
+  }
   if (!product) {
     return res.status(404).json({ ok: false, error: 'PRODUCT_NOT_FOUND', message: 'Товар не знайдено', barcode });
   }
@@ -2157,6 +2179,7 @@ app.get('/api/client/price-check', clientAuth, (req, res) => {
   res.json({
     ok: true,
     barcode,
+    matched_barcode: product.matched_barcode || barcode,
     product: {
       id: product.id,
       external_id: product.external_id,
