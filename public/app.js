@@ -174,7 +174,25 @@ function renderNotificationBadgeOnly() {
   bindNotificationEvents();
 }
 
-async function api(path, options = {}) {
+const pendingClientReads = new Map();
+let clientReadGeneration = 0;
+function api(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET') {
+    clientReadGeneration++;
+    pendingClientReads.clear();
+    return performApiRequest(path, options);
+  }
+  if (!path.startsWith('/api/client/') || options.signal) return performApiRequest(path, options);
+  const key = JSON.stringify([state.token, clientReadGeneration, path, options]);
+  if (pendingClientReads.has(key)) return pendingClientReads.get(key);
+  const pending = performApiRequest(path, options).finally(() => {
+    if (pendingClientReads.get(key) === pending) pendingClientReads.delete(key);
+  });
+  pendingClientReads.set(key, pending);
+  return pending;
+}
+async function performApiRequest(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   let res;
@@ -453,7 +471,7 @@ function homeBanner() {
       tag: 'НОВИНКА',
       title: 'Сезонний раф «Карамельний горіх»',
       text: 'Спробуйте новий смак цієї осені.',
-      image_url: '/assets/design/home-banner-coffee.png',
+      image_url: '/assets/design/home-banner-coffee.webp',
       link_route: 'offers',
       home_generated: true
     },
@@ -525,7 +543,7 @@ function homeScreen() {
   return `
     <section class="home-live-v2">
       <header class="home-live-header">
-        <img class="home-live-mountains" src="/assets/design/home-header-mountains.png" alt="" aria-hidden="true">
+        <img class="home-live-mountains" src="/assets/design/home-header-mountains.webp" alt="" aria-hidden="true">
         <div class="home-live-brand-row">
           <div class="home-live-brand">
             <img class="home-live-brand-star" src="/assets/design/home-brand-star.svg" alt="" aria-hidden="true">
@@ -589,8 +607,7 @@ async function refreshClient() {
 }
 
 async function loadRewards() {
-  const data = await api('/api/client/rewards');
-  const qrs = await api('/api/client/reward-qrs');
+  const [data, qrs] = await Promise.all([api('/api/client/rewards'), api('/api/client/reward-qrs')]);
   state.data.rewards = { ...data, qrs: qrs.qrs || [] };
 }
 
@@ -611,8 +628,9 @@ async function loadProgress() {
 }
 
 async function loadHistory() {
-  state.data.ledger = (await api('/api/client/star-history')).items;
-  state.data.receipts = (await api('/api/client/receipts')).receipts;
+  const [history, receipts] = await Promise.all([api('/api/client/star-history'), api('/api/client/receipts')]);
+  state.data.ledger = history.items;
+  state.data.receipts = receipts.receipts;
 }
 
 async function loadNews() {
@@ -750,6 +768,7 @@ async function refreshVisibleData({ forceRender = false } = {}) {
   if (!state.token || state.liveBusy || document.hidden) return;
   if (!forceRender && hasFocusedEditor()) return;
   state.liveBusy = true;
+  const refreshedRoute = state.route;
   try {
     await refreshClient();
     if (state.route === 'home') await Promise.all([loadProgress(), loadBanners()]);
@@ -767,7 +786,7 @@ async function refreshVisibleData({ forceRender = false } = {}) {
     });
     const changed = signature !== state.liveSignature;
     state.liveSignature = signature;
-    if ((forceRender || changed) && routeNeedsLiveRender()) render();
+    if (state.route === refreshedRoute && (forceRender || changed) && routeNeedsLiveRender()) render({ reuseLoaded: true });
   } catch (error) {
     console.warn('Live refresh failed:', error.message || error);
   } finally {
@@ -805,7 +824,7 @@ async function cardScreen() {
       </header>
 
       <section class="star-member-card star-member-card-main">
-        <img class="star-member-art" src="/assets/design/card/member-card-art.png" alt="" aria-hidden="true">
+        <img class="star-member-art" src="/assets/design/card/member-card-art.webp" alt="" aria-hidden="true">
         <div class="star-member-left">
           <div class="star-member-brand"><div class="star-club-emblem"><span class="star-club-emblem-star">★</span></div>
           <div class="star-club-wordmark">STAR CLUB</div></div>
@@ -825,7 +844,7 @@ async function cardScreen() {
         </button>
       </section>
 
-      <img class="star-promo-card-image" src="/assets/design/card/promo-card-reference.png" alt="Більше покупок — більше можливостей. Збирайте зірки, отримуйте нагороди та особливі пропозиції">
+      <img class="star-promo-card-image" src="/assets/design/card/promo-card-reference.webp" alt="Більше покупок — більше можливостей. Збирайте зірки, отримуйте нагороди та особливі пропозиції">
     </section>
   `;
 }
@@ -934,7 +953,7 @@ function offersScreen() {
     <section class="offers-design ${tab === 'wholesale' ? 'offers-wholesale' : 'offers-club'}">
     <header class="offers-heading">
       <button class="back-button" type="button" data-back="1">${appIcon('arrow-left')}<span>Назад</span></button>
-      <div class="offers-heading-copy"><img src="/assets/starclub-crown.svg" alt="" aria-hidden="true"><h2>${tab === 'club' ? 'Клубні пропозиції' : 'Оптові пропозиції'}</h2><p>${tab === 'wholesale' ? 'Більші обсяги — більша вигода' : 'Вигідніше з кожною покупкою'}</p></div>
+      <div class="offers-heading-copy"><img loading="lazy" decoding="async" src="/assets/starclub-crown.svg" alt="" aria-hidden="true"><h2>${tab === 'club' ? 'Клубні пропозиції' : 'Оптові пропозиції'}</h2><p>${tab === 'wholesale' ? 'Більші обсяги — більша вигода' : 'Вигідніше з кожною покупкою'}</p></div>
       ${notificationButton()}
     </header>
     <div class="stack offers-content">
@@ -965,7 +984,7 @@ function offersScreen() {
           </div>
           <div class="promo-feed-card__media">
             ${o.type === 'wholesale' ? `<svg class="wholesale-discount-tag" viewBox="0 0 36 42" aria-hidden="true"><path d="M19 1h12a4 4 0 0 1 4 4v13L15 40 1 26Z" fill="#efc565"/><circle cx="28" cy="8" r="2.5" fill="#45330d"/><path d="m11 25 11-10" stroke="#16140e" stroke-width="2.4" stroke-linecap="round"/><circle cx="11" cy="18" r="2" fill="none" stroke="#16140e" stroke-width="1.8"/><circle cx="22" cy="25" r="2" fill="none" stroke="#16140e" stroke-width="1.8"/></svg>` : ''}
-            <img src="${safeHtml(o.image_url || fallbackImage)}" alt="${safeHtml(o.target_name || o.name || '')}" onerror="this.onerror=null;this.src='/assets/star.svg'">
+            <img loading="lazy" decoding="async" src="${safeHtml(o.image_url || fallbackImage)}" alt="${safeHtml(o.target_name || o.name || '')}" onerror="this.onerror=null;this.src='/assets/star.svg'">
             ${o.type === 'wholesale' ? `<p class="wholesale-media-caption">${index % 2 === 0 ? 'Вигідна ціна<br>для оптових покупок' : 'Більше покупок —<br>більше вигоди'}</p>` : ''}
           </div>
         </article>`;
@@ -1372,7 +1391,7 @@ function commitScreen(html) {
   syncMoreViewport();
   bindEvents();
 }
-async function render() {
+async function render({ reuseLoaded = false } = {}) {
   const revision = ++renderRevision;
   const route = state.route;
   let html;
@@ -1382,21 +1401,21 @@ async function render() {
   }
   try {
     if (route === 'card') html = await cardScreen();
-    else if (route === 'rewards') { await loadRewards(); html = rewardsScreen(); }
-    else if (route === 'offers') { await loadOffers(); html = offersScreen(); }
-    else if (route === 'progress') { await loadProgress(); html = progressScreen(); }
-    else if (route === 'history') { await loadHistory(); html = historyScreen(); }
+    else if (route === 'rewards') { if (!reuseLoaded) await loadRewards(); html = rewardsScreen(); }
+    else if (route === 'offers') { if (!reuseLoaded) await loadOffers(); html = offersScreen(); }
+    else if (route === 'progress') { if (!reuseLoaded) await loadProgress(); html = progressScreen(); }
+    else if (route === 'history') { if (!reuseLoaded) await loadHistory(); html = historyScreen(); }
     else if (route === 'stores') html = storesScreen();
     else if (route === 'more') html = moreScreen();
-    else if (route === 'news') { await loadNews(); html = newsScreen(); }
-    else if (route === 'support') { await loadSupport(); html = supportScreen(); }
+    else if (route === 'news') { if (!reuseLoaded) await loadNews(); html = newsScreen(); }
+    else if (route === 'support') { if (!reuseLoaded) await loadSupport(); html = supportScreen(); }
     else if (route === 'profile') html = profileScreen();
-    else if (route === 'rewardCodes') { await loadRewardQrs(); html = rewardCodesScreen(); }
+    else if (route === 'rewardCodes') { if (!reuseLoaded) await loadRewardQrs(); html = rewardCodesScreen(); }
     else if (route === 'telegramPassword') html = telegramPasswordScreen();
     else if (route === 'privacy') html = privacyScreen();
     else if (route === 'register') html = registerScreen();
     else if (route === 'login') html = loginScreen();
-    else { await Promise.all([loadProgress(), loadBanners()]); html = homeScreen(); }
+    else { if (!reuseLoaded) await Promise.all([loadProgress(), loadBanners()]); html = homeScreen(); }
   } catch (e) {
     if (revision !== renderRevision) return;
     if (e.code === 'CLIENT_UNAUTHORIZED' || e.message === 'CLIENT_UNAUTHORIZED') {
@@ -1489,8 +1508,8 @@ function bindEvents() {
     };
   });
   document.querySelectorAll('[data-back="1"]').forEach((el) => el.onclick = () => setRoute(state.client?.registered ? 'home' : 'start'));
-  document.querySelectorAll('[data-offer-tab]').forEach((el) => el.onclick = () => { state.data.offerTab = el.dataset.offerTab; render(); });
-  document.querySelectorAll('[data-history-filter]').forEach((el) => el.onclick = () => { state.data.historyFilter = el.dataset.historyFilter; render(); });
+  document.querySelectorAll('[data-offer-tab]').forEach((el) => el.onclick = () => { state.data.offerTab = el.dataset.offerTab; render({ reuseLoaded: true }); });
+  document.querySelectorAll('[data-history-filter]').forEach((el) => el.onclick = () => { state.data.historyFilter = el.dataset.historyFilter; render({ reuseLoaded: true }); });
   document.querySelectorAll('[data-logout]').forEach((el) => el.onclick = () => { localStorage.removeItem('starclub_session'); localStorage.removeItem('starclub_route'); location.reload(); });
   document.querySelectorAll('[data-show-cashier]').forEach((el) => el.onclick = () => showCashierModal(el.dataset.cardNumber));
   document.querySelectorAll('[data-close-modal]').forEach((el) => el.onclick = () => el.closest('.modal-backdrop')?.remove());

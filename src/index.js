@@ -812,13 +812,35 @@ function productsForOfferShowcase(offer = {}) {
     LIMIT 5000`).all(getOfferTargetValue(offer), getOfferTargetValue(offer));
 }
 
-function offerShowcaseView(offer = {}, preferredStoreId = null) {
-  const products = productsForOfferShowcase(offer);
+function offerShowcaseView(offer = {}, preferredStoreId = null, context = null) {
+  // Request-local only: never retain prices across requests or 1C updates.
+  const targetKey = JSON.stringify([getOfferTargetType(offer), getOfferTargetValue(offer)]);
+  let products = context?.products.get(targetKey);
+  if (!products) {
+    products = productsForOfferShowcase(offer);
+    context?.products.set(targetKey, products);
+  }
   const ruleStoreId = offer.store_id && offer.store_id !== 'all' ? canonicalStoreId(offer.store_id) : null;
   const storeId = ruleStoreId || (preferredStoreId && preferredStoreId !== 'all' ? canonicalStoreId(preferredStoreId) : null);
+  const priceMap = context?.prices.get(storeId) || new Map();
+  if (storeId) {
+    const missing = [...new Set(products.map((p) => String(p.id)))].filter((id) => !priceMap.has(id));
+    for (let offset = 0; offset < missing.length; offset += 400) {
+      const ids = missing.slice(offset, offset + 400);
+      const rows = db.prepare(`SELECT psp.product_id, psp.synced_price_cents,
+          psp.manual_price_cents, psp.use_manual_price
+        FROM product_store_prices psp JOIN stores s ON s.id = psp.store_id
+        WHERE psp.store_id = ? AND psp.product_id IN (${ids.map(() => '?').join(',')})`).all(storeId, ...ids);
+      ids.forEach((id) => priceMap.set(id, null));
+      rows.forEach((row) => priceMap.set(String(row.product_id), effectiveStorePriceCents(row)));
+    }
+    context?.prices.set(storeId, priceMap);
+  }
   const pricedProducts = products.map((product) => ({
     ...product,
-    effective_price_cents: storeId ? priceForProductAndStore(product, storeId) : Math.max(0, Math.round(Number(product.price_cents || 0)))
+    effective_price_cents: storeId && priceMap.get(String(product.id)) !== null
+      ? priceMap.get(String(product.id))
+      : Math.max(0, Math.round(Number(product.price_cents || 0)))
   })).filter((product) => Number(product.effective_price_cents || 0) > 0);
   const representative = pricedProducts[0] || products[0] || null;
   const targetType = getOfferTargetType(offer);
@@ -2097,9 +2119,17 @@ app.get('/api/client/receipts', clientAuth, (req, res) => {
   const receipts = db.prepare(`SELECT r.*, COALESCE(s.name, r.store_id, 'Магазин Star') AS store_name
     FROM receipts r LEFT JOIN stores s ON s.id = r.store_id OR s.external_id = r.store_id
     WHERE r.client_id = ? ORDER BY r.purchased_at DESC LIMIT 50`).all(req.client.id);
-  const itemsStmt = db.prepare('SELECT * FROM receipt_items WHERE receipt_id = ?');
+  const itemsByReceipt = new Map();
+  if (receipts.length) {
+    const rows = db.prepare(`SELECT * FROM receipt_items WHERE receipt_id IN (${receipts.map(() => '?').join(',')}) ORDER BY rowid`).all(...receipts.map((r) => r.id));
+    for (const item of rows) {
+      const key = String(item.receipt_id);
+      if (!itemsByReceipt.has(key)) itemsByReceipt.set(key, []);
+      itemsByReceipt.get(key).push(item);
+    }
+  }
   res.json({ ok: true, receipts: receipts.map((r) => {
-    const items = itemsStmt.all(r.id);
+    const items = itemsByReceipt.get(String(r.id)) || [];
     const isRewardPurchase = Number(r.stars_spent || 0) > 0;
     return {
       ...r,
@@ -2219,6 +2249,7 @@ const coupons = db.prepare(`
 });
 
 app.get('/api/client/offers', clientAuth, (req, res) => {
+  const showcaseContext = { products: new Map(), prices: new Map() };
   const now = Date.now();
   const requestedFavoriteStore = String(req.client?.favorite_store || '').trim();
   const favoriteStoreRow = requestedFavoriteStore ? findStoreByIdentity(requestedFavoriteStore) : null;
@@ -2237,7 +2268,7 @@ app.get('/api/client/offers', clientAuth, (req, res) => {
       if (offer.active_to && new Date(offer.active_to).getTime() < now) return false;
       return matchesFavoriteStore(offer);
     })
-    .map((offer) => offerShowcaseView(offer, favoriteStore));
+    .map((offer) => offerShowcaseView(offer, favoriteStore, showcaseContext));
 
   const existingKeys = new Set(rules.map((o) => `${o.type}:${normalizeMatchValue(o.name)}`));
   const legacy = db.prepare(`SELECT * FROM promo_offers WHERE is_active = 1 ORDER BY id DESC`).all()

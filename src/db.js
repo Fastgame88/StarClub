@@ -730,6 +730,11 @@ export function migrate() {
   innerDb.run('UPDATE offers SET visible_in_app = 1 WHERE visible_in_app IS NULL');
   innerDb.run("UPDATE offers SET rounding_mode = 'kopeck' WHERE rounding_mode IS NULL OR rounding_mode = ''");
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_products_group_external_id ON products(group_external_id)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_receipts_client_date ON receipts(client_id, purchased_at DESC)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_receipt_items_receipt ON receipt_items(receipt_id)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_ledger_client_date ON star_ledger(client_id, created_at DESC)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_support_messages_ticket_date ON support_messages(ticket_id, created_at)');
+  innerDb.run('CREATE INDEX IF NOT EXISTS idx_support_tickets_client_date ON support_tickets(client_id, updated_at DESC)');
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_product_store_prices_store ON product_store_prices(store_id, product_id)');
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_product_store_prices_product ON product_store_prices(product_id, store_id)');
   innerDb.run('CREATE INDEX IF NOT EXISTS idx_offers_target ON offers(target_type, target_value)');
