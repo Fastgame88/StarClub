@@ -1205,9 +1205,10 @@ function priceCheckScreen() {
         </div>
         <div class="price-check-dim"></div>
         <div class="price-check-frame" aria-hidden="true"><i></i><i></i><i></i><i></i><span></span></div>
-        <div class="price-check-result-slot" data-price-check-result></div>
         <button class="price-check-manual" type="button" data-price-check-manual>${scannerSvg('image')}<span>Ввести штрих-код вручну</span></button>
       </section>
+
+      <div class="price-check-result-slot" data-price-check-result></div>
 
       <section class="price-check-tip">
         <span>${scannerSvg('info')}</span>
@@ -1240,21 +1241,19 @@ function setPriceScannerMessage(message, detail = '') {
 
 function renderPriceCheckResult(data, barcode, debug = null) {
   const slot = document.querySelector('[data-price-check-result]');
+  const screen = document.querySelector('.price-check-screen');
   if (!slot) return;
   const product = data?.product;
   const storeName = data?.store?.name || 'Star';
   if (!product) {
-    const diagnostic = debug?.reason
-      ? `<div class="price-check-debug"><b>Діагностика:</b><span>${safeHtml(debug.reason)}</span>${debug.code ? `<small>Код: ${safeHtml(debug.code)}</small>` : ''}</div>`
-      : '';
     slot.innerHTML = `
       <article class="price-check-product-card not-found">
         <div class="price-check-not-found-icon">${appIcon('barcode')}</div>
         <div class="price-check-not-found-copy"><b>Товар не знайдено</b><p>Штрих-код ${safeHtml(barcode)}</p></div>
-        ${diagnostic}
         <button type="button" class="price-check-next compact" data-price-check-next>Сканувати ще раз</button>
       </article>`;
     slot.classList.add('visible');
+    screen?.classList.add('has-result');
     bindPriceCheckResultActions();
     return;
   }
@@ -1277,6 +1276,7 @@ function renderPriceCheckResult(data, barcode, debug = null) {
       </div>
     </article>`;
   slot.classList.add('visible');
+  screen?.classList.add('has-result');
   bindPriceCheckResultActions();
 }
 
@@ -1284,6 +1284,7 @@ function resetPriceCheckScanner() {
   const scanner = state.priceScanner;
   const slot = document.querySelector('[data-price-check-result]');
   if (slot) { slot.innerHTML = ''; slot.classList.remove('visible'); }
+  document.querySelector('.price-check-screen')?.classList.remove('has-result');
   if (!scanner) { startPriceScanner(); return; }
   scanner.paused = false;
   scanner.lastValue = '';
