@@ -1343,49 +1343,69 @@ function showRewardModal(qr) {
   };
 }
 
-async function render() {
+let renderRevision = 0;
+let moreViewportObserver;
+function syncMoreViewport() {
+  if (!document.body.classList.contains('more-route')) return;
+  const navTop = $nav.getBoundingClientRect().top;
+  if (navTop > 0) $app.style.setProperty('--more-content-height', `${navTop}px`);
+}
+function commitScreen(html) {
+  $app.innerHTML = html;
   renderNav();
-  document.body.classList.toggle('home-route', state.route === 'home' && Boolean(state.client?.registered));
-  document.body.classList.toggle('offers-route', state.route === 'offers' && Boolean(state.client?.registered));
-  document.body.classList.toggle('rewards-route', state.route === 'rewards' && Boolean(state.client?.registered));
-  document.body.classList.toggle('card-route', state.route === 'card' && Boolean(state.client?.registered));
+  for (const route of ['home', 'offers', 'rewards', 'card', 'more']) {
+    document.body.classList.toggle(`${route}-route`, state.route === route && Boolean(state.client?.registered));
+  }
+  if (!moreViewportObserver) {
+    moreViewportObserver = new ResizeObserver(syncMoreViewport);
+    moreViewportObserver.observe($nav);
+    window.addEventListener('resize', syncMoreViewport);
+    window.visualViewport?.addEventListener('resize', syncMoreViewport);
+    tg?.onEvent?.('viewportChanged', syncMoreViewport);
+  }
+  syncMoreViewport();
+  bindEvents();
+}
+async function render() {
+  const revision = ++renderRevision;
+  const route = state.route;
+  let html;
   if (!state.client?.registered && !['register', 'login', 'telegramPassword', 'privacy'].includes(state.route)) {
-    $app.innerHTML = startScreen();
-    document.body.classList.remove('more-route');
-    bindEvents();
+    commitScreen(startScreen());
     return;
   }
   try {
-    if (state.route === 'card') $app.innerHTML = await cardScreen();
-    else if (state.route === 'rewards') { await loadRewards(); $app.innerHTML = rewardsScreen(); }
-    else if (state.route === 'offers') { await loadOffers(); $app.innerHTML = offersScreen(); }
-    else if (state.route === 'progress') { await loadProgress(); $app.innerHTML = progressScreen(); }
-    else if (state.route === 'history') { await loadHistory(); $app.innerHTML = historyScreen(); }
-    else if (state.route === 'stores') $app.innerHTML = storesScreen();
-    else if (state.route === 'more') $app.innerHTML = moreScreen();
-    else if (state.route === 'news') { await loadNews(); $app.innerHTML = newsScreen(); }
-    else if (state.route === 'support') { await loadSupport(); $app.innerHTML = supportScreen(); }
-    else if (state.route === 'profile') $app.innerHTML = profileScreen();
-    else if (state.route === 'rewardCodes') { await loadRewardQrs(); $app.innerHTML = rewardCodesScreen(); }
-    else if (state.route === 'telegramPassword') $app.innerHTML = telegramPasswordScreen();
-    else if (state.route === 'privacy') $app.innerHTML = privacyScreen();
-    else if (state.route === 'register') $app.innerHTML = registerScreen();
-    else if (state.route === 'login') $app.innerHTML = loginScreen();
-    else { await Promise.all([loadProgress(), loadBanners()]); $app.innerHTML = homeScreen(); }
+    if (route === 'card') html = await cardScreen();
+    else if (route === 'rewards') { await loadRewards(); html = rewardsScreen(); }
+    else if (route === 'offers') { await loadOffers(); html = offersScreen(); }
+    else if (route === 'progress') { await loadProgress(); html = progressScreen(); }
+    else if (route === 'history') { await loadHistory(); html = historyScreen(); }
+    else if (route === 'stores') html = storesScreen();
+    else if (route === 'more') html = moreScreen();
+    else if (route === 'news') { await loadNews(); html = newsScreen(); }
+    else if (route === 'support') { await loadSupport(); html = supportScreen(); }
+    else if (route === 'profile') html = profileScreen();
+    else if (route === 'rewardCodes') { await loadRewardQrs(); html = rewardCodesScreen(); }
+    else if (route === 'telegramPassword') html = telegramPasswordScreen();
+    else if (route === 'privacy') html = privacyScreen();
+    else if (route === 'register') html = registerScreen();
+    else if (route === 'login') html = loginScreen();
+    else { await Promise.all([loadProgress(), loadBanners()]); html = homeScreen(); }
   } catch (e) {
+    if (revision !== renderRevision) return;
     if (e.code === 'CLIENT_UNAUTHORIZED' || e.message === 'CLIENT_UNAUTHORIZED') {
       localStorage.removeItem('starclub_session');
       state.token = '';
       state.client = null;
       state.route = 'login';
       localStorage.setItem('starclub_route', 'login');
-      $app.innerHTML = loginScreen();
+      html = loginScreen();
     } else {
-      $app.innerHTML = `<div class="empty">${e.message}</div>`;
+      html = `<div class="empty">${e.message}</div>`;
     }
   }
-  document.body.classList.toggle('more-route', state.route === 'more' && Boolean(state.client?.registered));
-  bindEvents();
+  if (revision !== renderRevision) return;
+  commitScreen(html);
 }
 
 function normalizeClientPhone(phone) {

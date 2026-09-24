@@ -3040,3 +3040,23 @@ body.more-route {
   word-break:normal;
 }
 .notification-panel .notification-item>p { margin:0; }
+
+/* Use the actual top edge of navigation; its height already includes the safe area. */
+.app-nav-unified.more-route .screen {
+  bottom:auto;
+  height:var(--more-content-height,calc(100dvh - 94px));
+}
+.more-reference-heading .notification-btn { overflow:visible; }
+.more-reference-heading .notification-badge {
+  padding:0;
+  border:0;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:visible;
+  box-sizing:border-box;
+  min-width:calc(17 * var(--more-unit));
+  width:auto;
+  padding-inline:calc(3 * var(--more-unit));
+}
