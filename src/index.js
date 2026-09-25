@@ -1,3 +1,4 @@
+import { isReturnPayload, planReturn } from './returns.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -2935,6 +2936,7 @@ app.post('/api/1c/change-accrual/cancel', oneCAuth, (req, res) => {
 
 app.post('/api/1c/receipts', oneCAuth, (req, res) => {
   const body = req.body || {};
+  if (isReturnPayload(body)) return handleOneCReturn(req, res);
   const resolvedStore = findStoreFromPayload(body);
   const requestedStoreIdentity = body.store_external_id || body.store_id || body.store_name || '';
   const storeId = String(resolvedStore?.id || requestedStoreIdentity || '').trim();
@@ -3275,43 +3277,40 @@ app.post('/api/1c/reward-qr/cancel', oneCAuth, (req, res) => {
   res.json({ ok: true, status: 'canceled' });
 });
 
-app.post('/api/1c/returns', oneCAuth, (req, res) => {
+function handleOneCReturn(req, res) {
   const body = req.body || {};
   if (!body.id || !body.original_receipt_id) {
     return res.status(400).json({ ok: false, error: 'RETURN_ID_AND_ORIGINAL_REQUIRED' });
   }
 
   const existing = db.prepare('SELECT * FROM receipts WHERE id = ?').get(body.id);
-  if (existing) return res.json({ ok: true, duplicate: true, return_id: existing.id });
+  if (existing) {
+    if (!existing.is_return || existing.original_receipt_id !== body.original_receipt_id) {
+      return res.status(409).json({ ok: false, error: 'RETURN_ID_CONFLICT', message: 'Цей документ уже записаний як інша операція. Потрібна звірка, повторне нарахування заблоковано.' });
+    }
+    return res.json({ ok: true, duplicate: true, return_id: existing.id, stars_canceled: Math.max(0, -existing.stars_accrued) });
+  }
 
   const original = db.prepare('SELECT * FROM receipts WHERE id = ?').get(body.original_receipt_id);
   if (!original) {
-    // Повернення покупки без картки Star Club: у програмі лояльності немає що коригувати.
-    return res.json({ ok: true, skipped: true, reason: 'ORIGINAL_RECEIPT_NOT_IN_LOYALTY', return_id: body.id, stars_canceled: 0 });
+    return res.status(409).json({ ok: false, error: 'ORIGINAL_RECEIPT_NOT_FOUND', message: 'Спочатку синхронізуйте первинний чек продажу, потім повторіть повернення.' });
   }
+
+  if (original.is_return) return res.status(400).json({ ok: false, error: 'ORIGINAL_MUST_BE_SALE' });
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(original.client_id);
   if (!client) return res.status(404).json({ ok: false, error: 'CLIENT_NOT_FOUND' });
 
-  const items = Array.isArray(body.items) ? body.items : [];
-  const returnedEligibleCents = calculateEligibleCents(items, body.eligible_cents);
+  const originalItems = db.prepare('SELECT * FROM receipt_items WHERE receipt_id = ?').all(original.id);
+  const previous = db.prepare('SELECT * FROM receipts WHERE original_receipt_id = ? AND is_return = 1').all(original.id);
+  const previousItems = db.prepare(`SELECT i.* FROM receipt_items i JOIN receipts r ON r.id = i.receipt_id
+    WHERE r.original_receipt_id = ? AND r.is_return = 1`).all(original.id);
+  let plan;
+  try { plan = planReturn(original, originalItems, previous, previousItems, body); }
+  catch (error) { return res.status(400).json({ ok: false, error: error.message }); }
+  const { items, returnedEligibleCents, starsToCancel, isFullReturn } = plan;
   const originalEligibleCents = Math.max(0, Number(original.eligible_cents || 0));
   const originalStarsAccrued = Math.max(0, Number(original.stars_accrued || 0));
-
-  let starsToCancel = Math.max(0, Math.round(Number(body.stars_to_cancel || 0)));
-  const isFullReturn = body.full_return === true || body.full_return === 1 || String(body.full_return || '').toLowerCase() === 'true';
-
-  if (starsToCancel === 0) {
-    if (isFullReturn || items.length === 0 || returnedEligibleCents >= originalEligibleCents) {
-      starsToCancel = originalStarsAccrued;
-    } else if (originalEligibleCents > 0 && originalStarsAccrued > 0) {
-      // Часткове повернення: скасовуємо частину первинного нарахування пропорційно поверненій дозволеній сумі.
-      starsToCancel = Math.min(
-        originalStarsAccrued,
-        Math.max(0, Math.floor(originalStarsAccrued * returnedEligibleCents / originalEligibleCents))
-      );
-    }
-  }
 
   const totalCents = Math.abs(Math.round(Number(body.total_cents || 0)));
   const tx = db.transaction(() => {
@@ -3325,7 +3324,7 @@ app.post('/api/1c/returns', oneCAuth, (req, res) => {
         body.cash_register || null,
         body.cashier || null,
         -totalCents,
-        -Math.abs(returnedEligibleCents || originalEligibleCents || 0),
+        -returnedEligibleCents,
         0,
         -starsToCancel,
         body.original_receipt_id,
@@ -3379,7 +3378,8 @@ app.post('/api/1c/returns', oneCAuth, (req, res) => {
   tx();
   const fresh = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
   res.json({ ok: true, return_id: body.id, stars_canceled: starsToCancel, balance: fresh.stars_balance });
-});
+}
+app.post('/api/1c/returns', oneCAuth, handleOneCReturn);
 
 app.post('/api/1c/products/sync', oneCAuth, (req, res) => {
   const products = Array.isArray(req.body?.products) ? req.body.products : [];

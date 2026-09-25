@@ -3341,3 +3341,6 @@ body.priceCheck-route{
   .android-windows-layout.progress-route .challenge-card .progressbar { margin-top:calc(15 * var(--pu));margin-bottom:calc(10 * var(--pu)); }
   .android-windows-layout.card-route .star-card-screen { gap:8px; }
 }
+
+/* Only the unavailable-price label; actual prices keep their existing size. */
+.price-check-price.price-unavailable { font-size:calc(25 * var(--pcu));letter-spacing:-.3px;line-height:1.15;white-space:normal;overflow-wrap:anywhere;max-width:100%; }

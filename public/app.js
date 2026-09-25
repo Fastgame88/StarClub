@@ -1271,7 +1271,7 @@ function renderPriceCheckResult(data, barcode, debug = null) {
         <div class="price-check-found">${scannerSvg('check')}<span>Товар знайдено</span></div>
         <h2>${safeHtml(product.name)}</h2>
         ${product.category ? `<p class="price-check-category">${safeHtml(product.category)}</p>` : ''}
-        <div class="price-check-price">${formatProductPrice(product.price_cents)}</div>
+        <div class="price-check-price ${product.price_cents == null || Number(product.price_cents) <= 0 ? 'price-unavailable' : ''}">${formatProductPrice(product.price_cents)}</div>
         <div class="price-check-store">${appIcon('store')}<span>Ціна у магазині <b>${safeHtml(storeName)}</b></span></div>
       </div>
       <div class="price-check-actions">
