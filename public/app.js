@@ -3,6 +3,12 @@ const $nav = document.querySelector('#bottomNav');
 const $toast = document.querySelector('#toast');
 
 const tg = window.Telegram?.WebApp;
+// Keep the existing iPhone/iPad layout, including Telegram's embedded browser.
+const isAppleMobile = tg?.platform === 'ios' || /iPhone|iPad|iPod/i.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const compactDesktopMobile = !isAppleMobile && (tg?.platform === 'android'
+  || /Android|Windows/i.test(navigator.userAgent));
+document.body.classList.toggle('android-windows-layout', compactDesktopMobile);
 if (tg) {
   tg.ready();
   tg.expand();
@@ -1258,8 +1264,6 @@ function renderPriceCheckResult(data, barcode, debug = null) {
     return;
   }
   const image = product.image_url ? safeHtml(product.image_url) : '/assets/star.svg';
-  const favoriteKey = `starclub_price_favorite_${product.external_id || product.id}`;
-  const isFavorite = localStorage.getItem(favoriteKey) === '1';
   slot.innerHTML = `
     <article class="price-check-product-card">
       <img class="price-check-product-image" src="${image}" alt="${safeHtml(product.name)}" onerror="this.onerror=null;this.src='/assets/star.svg'">
@@ -1272,7 +1276,6 @@ function renderPriceCheckResult(data, barcode, debug = null) {
       </div>
       <div class="price-check-actions">
         <button type="button" class="price-check-next" data-price-check-next>${appIcon('barcode')}<span>Сканувати наступний</span></button>
-        <button type="button" class="price-check-favorite ${isFavorite ? 'active' : ''}" data-price-check-favorite data-favorite-key="${safeHtml(favoriteKey)}">${scannerSvg('heart')}<span>${isFavorite ? 'В обраному' : 'Додати\nв обране'}</span></button>
       </div>
     </article>`;
   slot.classList.add('visible');
@@ -1296,13 +1299,7 @@ function resetPriceCheckScanner() {
 
 function bindPriceCheckResultActions() {
   document.querySelectorAll('[data-price-check-next]').forEach((el) => el.onclick = resetPriceCheckScanner);
-  document.querySelectorAll('[data-price-check-favorite]').forEach((el) => el.onclick = () => {
-    const key = el.dataset.favoriteKey;
-    const active = !el.classList.contains('active');
-    el.classList.toggle('active', active);
-    localStorage.setItem(key, active ? '1' : '0');
-    el.querySelector('span').textContent = active ? 'В обраному' : 'Додати\nв обране';
-  });
+
 }
 
 async function lookupProductByBarcode(rawValue) {
@@ -1952,6 +1949,22 @@ let moreViewportObserver;
 function syncMoreViewport() {
   const navTop = $nav.getBoundingClientRect().top;
   if (!(navTop > 0)) return;
+  if (compactDesktopMobile && ['card', 'progress'].includes(state.route)) {
+    const screenTop = $app.getBoundingClientRect().top + window.scrollY;
+    $app.style.setProperty('--content-above-nav', `${Math.max(0, navTop - screenTop)}px`);
+    $app.style.setProperty('--actual-nav-height', `${$nav.getBoundingClientRect().height}px`);
+    const card = $app.querySelector('.star-card-screen');
+    if (state.route === 'card' && card) {
+      const banner = card.querySelector('.star-member-card-main');
+      const style = getComputedStyle($app);
+      const gap = parseFloat(getComputedStyle(card).rowGap) || 0;
+      const rest = [...card.children].filter((child) => child !== banner)
+        .reduce((height, child) => height + child.getBoundingClientRect().height, 0);
+      const room = navTop - screenTop - rest - gap * (card.children.length - 1)
+        - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - 4;
+      $app.style.setProperty('--member-banner-height', `${Math.max(164, Math.min(190, room))}px`);
+    }
+  }
   if (document.body.classList.contains('more-route')) {
     $app.style.setProperty('--more-content-height', `${navTop}px`);
   }

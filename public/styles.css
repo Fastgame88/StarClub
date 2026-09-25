@@ -3294,3 +3294,50 @@ body.priceCheck-route{
 .price-check-debug b{color:#efc765;font-size:calc(12 * var(--pcu));}
 .price-check-debug span{overflow-wrap:anywhere;}
 .price-check-debug small{color:#8f949c;font-size:calc(10 * var(--pcu));}
+
+
+/* 2026-09-25: Android/Windows only; iOS retains its existing layout. */
+.android-windows-layout.app-nav-unified.card-route .screen,
+.android-windows-layout.app-nav-unified.progress-route .screen {
+  min-height:var(--content-above-nav, calc(100dvh - 112px));
+  padding-bottom:16px;
+  margin-bottom:var(--actual-nav-height, 112px);
+}
+.android-windows-layout.card-route .star-card-screen { gap:10px; }
+.android-windows-layout.card-route .star-member-card-main {
+  aspect-ratio:auto;
+  height:var(--member-banner-height, 164px);
+}
+.android-windows-layout.card-route .star-member-card-main .star-member-left {
+  inset:8px auto 10px 5.2%;
+}
+.android-windows-layout.card-route .star-member-card-main .star-club-emblem {
+  width:clamp(44px,12vw,54px);height:clamp(44px,12vw,54px);border-radius:17px;
+}
+.android-windows-layout.card-route .star-member-card-main .star-club-emblem-star {
+  width:36px;height:36px;font-size:0;transform:none;
+  background:#f8f9f8;
+  clip-path:polygon(50% 0%,61.8% 35%,98% 35%,69% 57%,80% 92%,50% 71%,20% 92%,31% 57%,2% 35%,38.2% 35%);
+}
+.android-windows-layout.card-route .star-member-card-main .star-club-wordmark { margin-top:6px;line-height:1; }
+.android-windows-layout.card-route .star-member-card-main .star-member-name { margin-top:8px; }
+.android-windows-layout.card-route .star-member-card-main .star-member-number-label { margin-top:6px; }
+.android-windows-layout.app-nav-unified.progress-route .progress-ref-hero {
+  min-height:calc(145 * var(--pu));
+  padding-block:calc(10 * var(--pu));
+  margin-bottom:calc(12 * var(--pu));
+  align-items:center;
+}
+.android-windows-layout.progress-route .progress-ref-hero>span { margin-top:0; }
+.android-windows-layout.progress-route .progress-ref-heading { margin-bottom:calc(10 * var(--pu)); }
+/* One centered action after a successful scan, on every platform. */
+.price-check-actions { grid-template-columns:minmax(0,1fr); }
+.price-check-actions .price-check-next { width:100%;justify-self:center; }
+
+@media (max-height:760px) {
+  .android-windows-layout.progress-route .progress-ref-list { gap:calc(12 * var(--pu));padding-top:calc(12 * var(--pu)); }
+  .android-windows-layout.progress-route .progress-ref-group { margin-bottom:calc(12 * var(--pu)); }
+  .android-windows-layout.progress-route .challenge-card { min-height:calc(150 * var(--pu));padding-block:calc(12 * var(--pu)); }
+  .android-windows-layout.progress-route .challenge-card .progressbar { margin-top:calc(15 * var(--pu));margin-bottom:calc(10 * var(--pu)); }
+  .android-windows-layout.card-route .star-card-screen { gap:8px; }
+}
