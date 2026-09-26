@@ -1381,7 +1381,14 @@ async function togglePriceScannerFlash() {
   if (!capabilities.torch) return toast('Спалах на цьому пристрої недоступний');
   scanner.flash = !scanner.flash;
   try {
-    await track.applyConstraints({ advanced: [{ torch: scanner.flash }] });
+    if (isAndroidPriceScanner()) {
+      const current = track.getConstraints?.() || {};
+      const advanced = (current.advanced || []).map(({ torch, ...rest }) => rest)
+        .filter((settings) => Object.keys(settings).length);
+      await track.applyConstraints({ ...current, advanced: [...advanced, { torch: scanner.flash }] });
+    } else {
+      await track.applyConstraints({ advanced: [{ torch: scanner.flash }] });
+    }
     button.classList.toggle('active', scanner.flash);
     button.setAttribute('aria-pressed', scanner.flash ? 'true' : 'false');
   } catch {
@@ -1566,7 +1573,7 @@ function detectRetailBarcodeFallback(video, scanner) {
     scanner.canvas = document.createElement('canvas');
     scanner.context = scanner.canvas.getContext('2d', { willReadFrequently: true });
   }
-  const maxWidth = 960;
+  const maxWidth = isAndroidPriceScanner() ? 1280 : 960;
   const width = Math.min(maxWidth, Math.max(480, video.videoWidth));
   const height = Math.max(270, Math.round(width * video.videoHeight / video.videoWidth));
   if (scanner.canvas.width !== width || scanner.canvas.height !== height) {
@@ -1650,6 +1657,32 @@ function scannerValueIsPlausible(rawValue, format = '', source = 'native') {
 }
 
 
+function isAndroidPriceScanner() {
+  return !isAppleMobile && (tg?.platform === 'android' || /Android/i.test(navigator.userAgent));
+}
+
+async function configureAndroidScannerFocus(scanner) {
+  if (!isAndroidPriceScanner() || !scanner.active) return;
+  const track = scanner.stream?.getVideoTracks?.()[0];
+  if (!track?.applyConstraints || track.readyState === 'ended') return;
+  let capabilities;
+  try { capabilities = track.getCapabilities?.() || {}; } catch { return; }
+  const focusModes = capabilities.focusMode || [];
+  const focusMode = focusModes.includes('continuous') ? 'continuous'
+    : focusModes.includes('single-shot') ? 'single-shot' : null;
+  if (!focusMode) return;
+  try {
+    // Keep the selected video resolution when applying optional camera controls.
+    const current = track.getConstraints?.() || {};
+    await track.applyConstraints({
+      ...current,
+      advanced: [...(current.advanced || []), { focusMode }]
+    });
+  } catch {
+    // Some Telegram WebViews expose a capability but reject it; scanning still works.
+  }
+}
+
 async function startPriceScanner() {
   const video = document.querySelector('[data-price-check-video]');
   if (!video || state.route !== 'priceCheck') return;
@@ -1672,6 +1705,16 @@ async function startPriceScanner() {
     { video: { facingMode: 'environment' }, audio: false },
     { video: true, audio: false }
   ];
+  if (isAndroidPriceScanner()) {
+    cameraRequests.unshift({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 }, height: { ideal: 1080 },
+        frameRate: { ideal: 30 }, resizeMode: 'none'
+      },
+      audio: false
+    });
+  }
   let cameraError = null;
   for (const constraints of cameraRequests) {
     try {
@@ -1695,6 +1738,8 @@ async function startPriceScanner() {
   video.setAttribute('playsinline', '');
   video.muted = true;
   try { await video.play(); } catch {}
+  await configureAndroidScannerFocus(scanner);
+  if (!scanner.active || state.priceScanner !== scanner || state.route !== 'priceCheck') return;
   document.querySelector('[data-price-check-camera-fallback]')?.classList.remove('show');
 
   // На Android/Chrome використовуємо нативний BarcodeDetector, а на iPhone/Safari/Telegram WebView
