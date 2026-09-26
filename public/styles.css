@@ -3344,3 +3344,7 @@ body.priceCheck-route{
 
 /* Only the unavailable-price label; actual prices keep their existing size. */
 .price-check-price.price-unavailable { font-size:calc(25 * var(--pcu));letter-spacing:-.3px;line-height:1.15;white-space:normal;overflow-wrap:anywhere;max-width:100%; }
+
+/* Return status stays on the original purchase row. */
+.receipt-history-row p:has(.receipt-return-status){white-space:normal;overflow:visible}
+.receipt-return-status{color:var(--gold, #e4b75f);font-weight:600}

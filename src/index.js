@@ -2259,10 +2259,23 @@ app.get('/api/client/star-history', clientAuth, (req, res) => {
   res.json({ ok: true, items: rows });
 });
 
+// Group return documents under their original purchase in client receipt history.
+const clientReceiptReturnColumns = `
+  (SELECT COUNT(*) FROM receipts rr WHERE rr.original_receipt_id = r.id
+    AND rr.client_id = r.client_id AND rr.is_return = 1) AS return_count,
+  (SELECT COALESCE(SUM(ABS(rr.total_cents)), 0) FROM receipts rr
+    WHERE rr.original_receipt_id = r.id AND rr.client_id = r.client_id
+    AND rr.is_return = 1) AS returned_total_cents`;
+function clientReceiptReturnStatus(receipt) {
+  if (!Number(receipt.return_count)) return '';
+  return Number(receipt.returned_total_cents) >= Math.abs(Number(receipt.total_cents))
+    ? 'Скасовано' : 'Часткове повернення';
+}
+
 app.get('/api/client/receipts', clientAuth, (req, res) => {
-  const receipts = db.prepare(`SELECT r.*, COALESCE(s.name, r.store_id, 'Магазин Star') AS store_name
+  const receipts = db.prepare(`SELECT r.*, ${clientReceiptReturnColumns}, COALESCE(s.name, r.store_id, 'Магазин Star') AS store_name
     FROM receipts r LEFT JOIN stores s ON s.id = r.store_id OR s.external_id = r.store_id
-    WHERE r.client_id = ? ORDER BY r.purchased_at DESC LIMIT 50`).all(req.client.id);
+    WHERE r.client_id = ? AND COALESCE(r.is_return, 0) = 0 ORDER BY r.purchased_at DESC LIMIT 50`).all(req.client.id);
   const itemsByReceipt = new Map();
   if (receipts.length) {
     const rows = db.prepare(`SELECT * FROM receipt_items WHERE receipt_id IN (${receipts.map(() => '?').join(',')}) ORDER BY rowid`).all(...receipts.map((r) => r.id));
@@ -2277,6 +2290,7 @@ app.get('/api/client/receipts', clientAuth, (req, res) => {
     const isRewardPurchase = Number(r.stars_spent || 0) > 0;
     return {
       ...r,
+      return_status_label: clientReceiptReturnStatus(r),
       total_uah: money(r.total_cents),
       eligible_uah: money(r.eligible_cents),
       is_reward_purchase: isRewardPurchase,
@@ -2288,12 +2302,13 @@ app.get('/api/client/receipts', clientAuth, (req, res) => {
 });
 
 app.get('/api/client/receipts/:id', clientAuth, (req, res) => {
-  const r = db.prepare(`SELECT r.*, COALESCE(s.name, r.store_id, 'Магазин Star') AS store_name FROM receipts r LEFT JOIN stores s ON s.id = r.store_id OR s.external_id = r.store_id WHERE r.id = ? AND r.client_id = ?`).get(req.params.id, req.client.id);
+  const r = db.prepare(`SELECT r.*, ${clientReceiptReturnColumns}, COALESCE(s.name, r.store_id, 'Магазин Star') AS store_name FROM receipts r LEFT JOIN stores s ON s.id = r.store_id OR s.external_id = r.store_id WHERE r.id = ? AND r.client_id = ?`).get(req.params.id, req.client.id);
   if (!r) return res.status(404).json({ ok: false, error: 'RECEIPT_NOT_FOUND' });
   const items = db.prepare('SELECT * FROM receipt_items WHERE receipt_id = ? ORDER BY id').all(r.id);
   const isRewardPurchase = Number(r.stars_spent || 0) > 0;
   res.json({ ok: true, receipt: {
     ...r,
+      return_status_label: clientReceiptReturnStatus(r),
     total_uah: money(r.total_cents),
     eligible_uah: money(r.eligible_cents),
     is_reward_purchase: isRewardPurchase,

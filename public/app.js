@@ -1057,6 +1057,7 @@ async function showReceiptModal(receiptId) {
     <div class="modal receipt-modal">
       <div class="modal-heading"><div><p class="eyebrow">STAR CLUB RECEIPT</p><h2>${receipt.is_reward_purchase ? 'Покупка за зірки' : 'Чек покупки'}</h2></div><button class="icon-btn compact" data-close-modal>×</button></div>
       <p class="small">${receipt.store_name || receipt.display_title || 'Магазин Star'} · ${new Date(receipt.purchased_at).toLocaleDateString('uk-UA')} ${fmtTime(receipt.purchased_at)}</p>
+      ${receipt.return_status_label ? `<p class="receipt-return-status">${safeHtml(receipt.return_status_label)}</p>` : ''}
       <div class="receipt-summary-grid">
         <div>
   <span>Сума</span>
@@ -1116,6 +1117,7 @@ function historyScreen() {
       <p>
         ${new Date(r.purchased_at).toLocaleDateString('uk-UA')}
         · ${(r.items || []).length} товарів
+        ${r.return_status_label ? ` · <span class="receipt-return-status">${safeHtml(r.return_status_label)}</span>` : ''}
       </p>
     </div>
 
