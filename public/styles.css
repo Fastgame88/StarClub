@@ -3348,3 +3348,29 @@ body.priceCheck-route{
 /* Return status stays on the original purchase row. */
 .receipt-history-row p:has(.receipt-return-status){white-space:normal;overflow:visible}
 .receipt-return-status{color:var(--gold, #e4b75f);font-weight:600}
+
+/* Android/Windows home: shorten only the promo banner and its grid row. */
+.android-windows-layout.home-route .home-live-v2{
+  grid-template-rows:118px 124px 112px auto auto;
+}
+.android-windows-layout.home-route .home-banner-v2{
+  height:124px !important;
+  min-height:124px !important;
+}
+.android-windows-layout.home-route .home-banner-copy-v2{
+  padding:8px 0 16px 18px;
+}
+.android-windows-layout.home-route .home-banner-copy-v2 h2{
+  font-size:17px;line-height:1.04;margin:4px 0;
+}
+.android-windows-layout.home-route .home-banner-copy-v2 p{
+  font-size:10px;line-height:1.15;
+}
+.android-windows-layout.home-route .home-banner-copy-v2 span{
+  font-size:8.5px;padding:3px 8px;
+}
+@media(max-width:390px){
+  .android-windows-layout.home-route .home-live-v2{
+    grid-template-rows:112px 124px 108px auto auto;
+  }
+}
