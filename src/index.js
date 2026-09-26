@@ -1743,8 +1743,8 @@ function findRewardProductForStamp(program, rewardItem = null) {
     if (existingInactive) return existingInactive;
 
     const t = nowIso();
-    const created = db.prepare(`INSERT INTO reward_products(product_external_id, name, image_url, stars_price, store_id, active_from, active_to, total_limit, per_client_limit, conditions, created_at, updated_at)
-      VALUES(?, ?, ?, 0, 'all', ?, NULL, NULL, NULL, ?, ?, ?)`).run(
+    const created = db.prepare(`INSERT INTO reward_products(product_external_id, name, image_url, stars_price, store_id, active_from, active_to, total_limit, per_client_limit, conditions, created_at, updated_at, is_program_reward)
+      VALUES(?, ?, ?, 0, 'all', ?, NULL, NULL, NULL, ?, ?, ?, 1)`).run(
         rewardItemExternalId,
         String(rewardItem?.name || program.name || 'Безкоштовний товар'),
         '/assets/star.svg',
@@ -2320,13 +2320,13 @@ app.get('/api/client/receipts/:id', clientAuth, (req, res) => {
 
 app.get('/api/client/rewards', clientAuth, (req, res) => {
   expireReservedRewardQrs(req.client.id);
-  const items = db.prepare('SELECT * FROM reward_products WHERE is_active = 1 ORDER BY stars_price ASC').all();
+  const items = db.prepare('SELECT * FROM reward_products WHERE is_active = 1 AND COALESCE(is_program_reward, 0) = 0 ORDER BY stars_price ASC').all();
   const available = getClientAvailableStars(req.client.id);
   res.json({ ok: true, available_stars: available, items: items.map((item) => ({ ...item, can_get: available >= item.stars_price })) });
 });
 
 app.post('/api/client/rewards/:id/create-qr', clientAuth, (req, res) => {
-  const reward = db.prepare('SELECT * FROM reward_products WHERE id = ? AND is_active = 1').get(req.params.id);
+  const reward = db.prepare('SELECT * FROM reward_products WHERE id = ? AND is_active = 1 AND COALESCE(is_program_reward, 0) = 0').get(req.params.id);
   if (!reward) return res.status(404).json({ ok: false, error: 'REWARD_NOT_FOUND' });
 
   const active = getActiveRewardQr(req.client.id, reward.id);
@@ -2577,7 +2577,7 @@ app.get('/api/1c/client/search', oneCAuth, (req, res) => {
   expireReservedRewardQrs();
   const client = findClientForOneC(req.query);
   if (!client) return res.json({ ok: true, found: false });
-  const rewards = db.prepare('SELECT id, name, stars_price FROM reward_products WHERE is_active = 1 AND stars_price <= ?').all(getClientAvailableStars(client.id));
+  const rewards = db.prepare('SELECT id, name, stars_price FROM reward_products WHERE is_active = 1 AND COALESCE(is_program_reward, 0) = 0 AND stars_price <= ?').all(getClientAvailableStars(client.id));
   const stamps = db.prepare(`SELECT p.code, p.name, COALESCE(sp.progress, 0) AS progress, p.required_qty, p.reward_stars FROM stamp_programs p LEFT JOIN client_stamp_progress sp ON sp.program_id = p.id AND sp.client_id = ? WHERE p.is_active = 1 ORDER BY p.id`).all(client.id);
   res.json({ ok: true, found: true, client: {
     card_number: client.card_number,

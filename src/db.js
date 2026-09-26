@@ -679,6 +679,20 @@ export function migrate() {
   if (!rewardQrColumns.has('program_id')) innerDb.run('ALTER TABLE reward_qrs ADD COLUMN program_id INTEGER');
   innerDb.run("UPDATE reward_qrs SET source_type = 'stars' WHERE source_type IS NULL");
 
+  // Internal program rewards are redeemable only through a client's earned QR.
+  const rewardProductInfo = innerDb.exec('PRAGMA table_info(reward_products)');
+  const rewardProductColumns = new Set((rewardProductInfo?.[0]?.values || []).map((row) => row[1]));
+  if (!rewardProductColumns.has('is_program_reward')) {
+    innerDb.run('ALTER TABLE reward_products ADD COLUMN is_program_reward INTEGER NOT NULL DEFAULT 0');
+    // Identify only legacy auto-created rewards; keep ordinary catalog gifts unchanged.
+    innerDb.run(`UPDATE reward_products SET is_program_reward = 1
+      WHERE stars_price = 0
+        AND conditions LIKE 'Безкоштовний код за накопичувальною програмою «%»'
+        AND EXISTS (SELECT 1 FROM reward_qrs q WHERE q.reward_product_id = reward_products.id
+          AND q.source_type = 'stamp_program')`);
+  }
+
+
 
   const productPricingInfo = innerDb.exec('PRAGMA table_info(products)');
   const productPricingColumns = new Set((productPricingInfo?.[0]?.values || []).map((row) => row[1]));

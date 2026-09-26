@@ -134,6 +134,31 @@ function notifyInApp(text, route = null, options = {}) {
   addInboxNotification(text, route, options);
 }
 
+function syncPersonalQrNotifications(qrs = [], coupons = []) {
+  if (!state.client?.id) return;
+  ensureNotificationsLoaded();
+  const storageKey = `${notificationStorageKey()}_seen_codes`;
+  let stored = [];
+  try { stored = JSON.parse(localStorage.getItem(storageKey) || '[]'); } catch {}
+  const seen = new Set(Array.isArray(stored) ? stored : []);
+  const entries = [
+    ...qrs.filter((q) => q.status === 'reserved').map((q) => ({
+      key: `created-qr:${q.token || q.manual_code || q.id}`,
+      text: `Ваш QR-код на товар «${q.reward?.name || 'Нагорода'}» доступний у розділі «Мої QR-коди».`
+    })),
+    ...coupons.filter((c) => c.status === 'active').map((c) => ({
+      key: `personal-coupon:${c.id || c.code}`,
+      text: `Ваш персональний код на товар «${c.product_name || 'Нагорода'}» доступний у розділі «Мої QR-коди».`
+    }))
+  ];
+  for (const entry of entries.reverse()) {
+    if (seen.has(entry.key)) continue;
+    addInboxNotification(entry.text, 'rewardCodes', { dedupeKey: entry.key });
+    seen.add(entry.key);
+  }
+  try { localStorage.setItem(storageKey, JSON.stringify([...seen].slice(-1000))); } catch {}
+}
+
 function unreadNotificationsCount() {
   ensureNotificationsLoaded();
   return state.notifications.filter((n) => !n.read).length;
@@ -618,10 +643,11 @@ async function refreshClient() {
 async function loadRewards() {
   const [data, qrs] = await Promise.all([api('/api/client/rewards'), api('/api/client/reward-qrs')]);
   state.data.rewards = { ...data, qrs: qrs.qrs || [] };
+  syncPersonalQrNotifications(qrs.qrs || [], qrs.coupons || []);
 }
 
 async function loadRewardQrs() {
-  { const data = await api('/api/client/reward-qrs'); state.data.rewardQrs = data.qrs || []; state.data.personalCoupons = data.coupons || []; }
+  { const data = await api('/api/client/reward-qrs'); state.data.rewardQrs = data.qrs || []; state.data.personalCoupons = data.coupons || []; syncPersonalQrNotifications(data.qrs || [], data.coupons || []); }
 }
 
 async function loadOffers() {
@@ -706,6 +732,7 @@ async function getClientActivitySnapshot() {
   state.client = meData.client;
   renderNav();
   const qrs = qrsData.qrs || [];
+  syncPersonalQrNotifications(qrs, qrsData.coupons || []);
   const receipts = receiptsData.receipts || [];
   const tickets = supportData.tickets || [];
   return {
@@ -743,10 +770,7 @@ async function checkClientActivity({ initialize = false } = {}) {
 
     let message = '';
     let route = '';
-    if (next.latestQr && next.latestQr !== previous.latestQr) {
-      message = 'Новий QR-код уже доступний у розділі «Мої QR-коди»';
-      route = 'rewardCodes';
-    } else if (next.latestSupport && next.latestSupport !== previous.latestSupport) {
+    if (next.latestSupport && next.latestSupport !== previous.latestSupport) {
       message = 'Підтримка відповіла на ваше звернення';
       route = 'support';
     } else if (next.latestReceipt && next.latestReceipt !== previous.latestReceipt) {
@@ -873,7 +897,7 @@ function rewardReferenceImage(reward) {
 function rewardsScreen() {
   const data = state.data.rewards;
   const items = data?.items || [];
-  const active = (data?.qrs || []).filter((q) => q.status === 'reserved');
+  const active = (data?.qrs || []).filter((q) => q.status === 'reserved' && q.source_type !== 'stamp_program');
   const query = String(state.data.rewardSearch || '').trim().toLocaleLowerCase('uk');
   const matches = (r) => `${r.name || ''} ${r.conditions || ''}`.toLocaleLowerCase('uk').includes(query);
   return `
@@ -2169,7 +2193,7 @@ function bindEvents() {
       el.disabled = true;
       const data = await api(`/api/client/rewards/${el.dataset.createReward}/create-qr`, { method: 'POST', body: '{}' });
       showRewardModal(data.qr);
-      notifyInApp('QR-код створено. Відкрийте його через дзвіночок або розділ «Мої QR-коди».', 'rewardCodes', { dedupeKey: `created-qr:${data.qr?.token || data.qr?.manual_code || Date.now()}` });
+      syncPersonalQrNotifications(data.qr ? [data.qr] : []);
       await refreshClient();
       await loadRewards();
       await checkClientActivity({ initialize: true });
