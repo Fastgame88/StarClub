@@ -1259,6 +1259,7 @@ function stopPriceScanner() {
   if (!scanner) return;
   scanner.active = false;
   try { cancelAnimationFrame(scanner.raf || 0); } catch {}
+  try { clearTimeout(scanner.refocusTimer || 0); } catch {}
   try { scanner.stream?.getTracks?.().forEach((track) => track.stop()); } catch {}
   state.priceScanner = null;
 }
@@ -1573,7 +1574,9 @@ function detectRetailBarcodeFallback(video, scanner) {
     scanner.canvas = document.createElement('canvas');
     scanner.context = scanner.canvas.getContext('2d', { willReadFrequently: true });
   }
-  const maxWidth = isAndroidPriceScanner() ? 1280 : 960;
+  // Keep more source pixels for narrow/small EAN bars. iPhone relies on this
+  // Canvas decoder more often, so 1280 px is especially important there.
+  const maxWidth = isAndroidPriceScanner() ? 1440 : 1280;
   const width = Math.min(maxWidth, Math.max(480, video.videoWidth));
   const height = Math.max(270, Math.round(width * video.videoHeight / video.videoWidth));
   if (scanner.canvas.width !== width || scanner.canvas.height !== height) {
@@ -1661,25 +1664,75 @@ function isAndroidPriceScanner() {
   return !isAppleMobile && (tg?.platform === 'android' || /Android/i.test(navigator.userAgent));
 }
 
-async function configureAndroidScannerFocus(scanner) {
-  if (!isAndroidPriceScanner() || !scanner.active) return;
+function priceScannerFocusModes(capabilities = {}) {
+  const modes = Array.isArray(capabilities.focusMode) ? capabilities.focusMode : [];
+  return {
+    continuous: modes.includes('continuous'),
+    singleShot: modes.includes('single-shot')
+  };
+}
+
+async function configurePriceScannerFocus(scanner) {
+  if (!scanner?.active) return;
   const track = scanner.stream?.getVideoTracks?.()[0];
   if (!track?.applyConstraints || track.readyState === 'ended') return;
   let capabilities;
   try { capabilities = track.getCapabilities?.() || {}; } catch { return; }
-  const focusModes = capabilities.focusMode || [];
-  const focusMode = focusModes.includes('continuous') ? 'continuous'
-    : focusModes.includes('single-shot') ? 'single-shot' : null;
+  const modes = priceScannerFocusModes(capabilities);
+  const focusMode = modes.continuous ? 'continuous' : modes.singleShot ? 'single-shot' : null;
   if (!focusMode) return;
   try {
-    // Keep the selected video resolution when applying optional camera controls.
-    const current = track.getConstraints?.() || {};
-    await track.applyConstraints({
-      ...current,
-      advanced: [...(current.advanced || []), { focusMode }]
-    });
+    // Continuous autofocus helps both Android and iPhone keep small barcodes sharp
+    // while the user changes the distance to the package.
+    await track.applyConstraints({ advanced: [{ focusMode }] });
   } catch {
-    // Some Telegram WebViews expose a capability but reject it; scanning still works.
+    // Some Telegram/Safari WebViews expose a capability but reject it.
+  }
+}
+
+async function focusPriceScannerAt(clientX, clientY) {
+  const scanner = state.priceScanner;
+  const video = document.querySelector('[data-price-check-video]');
+  const track = scanner?.stream?.getVideoTracks?.()[0];
+  if (!scanner?.active || scanner.paused || !video || !track?.applyConstraints || track.readyState === 'ended') return;
+
+  let capabilities = {};
+  try { capabilities = track.getCapabilities?.() || {}; } catch {}
+  const modes = priceScannerFocusModes(capabilities);
+  if (!modes.singleShot && !modes.continuous) return;
+
+  const rect = video.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const point = {
+    x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+    y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
+  };
+  const supported = navigator.mediaDevices?.getSupportedConstraints?.() || {};
+
+  try {
+    const focus = {};
+    if (modes.singleShot) focus.focusMode = 'single-shot';
+    else if (modes.continuous) focus.focusMode = 'continuous';
+    // Chrome/Android camera implementations that support a focus point use
+    // pointsOfInterest. Unsupported WebViews simply fall back to autofocus.
+    if (supported.pointsOfInterest || Object.prototype.hasOwnProperty.call(capabilities, 'pointsOfInterest')) {
+      focus.pointsOfInterest = [point];
+    }
+    await track.applyConstraints({ advanced: [focus] });
+  } catch {
+    try {
+      if (modes.singleShot) await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+    } catch {}
+  }
+
+  // Return to continuous AF after the tap so the image stays sharp when the
+  // phone moves a little closer/farther from a small barcode.
+  if (modes.continuous) {
+    clearTimeout(scanner.refocusTimer);
+    scanner.refocusTimer = setTimeout(async () => {
+      if (!scanner.active || state.priceScanner !== scanner || track.readyState === 'ended') return;
+      try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch {}
+    }, 450);
   }
 }
 
@@ -1691,7 +1744,7 @@ async function startPriceScanner() {
     active: true, paused: false, flash: false, stream: null, detector: null,
     detecting: false, fallbackDetecting: false, canvas: null, context: null,
     raf: 0, lastFrameAt: 0, lastFallbackAt: 0, lastValue: '', lastValueAt: 0,
-    candidateValue: '', candidateCount: 0, candidateFirstAt: 0
+    candidateValue: '', candidateCount: 0, candidateFirstAt: 0, refocusTimer: 0
   };
   state.priceScanner = scanner;
 
@@ -1701,20 +1754,21 @@ async function startPriceScanner() {
   }
 
   const cameraRequests = [
+    // Ask for a high-resolution rear-camera stream first on both platforms.
+    // This gives the detector enough pixels when the printed barcode is small.
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 2560 }, height: { ideal: 1440 },
+        frameRate: { ideal: 30 }, resizeMode: 'none'
+      },
+      audio: false
+    },
+    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, audio: false },
     { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
     { video: { facingMode: 'environment' }, audio: false },
     { video: true, audio: false }
   ];
-  if (isAndroidPriceScanner()) {
-    cameraRequests.unshift({
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 }, height: { ideal: 1080 },
-        frameRate: { ideal: 30 }, resizeMode: 'none'
-      },
-      audio: false
-    });
-  }
   let cameraError = null;
   for (const constraints of cameraRequests) {
     try {
@@ -1738,7 +1792,14 @@ async function startPriceScanner() {
   video.setAttribute('playsinline', '');
   video.muted = true;
   try { await video.play(); } catch {}
-  await configureAndroidScannerFocus(scanner);
+  await configurePriceScannerFocus(scanner);
+  const camera = document.querySelector('[data-price-check-camera]');
+  if (camera) {
+    camera.addEventListener('pointerup', (event) => {
+      if (event.target.closest('button')) return;
+      focusPriceScannerAt(event.clientX, event.clientY);
+    });
+  }
   if (!scanner.active || state.priceScanner !== scanner || state.route !== 'priceCheck') return;
   document.querySelector('[data-price-check-camera-fallback]')?.classList.remove('show');
 
