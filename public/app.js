@@ -1230,6 +1230,7 @@ function priceCheckScreen() {
 
       <section class="price-check-camera" data-price-check-camera>
         <video data-price-check-video playsinline muted autoplay></video>
+        ${isAndroidPriceScanner() ? '<button type="button" class="btn secondary" data-price-camera-settings style="position:absolute;top:12px;right:12px;z-index:5;width:auto;min-height:36px;padding:8px 12px;font-size:12px">Камера та діагностика</button>' : ''}
         <div class="price-check-camera-fallback" data-price-check-camera-fallback>
           <span>${appIcon('barcode')}</span>
           <b>Відкриваємо камеру…</b>
@@ -1261,6 +1262,8 @@ function stopPriceScanner() {
   try { cancelAnimationFrame(scanner.raf || 0); } catch {}
   try { clearTimeout(scanner.refocusTimer || 0); } catch {}
   try { scanner.stream?.getTracks?.().forEach((track) => track.stop()); } catch {}
+  if (scanner.cameraElement && scanner.focusHandler) scanner.cameraElement.removeEventListener('pointerup', scanner.focusHandler);
+  document.querySelector('[data-price-camera-dialog]')?.remove();
   state.priceScanner = null;
 }
 
@@ -1538,7 +1541,7 @@ function barcodeRunsFromLuma(luma, threshold) {
 
   // Прибираємо одиночні шумові пікселі, але не чіпаємо реальні вузькі модулі штрих-коду.
   for (let i = 1; i < runs.length - 1; i++) {
-    if (runs[i].length <= 1 && runs[i - 1].color === runs[i + 1].color) {
+    if (!isAndroidPriceScanner() && runs[i].length <= 1 && runs[i - 1].color === runs[i + 1].color) {
       runs[i - 1].length += runs[i].length + runs[i + 1].length;
       runs.splice(i, 2);
       i = Math.max(0, i - 2);
@@ -1574,6 +1577,7 @@ function detectRetailBarcodeFallback(video, scanner) {
     scanner.canvas = document.createElement('canvas');
     scanner.context = scanner.canvas.getContext('2d', { willReadFrequently: true });
   }
+  if (isAndroidPriceScanner()) return detectAndroidRetailBarcode(video, scanner);
   // Keep more source pixels for narrow/small EAN bars. iPhone relies on this
   // Canvas decoder more often, so 1280 px is especially important there.
   const maxWidth = isAndroidPriceScanner() ? 1440 : 1280;
@@ -1614,6 +1618,168 @@ function detectRetailBarcodeFallback(video, scanner) {
     if (count > bestHits) { bestCode = code; bestHits = count; }
   }
   return bestHits >= 2 ? bestCode : null;
+}
+
+// Convert object-fit: cover coordinates to source pixels (also used for tap focus).
+function priceScannerSourceRect(video, rect) {
+  const view = video.getBoundingClientRect();
+  if (!view.width || !view.height || !video.videoWidth || !video.videoHeight) return null;
+  const scale = Math.max(view.width / video.videoWidth, view.height / video.videoHeight);
+  const cropX = (video.videoWidth * scale - view.width) / 2;
+  const cropY = (video.videoHeight * scale - view.height) / 2;
+  const x = Math.max(0, Math.min(video.videoWidth - 1, (rect.left - view.left + cropX) / scale));
+  const y = Math.max(0, Math.min(video.videoHeight - 1, (rect.top - view.top + cropY) / scale));
+  return { x: Math.floor(x), y: Math.floor(y),
+    width: Math.max(1, Math.min(video.videoWidth - Math.floor(x), Math.ceil(rect.width / scale))),
+    height: Math.max(1, Math.min(video.videoHeight - Math.floor(y), Math.ceil(rect.height / scale))) };
+}
+
+function detectAndroidRetailBarcode(video, scanner) {
+  const frame = document.querySelector('.price-check-frame');
+  const roi = priceScannerSourceRect(video, (frame || video).getBoundingClientRect());
+  if (!roi) return null;
+  // Copy only scan lines, 1:1, instead of downscaling the complete video frame.
+  const rows = [0.25, 0.375, 0.5, 0.625, 0.75];
+  const slopes = [-0.035, 0, 0.035];
+  const stripHeight = Math.min(video.videoHeight, Math.ceil(roi.width * 0.035) + 4);
+  scanner.canvas.width = roi.width;
+  scanner.canvas.height = stripHeight;
+  const ctx = scanner.context;
+  if (!ctx) return null;
+  ctx.imageSmoothingEnabled = false;
+  scanner.decodeFrame = { source: { width: video.videoWidth, height: video.videoHeight },
+    roi, canvas: { width: roi.width, height: stripHeight }, scale: 1, decoder: 'EAN scanlines' };
+  const hits = new Map();
+  for (const row of rows) {
+    const top = Math.max(0, Math.min(video.videoHeight - stripHeight, Math.round(roi.y + roi.height * row - stripHeight / 2)));
+    ctx.drawImage(video, roi.x, top, roi.width, stripHeight, 0, 0, roi.width, stripHeight);
+    const pixels = ctx.getImageData(0, 0, roi.width, stripHeight).data;
+    for (const slope of slopes) {
+      const luma = new Array(roi.width);
+      for (let x = 0; x < roi.width; x++) {
+        const y = Math.max(0, Math.min(stripHeight - 1, Math.round(stripHeight / 2 + (x - roi.width / 2) * slope)));
+        const index = (y * roi.width + x) * 4;
+        luma[x] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
+      }
+      const code = decodeRetailBarcodeLuma(luma);
+      if (code) hits.set(code, (hits.get(code) || 0) + 1);
+    }
+  }
+  return [...hits].sort((a, b) => b[1] - a[1]).find(([, count]) => count >= 2)?.[0] || null;
+}
+
+// Diagnostics are local and contain no Telegram auth data or camera images.
+function priceScannerTrackData(track, method) {
+  try { return track?.[method]?.() || {}; } catch (error) { return { error: error.name }; }
+}
+function priceScannerEvent(scanner, action, data = {}) {
+  if (!scanner) return;
+  scanner.events = [...(scanner.events || []), { at: new Date().toISOString(), action, ...data }].slice(-40);
+}
+async function priceScannerDevices(scanner) {
+  try {
+    scanner.devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput')
+      .map((d) => ({ deviceId: d.deviceId, groupId: d.groupId, label: d.label }));
+  } catch (error) { priceScannerEvent(scanner, 'enumerateDevices failed', { error: error.name }); }
+}
+function priceScannerReport() {
+  const scanner = state.priceScanner;
+  const track = scanner?.stream?.getVideoTracks?.()[0];
+  const video = document.querySelector('[data-price-check-video]');
+  const capabilities = priceScannerTrackData(track, 'getCapabilities');
+  const settings = priceScannerTrackData(track, 'getSettings');
+  return { timestamp: new Date().toISOString(), userAgent: navigator.userAgent, platform: tg?.platform,
+    active: !!scanner?.active, requestedDeviceId: scanner?.requestedDeviceId || 'automatic rear',
+    devices: scanner?.devices || [], track: { label: track?.label, readyState: track?.readyState },
+    capabilities, settings, constraints: priceScannerTrackData(track, 'getConstraints'),
+    supportedConstraints: navigator.mediaDevices?.getSupportedConstraints?.() || {},
+    autofocus: { continuousAvailable: priceScannerFocusModes(capabilities).continuous, actualMode: settings.focusMode || 'not reported' },
+    video: { width: video?.videoWidth, height: video?.videoHeight, readyState: video?.readyState },
+    nativeDecoder: scanner?.detector ? 'BarcodeDetector receives video directly' : 'unavailable',
+    fallback: scanner?.decodeFrame || null, events: scanner?.events || [],
+    physicalModule: 'WebView deviceId/label identifies an exposed device, not necessarily a physical lens. Verify on the phone.' };
+}
+window.starClubCameraDebug = { report: priceScannerReport, refresh: async () => {
+  if (state.priceScanner) await priceScannerDevices(state.priceScanner);
+  return priceScannerReport();
+} };
+
+async function showPriceCameraSettings() {
+  const scanner = state.priceScanner;
+  if (!scanner || document.querySelector('[data-price-camera-dialog]')) return;
+  await priceScannerDevices(scanner);
+  if (state.priceScanner !== scanner) return;
+  const wasPaused = scanner.paused;
+  scanner.paused = true;
+  const wrap = document.createElement('div');
+  wrap.className = 'price-check-manual-modal';
+  wrap.setAttribute('data-price-camera-dialog', '');
+  wrap.innerHTML = `<section class="price-check-manual-box" role="dialog" aria-modal="true" aria-label="Камера та діагностика" style="max-height:80vh;overflow:auto;display:grid;gap:8px">
+    <h3>Камера та діагностика</h3>
+    <p>Виберіть камеру та перевірте різкість. Назви модулів визначає Telegram; основна камера не завжди позначена.</p>
+    <select aria-label="Камера" style="width:100%;padding:12px"><option value="">Автоматично: задня камера</option></select>
+    <button type="button" data-camera-apply>Застосувати камеру</button>
+    <button type="button" data-camera-copy>Оновити й скопіювати звіт</button>
+    <textarea readonly aria-label="Звіт камери" style="width:100%;min-height:160px;font-size:11px"></textarea>
+    <button type="button" data-camera-close>Закрити</button></section>`;
+  const select = wrap.querySelector('select');
+  (scanner.devices || []).forEach((device, index) => {
+    if (!device.deviceId) return;
+    const option = document.createElement('option');
+    option.value = device.deviceId;
+    option.textContent = device.label || `Камера ${index + 1}`;
+    select.appendChild(option);
+  });
+  select.value = scanner.requestedDeviceId || priceScannerTrackData(scanner.stream?.getVideoTracks?.()[0], 'getSettings').deviceId || '';
+  const output = wrap.querySelector('textarea');
+  output.value = JSON.stringify(priceScannerReport(), null, 2);
+  const close = () => { wrap.remove(); if (state.priceScanner === scanner) scanner.paused = wasPaused; };
+  wrap.querySelector('[data-camera-close]').onclick = close;
+  wrap.onclick = (event) => { if (event.target === wrap) close(); };
+  wrap.querySelector('[data-camera-apply]').onclick = () => {
+    const deviceId = select.value;
+    try { localStorage.setItem('starclub_price_camera_android', deviceId); } catch {}
+    close();
+    startPriceScanner(deviceId);
+  };
+  wrap.querySelector('[data-camera-copy]').onclick = async () => {
+    await priceScannerDevices(scanner);
+    output.value = JSON.stringify(priceScannerReport(), null, 2);
+    try { await navigator.clipboard.writeText(output.value); toast('Звіт скопійовано'); }
+    catch { output.focus(); output.select(); toast('Виділіть і скопіюйте звіт вручну'); }
+  };
+  document.body.appendChild(wrap);
+}
+
+async function applyPriceScannerConstraints(scanner, patch) {
+  const track = scanner.stream?.getVideoTracks?.()[0];
+  if (!scanner.active || state.priceScanner !== scanner || !track || track.readyState === 'ended') return;
+  const current = priceScannerTrackData(track, 'getConstraints');
+  const keys = Object.keys(patch);
+  const advanced = (current.advanced || []).map((item) => Object.fromEntries(Object.entries(item).filter(([key]) => !keys.includes(key))))
+    .filter((item) => Object.keys(item).length);
+  try {
+    await track.applyConstraints({ ...current, advanced: [...advanced, patch] });
+    priceScannerEvent(scanner, 'applyConstraints', { requested: patch, settings: priceScannerTrackData(track, 'getSettings') });
+  } catch (error) {
+    priceScannerEvent(scanner, 'applyConstraints failed', { requested: patch, error: error.name, message: error.message });
+    throw error;
+  }
+}
+
+async function configureAndroidPriceResolution(scanner) {
+  const track = scanner.stream.getVideoTracks()[0];
+  for (const request of [
+    { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 }, resizeMode: 'none' },
+    { width: { ideal: 1920 }, height: { ideal: 1080 } }
+  ]) {
+    if (!scanner.active || state.priceScanner !== scanner) return;
+    try {
+      await track.applyConstraints({ ...priceScannerTrackData(track, 'getConstraints'), ...request });
+      priceScannerEvent(scanner, 'resolution', { requested: request, settings: priceScannerTrackData(track, 'getSettings') });
+      break;
+    } catch (error) { priceScannerEvent(scanner, 'resolution failed', { requested: request, error: error.name }); }
+  }
 }
 
 function scannerDetectionInsideFrame(detection, video) {
@@ -1684,7 +1850,8 @@ async function configurePriceScannerFocus(scanner) {
   try {
     // Continuous autofocus helps both Android and iPhone keep small barcodes sharp
     // while the user changes the distance to the package.
-    await track.applyConstraints({ advanced: [{ focusMode }] });
+    if (isAndroidPriceScanner()) await applyPriceScannerConstraints(scanner, { focusMode });
+    else await track.applyConstraints({ advanced: [{ focusMode }] });
   } catch {
     // Some Telegram/Safari WebViews expose a capability but reject it.
   }
@@ -1707,6 +1874,10 @@ async function focusPriceScannerAt(clientX, clientY) {
     x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
     y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
   };
+  if (isAndroidPriceScanner()) {
+    const source = priceScannerSourceRect(video, { left: clientX, top: clientY, width: 1, height: 1 });
+    if (source) { point.x = source.x / video.videoWidth; point.y = source.y / video.videoHeight; }
+  }
   const supported = navigator.mediaDevices?.getSupportedConstraints?.() || {};
 
   try {
@@ -1718,10 +1889,14 @@ async function focusPriceScannerAt(clientX, clientY) {
     if (supported.pointsOfInterest || Object.prototype.hasOwnProperty.call(capabilities, 'pointsOfInterest')) {
       focus.pointsOfInterest = [point];
     }
-    await track.applyConstraints({ advanced: [focus] });
+    if (isAndroidPriceScanner()) await applyPriceScannerConstraints(scanner, focus);
+    else await track.applyConstraints({ advanced: [focus] });
   } catch {
     try {
-      if (modes.singleShot) await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+      if (modes.singleShot) {
+        if (isAndroidPriceScanner()) await applyPriceScannerConstraints(scanner, { focusMode: 'single-shot' });
+        else await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
+      }
     } catch {}
   }
 
@@ -1731,12 +1906,15 @@ async function focusPriceScannerAt(clientX, clientY) {
     clearTimeout(scanner.refocusTimer);
     scanner.refocusTimer = setTimeout(async () => {
       if (!scanner.active || state.priceScanner !== scanner || track.readyState === 'ended') return;
-      try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch {}
+      try {
+        if (isAndroidPriceScanner()) await applyPriceScannerConstraints(scanner, { focusMode: 'continuous' });
+        else await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+      } catch {}
     }, 450);
   }
 }
 
-async function startPriceScanner() {
+async function startPriceScanner(selectedDeviceId) {
   const video = document.querySelector('[data-price-check-video]');
   if (!video || state.route !== 'priceCheck') return;
   stopPriceScanner();
@@ -1747,13 +1925,16 @@ async function startPriceScanner() {
     candidateValue: '', candidateCount: 0, candidateFirstAt: 0, refocusTimer: 0
   };
   state.priceScanner = scanner;
+  const flashButton = document.querySelector('[data-price-check-flash]');
+  flashButton?.classList.remove('active');
+  flashButton?.setAttribute('aria-pressed', 'false');
 
   if (!navigator.mediaDevices?.getUserMedia) {
     setPriceScannerMessage('Камера недоступна', 'На цьому пристрої немає доступу до камери браузера.');
     return;
   }
 
-  const cameraRequests = [
+  let cameraRequests = [
     // Ask for a high-resolution rear-camera stream first on both platforms.
     // This gives the detector enough pixels when the printed barcode is small.
     {
@@ -1769,18 +1950,37 @@ async function startPriceScanner() {
     { video: { facingMode: 'environment' }, audio: false },
     { video: true, audio: false }
   ];
+  if (isAndroidPriceScanner()) {
+    let savedDeviceId = '';
+    try { savedDeviceId = localStorage.getItem('starclub_price_camera_android') || ''; } catch {}
+    scanner.requestedDeviceId = typeof selectedDeviceId === 'string' ? selectedDeviceId : savedDeviceId;
+    // Select the lens before negotiating resolution; high-resolution ideals must
+    // not make WebView silently prefer a different rear module.
+    cameraRequests = scanner.requestedDeviceId
+      ? [{ video: { deviceId: { exact: scanner.requestedDeviceId } }, audio: false }]
+      : [{ video: { facingMode: { exact: 'environment' } }, audio: false },
+        { video: { facingMode: { ideal: 'environment' } }, audio: false }];
+  }
   let cameraError = null;
   for (const constraints of cameraRequests) {
+    if (!scanner.active || state.priceScanner !== scanner || state.route !== 'priceCheck') return;
     try {
       scanner.stream = await navigator.mediaDevices.getUserMedia(constraints);
+      priceScannerEvent(scanner, 'getUserMedia', { requested: constraints, settings: priceScannerTrackData(scanner.stream?.getVideoTracks?.()[0], 'getSettings') });
       if (scanner.stream) break;
     } catch (error) {
       cameraError = error;
+      priceScannerEvent(scanner, 'getUserMedia failed', { requested: constraints, error: error.name, message: error.message });
+      if (['NotAllowedError', 'SecurityError'].includes(error.name)) break;
     }
+  }
+  if (!scanner.active || state.priceScanner !== scanner || state.route !== 'priceCheck') {
+    scanner.stream?.getTracks().forEach((track) => track.stop());
+    return;
   }
   if (!scanner.stream) {
     console.warn('StarClub price scanner camera error', cameraError);
-    setPriceScannerMessage('Немає доступу до камери', 'Надайте дозвіл на камеру в налаштуваннях Telegram або браузера.');
+    setPriceScannerMessage('Немає доступу до камери', scanner.requestedDeviceId ? 'Вибрана камера недоступна. Відкрийте «Камера та діагностика» і виберіть автоматичний режим або іншу камеру.' : 'Надайте дозвіл на камеру в налаштуваннях Telegram або браузера.');
     return;
   }
 
@@ -1788,6 +1988,11 @@ async function startPriceScanner() {
     scanner.stream.getTracks().forEach((track) => track.stop());
     return;
   }
+  if (isAndroidPriceScanner()) {
+    await configureAndroidPriceResolution(scanner);
+    await priceScannerDevices(scanner);
+  }
+  if (!scanner.active || state.priceScanner !== scanner) return;
   video.srcObject = scanner.stream;
   video.setAttribute('playsinline', '');
   video.muted = true;
@@ -1795,10 +2000,12 @@ async function startPriceScanner() {
   await configurePriceScannerFocus(scanner);
   const camera = document.querySelector('[data-price-check-camera]');
   if (camera) {
-    camera.addEventListener('pointerup', (event) => {
+    scanner.cameraElement = camera;
+    scanner.focusHandler = (event) => {
       if (event.target.closest('button')) return;
       focusPriceScannerAt(event.clientX, event.clientY);
-    });
+    };
+    camera.addEventListener('pointerup', scanner.focusHandler);
   }
   if (!scanner.active || state.priceScanner !== scanner || state.route !== 'priceCheck') return;
   document.querySelector('[data-price-check-camera-fallback]')?.classList.remove('show');
@@ -1818,7 +2025,7 @@ async function startPriceScanner() {
 
   const acceptValue = async (rawValue, { source = 'native', format = '' } = {}) => {
     const value = String(rawValue || '').trim().replace(/\s+/g, '');
-    if (!value || scanner.paused || !scannerValueIsPlausible(value, format, source)) return false;
+    if (!scanner.active || state.priceScanner !== scanner || !value || scanner.paused || !scannerValueIsPlausible(value, format, source)) return false;
     const now = Date.now();
 
     // Не реагуємо на одиничний випадковий збіг. Один і той самий код має стабільно
@@ -1871,7 +2078,7 @@ async function startPriceScanner() {
         scanner.fallbackDetecting = false;
       }
     }
-    scanner.raf = requestAnimationFrame(detectLoop);
+    if (scanner.active && state.priceScanner === scanner) scanner.raf = requestAnimationFrame(detectLoop);
   };
   scanner.raf = requestAnimationFrame(detectLoop);
 }
@@ -2217,6 +2424,7 @@ function bindEvents() {
   document.querySelectorAll('[data-price-unavailable]').forEach((el) => el.onclick = () => toast('Функція поки недоступна.'));
   document.querySelectorAll('[data-price-check-back]').forEach((el) => el.onclick = () => setRoute('more'));
   document.querySelectorAll('[data-price-check-manual]').forEach((el) => el.onclick = showManualBarcodeDialog);
+  document.querySelectorAll('[data-price-camera-settings]').forEach((el) => el.onclick = showPriceCameraSettings);
   document.querySelectorAll('[data-price-check-flash]').forEach((el) => el.onclick = togglePriceScannerFlash);
   bindPriceCheckResultActions();
   if (state.route === 'priceCheck') startPriceScanner();
