@@ -1230,7 +1230,6 @@ function priceCheckScreen() {
 
       <section class="price-check-camera" data-price-check-camera>
         <video data-price-check-video playsinline muted autoplay></video>
-        ${isAndroidPriceScanner() ? '<button type="button" class="btn secondary" data-price-camera-settings style="position:absolute;top:12px;right:12px;z-index:5;width:auto;min-height:36px;padding:8px 12px;font-size:12px">Камера та діагностика</button>' : ''}
         <div class="price-check-camera-fallback" data-price-check-camera-fallback>
           <span>${appIcon('barcode')}</span>
           <b>Відкриваємо камеру…</b>
@@ -1260,7 +1259,9 @@ function stopPriceScanner() {
   if (!scanner) return;
   scanner.active = false;
   try { cancelAnimationFrame(scanner.raf || 0); } catch {}
-  try { clearTimeout(scanner.refocusTimer || 0); } catch {}
+  try { clearTimeout(scanner.refocusTimer || 0); clearTimeout(scanner.focusIndicatorTimer || 0); } catch {}
+  scanner.pendingFocusPoint = null;
+  scanner.focusIndicator?.remove();
   try { scanner.stream?.getTracks?.().forEach((track) => track.stop()); } catch {}
   if (scanner.cameraElement && scanner.focusHandler) scanner.cameraElement.removeEventListener('pointerup', scanner.focusHandler);
   document.querySelector('[data-price-camera-dialog]')?.remove();
@@ -1686,7 +1687,7 @@ function priceScannerReport() {
   const video = document.querySelector('[data-price-check-video]');
   const capabilities = priceScannerTrackData(track, 'getCapabilities');
   const settings = priceScannerTrackData(track, 'getSettings');
-  return { build: 'android-camera-v2', timestamp: new Date().toISOString(), userAgent: navigator.userAgent, platform: tg?.platform,
+  return { build: 'tap-focus-v3', timestamp: new Date().toISOString(), userAgent: navigator.userAgent, platform: tg?.platform,
     active: !!scanner?.active, requestedDeviceId: scanner?.requestedDeviceId || 'automatic rear',
     devices: scanner?.devices || [], track: { label: track?.label, readyState: track?.readyState },
     requestedFocus: scanner?.requestedFocus || null,
@@ -1955,67 +1956,87 @@ async function configurePriceScannerFocus(scanner) {
   }
 }
 
+function showPriceFocusIndicator(scanner, clientX, clientY) {
+  const camera = document.querySelector('[data-price-check-camera]');
+  if (!camera) return;
+  const rect = camera.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  clearTimeout(scanner.focusIndicatorTimer);
+  scanner.focusIndicator?.remove();
+  const indicator = document.createElement('span');
+  const size = Math.min(72, rect.width, rect.height);
+  const x = Math.max(size / 2, Math.min(rect.width - size / 2, clientX - rect.left));
+  const y = Math.max(size / 2, Math.min(rect.height - size / 2, clientY - rect.top));
+  indicator.setAttribute('aria-hidden', 'true');
+  indicator.setAttribute('data-price-focus-indicator', '');
+  indicator.style.cssText = `position:absolute;pointer-events:none;z-index:5;width:${size}px;height:${size}px;left:${x - size / 2}px;top:${y - size / 2}px;color:#f6d543;`;
+  indicator.innerHTML = '<svg viewBox="0 0 72 72" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><rect x="1" y="1" width="70" height="70"/><path d="M36 1v6M36 65v6M1 36h6M65 36h6"/></svg>';
+  camera.appendChild(indicator);
+  scanner.focusIndicator = indicator;
+  // This marks the requested point, not a claim that the lens achieved focus.
+  indicator.animate?.([
+    { transform: 'scale(1.15)', opacity: 1 },
+    { transform: 'scale(1)', opacity: 1, offset: 0.12 },
+    { transform: 'scale(1)', opacity: 1, offset: 0.75 },
+    { transform: 'scale(1)', opacity: 0 }
+  ], { duration: 1800, easing: 'ease-out', fill: 'forwards' });
+  scanner.focusIndicatorTimer = setTimeout(() => {
+    indicator.remove();
+    if (scanner.focusIndicator === indicator) scanner.focusIndicator = null;
+  }, 1850);
+}
+
 async function focusPriceScannerAt(clientX, clientY) {
   const scanner = state.priceScanner;
   const video = document.querySelector('[data-price-check-video]');
   const track = scanner?.stream?.getVideoTracks?.()[0];
-  if (!scanner?.active || scanner.paused || scanner.manualFocus || !video || !track?.applyConstraints || track.readyState === 'ended') return;
-
-  let capabilities = {};
-  try { capabilities = track.getCapabilities?.() || {}; } catch {}
+  if (!scanner?.active || scanner.paused || !video || !track || track.readyState === 'ended') return;
+  const source = priceScannerSourceRect(video, { left: clientX, top: clientY, width: 1, height: 1 });
+  if (!source) return;
+  showPriceFocusIndicator(scanner, clientX, clientY);
+  if (!track.applyConstraints) return;
+  const capabilities = priceScannerTrackData(track, 'getCapabilities');
   const modes = priceScannerFocusModes(capabilities);
-  if (!modes.singleShot && !modes.continuous) return;
-
-  const rect = video.getBoundingClientRect();
-  if (!rect.width || !rect.height) return;
-  const point = {
-    x: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
-    y: Math.max(0, Math.min(1, (clientY - rect.top) / rect.height))
-  };
-  if (isAndroidPriceScanner()) {
-    const source = priceScannerSourceRect(video, { left: clientX, top: clientY, width: 1, height: 1 });
-    if (source) { point.x = source.x / video.videoWidth; point.y = source.y / video.videoHeight; }
-  }
   const supported = navigator.mediaDevices?.getSupportedConstraints?.() || {};
-
+  const supportsPoint = supported.pointsOfInterest || Object.prototype.hasOwnProperty.call(capabilities, 'pointsOfInterest');
+  if (!modes.singleShot && !modes.continuous && !supportsPoint) return;
+  scanner.manualFocus = false;
+  clearTimeout(scanner.refocusTimer);
+  scanner.focusTapVersion = (scanner.focusTapVersion || 0) + 1;
+  scanner.pendingFocusPoint = { x: source.x / video.videoWidth, y: source.y / video.videoHeight };
+  // Keep only the most recent pending tap while the device is processing one.
+  if (scanner.tapFocusBusy) return;
+  scanner.tapFocusBusy = true;
+  const alive = () => scanner.active && state.priceScanner === scanner && track.readyState !== 'ended';
   try {
-    const focus = {};
-    if (modes.singleShot) focus.focusMode = 'single-shot';
-    else if (modes.continuous) focus.focusMode = 'continuous';
-    // Chrome/Android camera implementations that support a focus point use
-    // pointsOfInterest. Unsupported WebViews simply fall back to autofocus.
-    if (supported.pointsOfInterest || Object.prototype.hasOwnProperty.call(capabilities, 'pointsOfInterest')) {
-      focus.pointsOfInterest = [point];
-    }
-    if (isAndroidPriceScanner()) {
-      const actual = await applyPriceScannerConstraints(scanner, focus);
-      // Retry AF on its own if combining it with a metering point was ignored.
-      if (focus.pointsOfInterest && actual && actual.focusMode !== focus.focusMode) {
-        await applyPriceScannerConstraints(scanner, { focusMode: focus.focusMode });
+    while (alive() && scanner.pendingFocusPoint) {
+      const point = scanner.pendingFocusPoint;
+      scanner.pendingFocusPoint = null;
+      const version = scanner.focusTapVersion;
+      const pointConstraint = supportsPoint ? { pointsOfInterest: [point] } : {};
+      const mode = modes.singleShot ? 'single-shot' : modes.continuous ? 'continuous' : null;
+      const request = { ...pointConstraint, ...(mode ? { focusMode: mode } : {}) };
+      let actual;
+      try { actual = await applyPriceScannerConstraints(scanner, request); } catch {}
+      if (!alive() || scanner.pendingFocusPoint) continue;
+      if (modes.continuous && (!actual || actual.focusMode !== mode)) {
+        // Some WebViews ignore single-shot, but accept a point with continuous AF.
+        try { await applyPriceScannerConstraints(scanner, { focusMode: 'continuous', ...pointConstraint }); }
+        catch {
+          if (alive() && !scanner.pendingFocusPoint) {
+            try { await applyPriceScannerConstraints(scanner, { focusMode: 'continuous' }); } catch {}
+          }
+        }
+      }
+      if (!alive() || scanner.pendingFocusPoint) continue;
+      if (modes.continuous) {
+        scanner.refocusTimer = setTimeout(async () => {
+          if (!alive() || scanner.focusTapVersion !== version || scanner.manualFocus) return;
+          try { await applyPriceScannerConstraints(scanner, { focusMode: 'continuous', ...pointConstraint }); } catch {}
+        }, 1200);
       }
     }
-    else await track.applyConstraints({ advanced: [focus] });
-  } catch {
-    try {
-      if (modes.singleShot) {
-        if (isAndroidPriceScanner()) await applyPriceScannerConstraints(scanner, { focusMode: 'single-shot' });
-        else await track.applyConstraints({ advanced: [{ focusMode: 'single-shot' }] });
-      }
-    } catch {}
-  }
-
-  // Return to continuous AF after the tap so the image stays sharp when the
-  // phone moves a little closer/farther from a small barcode.
-  if (modes.continuous) {
-    clearTimeout(scanner.refocusTimer);
-    scanner.refocusTimer = setTimeout(async () => {
-      if (!scanner.active || scanner.manualFocus || state.priceScanner !== scanner || track.readyState === 'ended') return;
-      try {
-        if (isAndroidPriceScanner()) await applyPriceScannerConstraints(scanner, { focusMode: 'continuous' });
-        else await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-      } catch {}
-    }, 450);
-  }
+  } finally { scanner.tapFocusBusy = false; }
 }
 
 async function startPriceScanner(selectedDeviceId) {
@@ -2055,9 +2076,7 @@ async function startPriceScanner(selectedDeviceId) {
     { video: true, audio: false }
   ];
   if (isAndroidPriceScanner()) {
-    let savedDeviceId = '';
-    try { savedDeviceId = localStorage.getItem('starclub_price_camera_android') || ''; } catch {}
-    scanner.requestedDeviceId = typeof selectedDeviceId === 'string' ? selectedDeviceId : savedDeviceId;
+    scanner.requestedDeviceId = typeof selectedDeviceId === 'string' ? selectedDeviceId : '';
     // Select the lens before negotiating resolution; high-resolution ideals must
     // not make WebView silently prefer a different rear module.
     cameraRequests = scanner.requestedDeviceId
@@ -2084,7 +2103,7 @@ async function startPriceScanner(selectedDeviceId) {
   }
   if (!scanner.stream) {
     console.warn('StarClub price scanner camera error', cameraError);
-    setPriceScannerMessage('Немає доступу до камери', scanner.requestedDeviceId ? 'Вибрана камера недоступна. Відкрийте «Камера та діагностика» і виберіть автоматичний режим або іншу камеру.' : 'Надайте дозвіл на камеру в налаштуваннях Telegram або браузера.');
+    setPriceScannerMessage('Немає доступу до камери', scanner.requestedDeviceId ? 'Вибрана камера недоступна. Закрийте та знову відкрийте сканер.' : 'Надайте дозвіл на камеру в налаштуваннях Telegram або браузера.');
     return;
   }
 
@@ -2528,7 +2547,6 @@ function bindEvents() {
   document.querySelectorAll('[data-price-unavailable]').forEach((el) => el.onclick = () => toast('Функція поки недоступна.'));
   document.querySelectorAll('[data-price-check-back]').forEach((el) => el.onclick = () => setRoute('more'));
   document.querySelectorAll('[data-price-check-manual]').forEach((el) => el.onclick = showManualBarcodeDialog);
-  document.querySelectorAll('[data-price-camera-settings]').forEach((el) => el.onclick = showPriceCameraSettings);
   document.querySelectorAll('[data-price-check-flash]').forEach((el) => el.onclick = togglePriceScannerFlash);
   bindPriceCheckResultActions();
   if (state.route === 'priceCheck') startPriceScanner();
