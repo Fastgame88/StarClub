@@ -1527,7 +1527,7 @@ function decodeEan8Runs(runs, start) {
   return { code, score };
 }
 
-function barcodeRunsFromLuma(luma, threshold) {
+function barcodeRunsFromLuma(luma, threshold, denoise = !isAndroidPriceScanner()) {
   const runs = [];
   let color = luma[0] < threshold ? 1 : 0;
   let length = 1;
@@ -1540,7 +1540,7 @@ function barcodeRunsFromLuma(luma, threshold) {
 
   // Прибираємо одиночні шумові пікселі, але не чіпаємо реальні вузькі модулі штрих-коду.
   for (let i = 1; i < runs.length - 1; i++) {
-    if (!isAndroidPriceScanner() && runs[i].length <= 1 && runs[i - 1].color === runs[i + 1].color) {
+    if (denoise && runs[i].length <= 1 && runs[i - 1].color === runs[i + 1].color) {
       runs[i - 1].length += runs[i].length + runs[i + 1].length;
       runs.splice(i, 2);
       i = Math.max(0, i - 2);
@@ -1549,7 +1549,7 @@ function barcodeRunsFromLuma(luma, threshold) {
   return runs;
 }
 
-function decodeRetailBarcodeLuma(luma) {
+function decodeRetailBarcodeLuma(luma, denoise = !isAndroidPriceScanner()) {
   if (!luma || luma.length < 120) return null;
   let min = 255, max = 0;
   for (const value of luma) { if (value < min) min = value; if (value > max) max = value; }
@@ -1558,7 +1558,7 @@ function decodeRetailBarcodeLuma(luma) {
   const thresholds = [middle, middle - 13, middle + 13];
   let best = null;
   for (const threshold of thresholds) {
-    const runs = barcodeRunsFromLuma(luma, threshold);
+    const runs = barcodeRunsFromLuma(luma, threshold, denoise);
     for (let i = 0; i < runs.length; i++) {
       if (runs[i].color !== 1) continue;
       const candidate13 = decodeEan13Runs(runs, i);
@@ -1572,14 +1572,22 @@ function decodeRetailBarcodeLuma(luma) {
 
 function detectRetailBarcodeFallback(video, scanner) {
   if (!video?.videoWidth || !video?.videoHeight) return null;
+  scanner.fallbackPass = (scanner.fallbackPass || 0) + 1;
+  if (scanner.fallbackPass % 2 === 1) return detectRetailBarcodeFast(video, scanner);
   if (!scanner.canvas) {
     scanner.canvas = document.createElement('canvas');
     scanner.context = scanner.canvas.getContext('2d', { willReadFrequently: true });
   }
-  if (isAndroidPriceScanner()) return detectAndroidRetailBarcode(video, scanner);
-  // Keep more source pixels for narrow/small EAN bars. iPhone relies on this
-  // Canvas decoder more often, so 1280 px is especially important there.
-  const maxWidth = isAndroidPriceScanner() ? 1440 : 1280;
+  return detectAndroidRetailBarcode(video, scanner);
+}
+
+function detectRetailBarcodeFast(video, scanner) {
+  if (!video?.videoWidth || !video?.videoHeight) return null;
+  if (!scanner.canvas) {
+    scanner.canvas = document.createElement('canvas');
+    scanner.context = scanner.canvas.getContext('2d', { willReadFrequently: true });
+  }
+  const maxWidth = 960;
   const width = Math.min(maxWidth, Math.max(480, video.videoWidth));
   const height = Math.max(270, Math.round(width * video.videoHeight / video.videoWidth));
   if (scanner.canvas.width !== width || scanner.canvas.height !== height) {
@@ -1588,18 +1596,16 @@ function detectRetailBarcodeFallback(video, scanner) {
   }
   const ctx = scanner.context;
   if (!ctx) return null;
+  scanner.decodeFrame = { decoder: 'reference fast EAN', source: { width: video.videoWidth, height: video.videoHeight }, canvas: { width, height }, scale: width / video.videoWidth };
   ctx.drawImage(video, 0, 0, width, height);
   let pixels;
   try { pixels = ctx.getImageData(0, 0, width, height).data; } catch { return null; }
 
-  // Аналізуємо тільки центральну область, яка відповідає рамці сканування.
-  // Код має бути розпізнаний щонайменше на двох незалежних лініях одного кадру.
-  const rows = [0.405, 0.455, 0.5, 0.545, 0.595];
-  const slopes = [-0.035, 0, 0.035];
-  const left = Math.round(width * 0.105);
-  const right = Math.round(width * 0.895);
+  const rows = [0.5, 0.435, 0.565, 0.37, 0.63, 0.1, 0.25, 0.75, 0.9];
+  const slopes = [-0.055, 0, 0.055];
+  const left = 0;
+  const right = width;
   const luma = new Array(right - left);
-  const hits = new Map();
   for (const row of rows) {
     for (const slope of slopes) {
       for (let x = left; x < right; x++) {
@@ -1607,16 +1613,11 @@ function detectRetailBarcodeFallback(video, scanner) {
         const index = (y * width + x) * 4;
         luma[x - left] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
       }
-      const code = decodeRetailBarcodeLuma(luma);
-      if (code) hits.set(code, (hits.get(code) || 0) + 1);
+      const code = decodeRetailBarcodeLuma(luma, true) || decodeRetailBarcodeLuma(luma.reverse(), true);
+      if (code) return code;
     }
   }
-  let bestCode = null;
-  let bestHits = 0;
-  for (const [code, count] of hits.entries()) {
-    if (count > bestHits) { bestCode = code; bestHits = count; }
-  }
-  return bestHits >= 2 ? bestCode : null;
+  return null;
 }
 
 // Convert object-fit: cover coordinates to source pixels (also used for tap focus).
@@ -1634,37 +1635,52 @@ function priceScannerSourceRect(video, rect) {
 }
 
 function detectAndroidRetailBarcode(video, scanner) {
-  const frame = document.querySelector('.price-check-frame');
-  const roi = priceScannerSourceRect(video, (frame || video).getBoundingClientRect());
-  if (!roi) return null;
-  // Copy only scan lines, 1:1, instead of downscaling the complete video frame.
-  const rows = [0.25, 0.375, 0.5, 0.625, 0.75];
-  const slopes = [-0.035, 0, 0.035];
-  const stripHeight = Math.min(video.videoHeight, Math.ceil(roi.width * 0.035) + 4);
-  scanner.canvas.width = roi.width;
-  scanner.canvas.height = stripHeight;
   const ctx = scanner.context;
   if (!ctx) return null;
+  // Alternate horizontal/vertical sweeps and interlace their rows. The decorative
+  // frame does not crop input; a complete barcode may be anywhere in the video.
+  const pass = scanner.fullFramePass = (scanner.fullFramePass || 0) + 1;
+  const vertical = pass % 2 === 0;
+  const phase = Math.floor((pass - 1) / 2) % 4;
+  const width = vertical ? video.videoHeight : video.videoWidth;
+  const crossSize = vertical ? video.videoWidth : video.videoHeight;
+  const stripHeight = Math.min(crossSize, Math.ceil(width * 0.035) + 4);
+  if (scanner.canvas.width !== width) scanner.canvas.width = width;
+  if (scanner.canvas.height !== stripHeight) scanner.canvas.height = stripHeight;
   ctx.imageSmoothingEnabled = false;
+  const rows = [0.01, ...Array.from({ length: 10 }, (_, i) => Math.min(0.99, (i + 0.25 + phase * 0.25) / 10)), 0.99];
+  const slopes = [0, -0.035, 0.035];
   scanner.decodeFrame = { source: { width: video.videoWidth, height: video.videoHeight },
-    roi, canvas: { width: roi.width, height: stripHeight }, scale: 1, decoder: 'EAN scanlines' };
+    roi: { x: 0, y: 0, width: video.videoWidth, height: video.videoHeight },
+    canvas: { width, height: stripHeight }, scale: 1, direction: vertical ? 'vertical' : 'horizontal',
+    decoder: 'full-frame EAN scanlines', phase };
   const hits = new Map();
   for (const row of rows) {
-    const top = Math.max(0, Math.min(video.videoHeight - stripHeight, Math.round(roi.y + roi.height * row - stripHeight / 2)));
-    ctx.drawImage(video, roi.x, top, roi.width, stripHeight, 0, 0, roi.width, stripHeight);
-    const pixels = ctx.getImageData(0, 0, roi.width, stripHeight).data;
+    const top = Math.max(0, Math.min(crossSize - stripHeight, Math.round(crossSize * row - stripHeight / 2)));
+    if (vertical) {
+      ctx.save();
+      ctx.translate(0, stripHeight);
+      ctx.rotate(-Math.PI / 2);
+      ctx.drawImage(video, top, 0, stripHeight, width, 0, 0, stripHeight, width);
+      ctx.restore();
+    } else ctx.drawImage(video, 0, top, width, stripHeight, 0, 0, width, stripHeight);
+    const pixels = ctx.getImageData(0, 0, width, stripHeight).data;
     for (const slope of slopes) {
-      const luma = new Array(roi.width);
-      for (let x = 0; x < roi.width; x++) {
-        const y = Math.max(0, Math.min(stripHeight - 1, Math.round(stripHeight / 2 + (x - roi.width / 2) * slope)));
-        const index = (y * roi.width + x) * 4;
+      const luma = new Array(width);
+      for (let x = 0; x < width; x++) {
+        const y = Math.max(0, Math.min(stripHeight - 1, Math.round(stripHeight / 2 + (x - width / 2) * slope)));
+        const index = (y * width + x) * 4;
         luma[x] = Math.round(pixels[index] * 0.299 + pixels[index + 1] * 0.587 + pixels[index + 2] * 0.114);
       }
-      const code = decodeRetailBarcodeLuma(luma);
-      if (code) hits.set(code, (hits.get(code) || 0) + 1);
+      const code = decodeRetailBarcodeLuma(luma, false) || decodeRetailBarcodeLuma(luma.reverse(), false);
+      if (code) {
+        const count = (hits.get(code) || 0) + 1;
+        hits.set(code, count);
+        if (count >= 2) return code;
+      }
     }
   }
-  return [...hits].sort((a, b) => b[1] - a[1]).find(([, count]) => count >= 2)?.[0] || null;
+  return null;
 }
 
 // Diagnostics are local and contain no Telegram auth data or camera images.
@@ -1687,7 +1703,7 @@ function priceScannerReport() {
   const video = document.querySelector('[data-price-check-video]');
   const capabilities = priceScannerTrackData(track, 'getCapabilities');
   const settings = priceScannerTrackData(track, 'getSettings');
-  return { build: 'tap-focus-v4-priority', timestamp: new Date().toISOString(), userAgent: navigator.userAgent, platform: tg?.platform,
+  return { build: 'reference-scanner-v6', timestamp: new Date().toISOString(), userAgent: navigator.userAgent, platform: tg?.platform,
     active: !!scanner?.active, requestedDeviceId: scanner?.requestedDeviceId || 'automatic rear',
     devices: scanner?.devices || [], track: { label: track?.label, readyState: track?.readyState },
     requestedFocus: scanner?.requestedFocus || null,
@@ -1912,7 +1928,7 @@ function scannerDetectionInsideFrame(detection, video) {
 
 function scannerValueIsPlausible(rawValue, format = '', source = 'native') {
   const value = String(rawValue || '').trim().replace(/\s+/g, '');
-  if (!value || value.length < 6 || value.length > 40) return false;
+  if (!value || value.length > 80) return false;
   if (source === 'fallback') return /^\d{8}$|^\d{13}$/.test(value) && barcodeChecksumValid(value);
 
   const normalizedFormat = String(format || '').toLowerCase();
@@ -1946,6 +1962,7 @@ async function configurePriceScannerFocus(scanner) {
   let capabilities;
   try { capabilities = track.getCapabilities?.() || {}; } catch { return; }
   const modes = priceScannerFocusModes(capabilities);
+  if (priceScannerTrackData(track, 'getSettings').focusMode === 'continuous') return;
   const focusMode = modes.continuous ? 'continuous' : modes.singleShot ? 'single-shot' : null;
   if (!focusMode) return;
   try {
@@ -1993,71 +2010,6 @@ function finishPriceFocusIndicator(scanner, message) {
   }, 2000);
 }
 
-function priceFocusCandidates(range) {
-  const values = [];
-  // Search device units; do not assume Android's reported scale is calibrated.
-  for (let i = 0; i <= 8; i++) {
-    const value = range.min > 0 ? range.min * (range.max / range.min) ** (i / 8)
-      : range.min + (range.max - range.min) * i / 8;
-    values.push(Math.max(range.min, Math.min(range.max,
-      range.min + Math.round((value - range.min) / range.step) * range.step)));
-  }
-  return [...new Set(values)];
-}
-
-function measurePriceFocus(video, scanner, point) {
-  if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) return null;
-  if (!scanner.focusCanvas) {
-    scanner.focusCanvas = document.createElement('canvas');
-    scanner.focusContext = scanner.focusCanvas.getContext('2d', { willReadFrequently: true });
-  }
-  const ctx = scanner.focusContext;
-  if (!ctx) return null;
-  const size = Math.min(192, video.videoWidth, video.videoHeight);
-  if (size < 32) return null;
-  scanner.focusCanvas.width = size; scanner.focusCanvas.height = size;
-  const x = Math.max(0, Math.min(video.videoWidth - size, Math.round(point.x * video.videoWidth - size / 2)));
-  const y = Math.max(0, Math.min(video.videoHeight - size, Math.round(point.y * video.videoHeight - size / 2)));
-  ctx.imageSmoothingEnabled = false;
-  let pixels;
-  try {
-    ctx.drawImage(video, x, y, size, size, 0, 0, size, size);
-    pixels = ctx.getImageData(0, 0, size, size).data;
-  } catch { return null; }
-  const gray = new Float32Array(size * size);
-  let sum = 0, squared = 0;
-  for (let i = 0; i < gray.length; i++) {
-    const v = (pixels[i * 4] * 77 + pixels[i * 4 + 1] * 150 + pixels[i * 4 + 2] * 29) / 256;
-    gray[i] = v; sum += v; squared += v * v;
-  }
-  const mean = sum / gray.length;
-  const contrast = Math.sqrt(Math.max(0, squared / gray.length - mean * mean));
-  // Sobel energy with a noise floor: sharper printed edges receive a higher score.
-  let energy = 0;
-  for (let row = 1; row < size - 1; row++) {
-    for (let col = 1; col < size - 1; col++) {
-      const i = row * size + col;
-      const gx = -gray[i-size-1] + gray[i-size+1] - 2*gray[i-1] + 2*gray[i+1] - gray[i+size-1] + gray[i+size+1];
-      const gy = -gray[i-size-1] - 2*gray[i-size] - gray[i-size+1] + gray[i+size-1] + 2*gray[i+size] + gray[i+size+1];
-      energy += Math.max(0, gx * gx + gy * gy - 400);
-    }
-  }
-  return { score: energy / ((size - 2) ** 2), contrast, mean, roi: { x, y, size } };
-}
-
-async function waitPriceFocusFrame(video) {
-  // Wait for a fresh frame after the lens-settling delay, with a bounded fallback.
-  if (!video.requestVideoFrameCallback) {
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    return;
-  }
-  await new Promise((resolve) => {
-    let id;
-    const timer = setTimeout(() => { video.cancelVideoFrameCallback?.(id); resolve(); }, 180);
-    id = video.requestVideoFrameCallback(() => { clearTimeout(timer); resolve(); });
-  });
-}
-
 async function restorePriceAutoFocus(scanner, version) {
   if (!scanner.active || state.priceScanner !== scanner || scanner.focusTapVersion !== version) return;
   scanner.manualFocus = false;
@@ -2065,73 +2017,6 @@ async function restorePriceAutoFocus(scanner, version) {
   const modes = priceScannerFocusModes(priceScannerTrackData(scanner.stream?.getVideoTracks?.()[0], 'getCapabilities'));
   if (modes.continuous) {
     try { await applyPriceScannerConstraints(scanner, { focusMode: 'continuous' }, { focusVersion: version }); } catch {}
-  }
-}
-
-async function searchPriceFocusAtPoint(scanner, video, point, version, range) {
-  const track = scanner.stream.getVideoTracks()[0];
-  const alive = () => scanner.active && state.priceScanner === scanner && scanner.focusTapVersion === version
-    && track.readyState !== 'ended';
-  scanner.manualFocus = true;
-  const previous = priceScannerTrackData(track, 'getSettings');
-  const baseline = measurePriceFocus(video, scanner, point);
-  if (!baseline) return { success: false, reason: 'no-frame' };
-  const samples = [];
-  const evaluate = async (distance) => {
-    if (!alive()) return null;
-    const actual = await applyPriceScannerConstraints(scanner,
-      { focusMode: 'manual', focusDistance: distance }, { focusVersion: version, settleMs: 220 });
-    if (!alive()) return null;
-    if (actual?.focusMode !== 'manual' || !Number.isFinite(actual.focusDistance)
-      || Math.abs(actual.focusDistance - distance) > range.step * 1.5 + 1e-6) throw new Error('manual-focus-not-confirmed');
-    await waitPriceFocusFrame(video);
-    if (!alive()) return null;
-    const first = measurePriceFocus(video, scanner, point);
-    await waitPriceFocusFrame(video);
-    if (!alive()) return null;
-    const second = measurePriceFocus(video, scanner, point);
-    if (!first || !second) throw new Error('focus-frame-unavailable');
-    const sample = { distance, score: Math.min(first.score, second.score),
-      contrast: Math.min(first.contrast, second.contrast), mean: (first.mean + second.mean) / 2 };
-    samples.push(sample);
-    return sample;
-  };
-  try {
-    for (const distance of priceFocusCandidates(range)) {
-      if (!alive()) return { cancelled: true };
-      await evaluate(distance);
-    }
-    if (!alive()) return { cancelled: true };
-    let best = samples.filter((v) => v.contrast >= 10).sort((a, b) => b.score - a.score)[0];
-    if (!best || best.score < 100) throw new Error('insufficient-detail');
-    // Refine within the coarse interval around the sharpest tested position.
-    const sorted = [...samples].sort((a, b) => a.distance - b.distance);
-    const index = sorted.findIndex((item) => item.distance === best.distance);
-    for (const neighbor of [sorted[index - 1], sorted[index + 1]]) {
-      if (!neighbor || !alive()) continue;
-      const distance = Math.max(range.min, Math.min(range.max,
-        range.min + Math.round(((neighbor.distance + best.distance) / 2 - range.min) / range.step) * range.step));
-      if (!samples.some((item) => Math.abs(item.distance - distance) < range.step / 2)) await evaluate(distance);
-    }
-    if (!alive()) return { cancelled: true };
-    best = samples.filter((v) => v.contrast >= 10).sort((a, b) => b.score - a.score)[0];
-    const verification = await evaluate(best.distance);
-    if (!alive()) return { cancelled: true };
-    // Reject unstable measurements (phone/product moved) and clear regressions.
-    if (!verification || verification.score < best.score * 0.65
-      || verification.score < baseline.score * 0.8) throw new Error('unstable-focus-measurement');
-    scanner.lastPointFocus = { point, distance: best.distance, baseline: baseline.score, score: verification.score };
-    priceScannerEvent(scanner, 'point-focus-selected', { ...scanner.lastPointFocus, samples });
-    return { success: true };
-  } catch (error) {
-    if (!alive()) return { cancelled: true };
-    priceScannerEvent(scanner, 'point-focus-unconfirmed', { error: error.message, samples });
-    // If no continuous AF is exposed, restore the previous valid manual position.
-    if (!priceScannerFocusModes(priceScannerTrackData(track, 'getCapabilities')).continuous
-      && previous.focusDistance >= range.min && previous.focusDistance <= range.max) {
-      try { await applyPriceScannerConstraints(scanner, { focusMode: 'manual', focusDistance: previous.focusDistance }, { focusVersion: version }); } catch {}
-    }
-    return { success: false, reason: error.message };
   }
 }
 
@@ -2146,56 +2031,41 @@ async function focusPriceScannerAt(clientX, clientY) {
   clearTimeout(scanner.refocusTimer);
   scanner.focusTapVersion = (scanner.focusTapVersion || 0) + 1;
   scanner.focusPriority = true;
+  scanner.manualFocus = false;
   scanner.pendingFocusPoint = { x: source.x / video.videoWidth, y: source.y / video.videoHeight };
-  if (scanner.focusStatus) scanner.focusStatus.textContent = 'Наведення…';
   if (scanner.tapFocusBusy) return;
   scanner.tapFocusBusy = true;
-  scanner.focusSearching = true;
   const alive = () => scanner.active && state.priceScanner === scanner && track.readyState !== 'ended';
   try {
     while (alive() && scanner.pendingFocusPoint) {
       const point = scanner.pendingFocusPoint;
       scanner.pendingFocusPoint = null;
       const version = scanner.focusTapVersion;
-      const range = priceScannerManualRange(scanner);
-      let result;
-      if (range && track.applyConstraints) {
-        // Hardware point AF was ignored on the reported Android. Move the lens
-        // through supported positions and compare actual pixels around the tap.
-        result = await searchPriceFocusAtPoint(scanner, video, point, version, range);
-      } else {
-        scanner.manualFocus = false;
-        const caps = priceScannerTrackData(track, 'getCapabilities');
-        const modes = priceScannerFocusModes(caps);
-        const supported = navigator.mediaDevices?.getSupportedConstraints?.() || {};
-        const supportsPoint = supported.pointsOfInterest || Object.prototype.hasOwnProperty.call(caps, 'pointsOfInterest');
-        if (supportsPoint && track.applyConstraints) {
-          const mode = modes.singleShot ? 'single-shot' : modes.continuous ? 'continuous' : null;
-          try {
-            await applyPriceScannerConstraints(scanner, { pointsOfInterest: [point], ...(mode ? { focusMode: mode } : {}) }, { focusVersion: version });
-            result = { nativePoint: true };
-          } catch { result = { success: false }; }
-        } else result = { unavailable: true };
-      }
-      if (!alive() || scanner.focusTapVersion !== version) continue;
-      if (result?.success || result?.nativePoint) {
-        finishPriceFocusIndicator(scanner, result.success ? 'Фокус утримується' : 'Точку передано камері');
-        // The user's point wins for eight seconds after focus acquisition.
-        scanner.refocusTimer = setTimeout(() => restorePriceAutoFocus(scanner, version), 8000);
-      } else {
-        await restorePriceAutoFocus(scanner, version);
-        if (!alive() || scanner.focusTapVersion !== version) continue;
-        finishPriceFocusIndicator(scanner, result?.unavailable ? 'Лише автофокус' : 'Не вдалося навести');
-        if (result?.unavailable && !scanner.focusUnavailableShown) {
-          scanner.focusUnavailableShown = true;
-          toast('Telegram на цьому пристрої не надає керування фокусом у точці');
+      const caps = priceScannerTrackData(track, 'getCapabilities');
+      const modes = priceScannerFocusModes(caps);
+      const supported = navigator.mediaDevices?.getSupportedConstraints?.() || {};
+      const supportsPoint = supported.pointsOfInterest || Object.prototype.hasOwnProperty.call(caps, 'pointsOfInterest');
+      if (supportsPoint && track.applyConstraints) {
+        try {
+          // Keep continuous AF running and update its region in one request.
+          // Never sweep focusDistance, reset to infinity, or pause decoding.
+          const request = { pointsOfInterest: [point], ...(modes.continuous ? { focusMode: 'continuous' } : {}) };
+          await applyPriceScannerConstraints(scanner, request, { focusVersion: version, settleMs: 0 });
+          if (!alive() || scanner.focusTapVersion !== version) continue;
+          finishPriceFocusIndicator(scanner, '');
+          scanner.refocusTimer = setTimeout(() => restorePriceAutoFocus(scanner, version), 8000);
+        } catch {
+          if (!alive() || scanner.focusTapVersion !== version) continue;
+          scanner.focusPriority = false;
+          finishPriceFocusIndicator(scanner, 'Лише автофокус');
         }
+      } else {
+        if (!alive() || scanner.focusTapVersion !== version) continue;
+        scanner.focusPriority = false;
+        finishPriceFocusIndicator(scanner, 'Лише автофокус');
       }
     }
-  } finally {
-    scanner.tapFocusBusy = false;
-    scanner.focusSearching = false;
-  }
+  } finally { scanner.tapFocusBusy = false; }
 }
 
 async function startPriceScanner(selectedDeviceId) {
@@ -2218,31 +2088,14 @@ async function startPriceScanner(selectedDeviceId) {
     return;
   }
 
-  let cameraRequests = [
-    // Ask for a high-resolution rear-camera stream first on both platforms.
-    // This gives the detector enough pixels when the printed barcode is small.
-    {
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 2560 }, height: { ideal: 1440 },
-        frameRate: { ideal: 30 }, resizeMode: 'none'
-      },
-      audio: false
-    },
-    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }, audio: false },
-    { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
-    { video: { facingMode: 'environment' }, audio: false },
-    { video: true, audio: false }
+  // Match the working reference: negotiate 720p once, without a second forced
+  // resolution switch after startup. The browser may return another supported size.
+  scanner.requestedDeviceId = typeof selectedDeviceId === 'string' ? selectedDeviceId : '';
+  const selection = scanner.requestedDeviceId ? { deviceId: { exact: scanner.requestedDeviceId } } : { facingMode: { ideal: 'environment' } };
+  const cameraRequests = [
+    { video: { ...selection, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+    { video: selection, audio: false }
   ];
-  if (isAndroidPriceScanner()) {
-    scanner.requestedDeviceId = typeof selectedDeviceId === 'string' ? selectedDeviceId : '';
-    // Select the lens before negotiating resolution; high-resolution ideals must
-    // not make WebView silently prefer a different rear module.
-    cameraRequests = scanner.requestedDeviceId
-      ? [{ video: { deviceId: { exact: scanner.requestedDeviceId } }, audio: false }]
-      : [{ video: { facingMode: { exact: 'environment' } }, audio: false },
-        { video: { facingMode: { ideal: 'environment' } }, audio: false }];
-  }
   let cameraError = null;
   for (const constraints of cameraRequests) {
     if (!scanner.active || state.priceScanner !== scanner || state.route !== 'priceCheck') return;
@@ -2271,7 +2124,6 @@ async function startPriceScanner(selectedDeviceId) {
     return;
   }
   if (isAndroidPriceScanner()) {
-    await configureAndroidPriceResolution(scanner);
     await priceScannerDevices(scanner);
   }
   if (!scanner.active || state.priceScanner !== scanner) return;
@@ -2307,20 +2159,11 @@ async function startPriceScanner(selectedDeviceId) {
 
   const acceptValue = async (rawValue, { source = 'native', format = '' } = {}) => {
     const value = String(rawValue || '').trim().replace(/\s+/g, '');
-    if (!scanner.active || state.priceScanner !== scanner || !value || scanner.paused || scanner.focusSearching || !scannerValueIsPlausible(value, format, source)) return false;
+    if (!scanner.active || state.priceScanner !== scanner || !value || scanner.paused || !scannerValueIsPlausible(value, format, source)) return false;
     const now = Date.now();
 
-    // Не реагуємо на одиничний випадковий збіг. Один і той самий код має стабільно
-    // розпізнатися в кількох послідовних кадрах. Це відсікає цифри/текст на упаковці.
-    if (scanner.candidateValue !== value || now - scanner.candidateFirstAt > 1500) {
-      scanner.candidateValue = value;
-      scanner.candidateCount = 1;
-      scanner.candidateFirstAt = now;
-      return false;
-    }
-    scanner.candidateCount += 1;
-    const requiredHits = source === 'fallback' ? 3 : 2;
-    if (scanner.candidateCount < requiredHits) return false;
+    // The working reference accepts the first decoded result. Native results
+    // are format-validated below; our EAN fallback also verifies the checksum.
     if (value === scanner.lastValue && now - scanner.lastValueAt <= 2200) return false;
 
     scanner.lastValue = value;
@@ -2328,22 +2171,22 @@ async function startPriceScanner(selectedDeviceId) {
     scanner.candidateValue = '';
     scanner.candidateCount = 0;
     scanner.candidateFirstAt = 0;
+    scanner.paused = true;
     await lookupProductByBarcode(value);
     return true;
   };
 
   const detectLoop = async (timestamp = 0) => {
     if (!scanner.active || state.priceScanner !== scanner || state.route !== 'priceCheck') return;
-    if (!scanner.paused && !scanner.focusSearching && video.readyState >= 2) {
+    if (!scanner.paused && video.readyState >= 2) {
       let found = false;
       if (scanner.detector && !scanner.detecting && timestamp - scanner.lastFrameAt >= 150) {
         scanner.lastFrameAt = timestamp;
         scanner.detecting = true;
         try {
           const codes = await scanner.detector.detect(video);
-          const validCode = (codes || []).find((code) =>
-            scannerDetectionInsideFrame(code, video)
-            && scannerValueIsPlausible(code.rawValue, code.format, 'native'));
+          const validCodes = (codes || []).filter((code) => scannerValueIsPlausible(code.rawValue, code.format, 'native'));
+          const validCode = validCodes.find((code) => String(code.rawValue || '').replace(/\s+/g, '') === scanner.candidateValue) || validCodes[0];
           if (validCode) found = await acceptValue(validCode.rawValue, { source: 'native', format: validCode.format });
         } catch {}
         scanner.detecting = false;
